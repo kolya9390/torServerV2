@@ -1,0 +1,11 @@
+# Docker Compose - данные (не комитить!)
+CONFIG/
+LOGS/
+TORRENTS/
+MEDIA/
+
+
+# Временные файлы
+*.log
+*.tmp
+*.cache

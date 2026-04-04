@@ -1,0 +1,107 @@
+# TorrServer Configuration
+# This file contains default settings for TorrServer
+
+server:
+  # HTTP Server
+  port: "8090"
+  ssl: false
+  ssl_port: "8091"
+  ssl_cert: ""
+  ssl_key: ""
+  
+  # Authentication
+  http_auth: false
+  # search_wa: false  # Allow search without auth (deprecated, use torznab settings)
+
+# DLNA
+dlna:
+  enabled: false
+  friendly_name: "TorrServer"
+
+# Cache & Storage
+cache:
+  size_mb: 64  # Cache size in MB
+  preload_percent: 50  # Preload cache percentage
+  use_disk: false
+  torrents_save_path: ""  # Leave empty to use memory only
+
+# Torrent Settings
+torrent:
+  force_encrypt: false
+  retrackers_mode: 1  # 0=don't add, 1=add, 2=remove, 3=replace
+  disconnect_timeout_sec: 30
+  connections_limit: 25
+
+# Network
+network:
+  enable_ipv6: true
+  disable_tcp: false
+  disable_utp: false
+  disable_upnp: false
+  disable_dht: false
+  disable_pex: false
+  disable_upload: false
+  download_rate_limit_kb: 0  # 0 = unlimited
+  upload_rate_limit_kb: 0  # 0 = unlimited
+  peers_listen_port: 0  # 0 = random port
+
+# Search
+search:
+  enable_rutor: false
+  enable_torznab: false
+  torznab_urls: []
+  # Example:
+  # - host: "https://api.example.com"
+  #   key: "your-api-key"
+  #   name: "Example Tracker"
+
+# TMDB (The Movie Database)
+tmdb:
+  api_key: ""
+  api_url: "https://api.themoviedb.org"
+  image_url: "https://image.tmdb.org"
+  image_url_ru: "https://imagetmdb.com"
+
+# Streaming
+streaming:
+  responsive_mode: true
+  core_profile: "custom"  # custom, low-end, balanced, high-throughput, nas
+  max_concurrent_streams: 0  # 0 = auto
+  stream_queue_size: 0  # 0 = auto
+  stream_queue_wait_sec: 3
+  adaptive_ra_min_mb: 4
+  adaptive_ra_max_mb: 64
+  read_ahead_percent: 95  # 5-100%
+
+# Disk Cache
+disk_cache:
+  warm_size_mb: 0  # 0 = disabled
+  warm_ttl_min: 180
+  sync_policy: "periodic"  # none, periodic, always
+  sync_interval_ms: 1000
+  write_batch_size: 16
+
+# Workers
+workers:
+  metadata_workers: 0  # 0 = auto
+  metadata_queue_size: 0  # 0 = auto
+  preload_workers: 0  # 0 = auto
+  preload_queue_size: 0  # 0 = auto
+
+# Debug
+debug:
+  enabled: false
+  show_fs_active_torr: true
+
+# Proxy
+proxy:
+  enabled: false
+  hosts:
+    - "*themoviedb.org"
+    - "*tmdb.org"
+    - "rutor.info"
+
+# Storage
+storage:
+  settings_in_json: true  # true = JSON, false = BBolt
+  viewed_in_json: false  # true = JSON, false = BBolt

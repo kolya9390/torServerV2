@@ -1,0 +1,184 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  # =============================================================================
+  # TEST
+  # =============================================================================
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache: true
+
+      - name: Go Mod Download
+        working-directory: server
+        run: go mod download
+
+      - name: Go Mod Tidy
+        working-directory: server
+        run: go mod tidy && git diff --exit-code go.mod go.sum
+
+      - name: Go Build
+        working-directory: server
+        run: go build -v -o /dev/null ./cmd
+
+      - name: Go Test
+        working-directory: server
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Architecture Fitness
+        working-directory: server
+        run: ./scripts/architecture_fitness.sh
+
+      - name: Upload Coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: server/coverage.out
+          flags: unittests
+          fail_ci_if_error: false
+
+      - name: Upload Test Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            server/coverage.out
+            server/artifacts/
+          if-no-files-found: ignore
+
+  # =============================================================================
+  # LINT
+  # =============================================================================
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache: false
+
+      - name: Setup golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.61
+          working-directory: server
+          args: --timeout=10m
+
+      - name: Go Vet
+        working-directory: server
+        run: go vet ./...
+
+      - name: Check Go Format
+        working-directory: server
+        run: |
+          gofmt -l .
+          test -z "$(gofmt -l .)"
+
+  # =============================================================================
+  # BUILD
+  # =============================================================================
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [test, lint]
+
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: windows
+            arch: amd64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache: true
+
+      - name: Build
+        working-directory: server
+        run: |
+          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} CGO_ENABLED=0 \
+            go build -ldflags '-w -s' -o torrserver-${{ matrix.os }}-${{ matrix.arch }} ./cmd
+
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: torrserver-${{ matrix.os }}-${{ matrix.arch }}
+          path: server/torrserver-${{ matrix.os }}-${{ matrix.arch }}
+          if-no-files-found: error
+
+  # =============================================================================
+  # E2E SMOKE
+  # =============================================================================
+  e2e-smoke:
+    name: E2E Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: torrserver-linux-amd64
+          path: server/
+
+      - name: Make Binary Executable
+        run: chmod +x server/torrserver-linux-amd64
+
+      - name: Run E2E Smoke
+        working-directory: server
+        run: ./scripts/e2e_smoke.sh
+
+      - name: Upload E2E Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-smoke-artifacts
+          path: server/artifacts/e2e-smoke
+          if-no-files-found: warn

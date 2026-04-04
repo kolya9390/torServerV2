@@ -1,0 +1,197 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-04-03",
+  "description": "TorrServer API route manifest for compatibility tracking",
+  "routes": [
+    {
+      "path": "/api/version",
+      "methods": ["GET"],
+      "auth": "none",
+      "status": "compatible",
+      "notes": "New endpoint in V2"
+    },
+    {
+      "path": "/api/v1/version",
+      "methods": ["GET"],
+      "auth": "none",
+      "status": "compatible",
+      "notes": "New endpoint in V2"
+    },
+    {
+      "path": "/stream",
+      "methods": ["GET", "HEAD"],
+      "auth": "none",
+      "status": "compatible",
+      "notes": "Legacy streaming endpoint"
+    },
+    {
+      "path": "/stream/*fname",
+      "methods": ["GET", "HEAD"],
+      "auth": "none",
+      "status": "compatible",
+      "notes": "Legacy streaming endpoint for specific file"
+    },
+    {
+      "path": "/streams/stat",
+      "methods": ["GET", "HEAD"],
+      "auth": "none",
+      "status": "compatible",
+      "notes": "New explicit stream API - read only"
+    },
+    {
+      "path": "/streams/m3u",
+      "methods": ["GET", "HEAD"],
+      "auth": "none",
+      "status": "compatible",
+      "notes": "New explicit stream API - M3U generation"
+    },
+    {
+      "path": "/streams/play",
+      "methods": ["GET", "HEAD"],
+      "auth": "none",
+      "status": "compatible",
+      "notes": "New explicit stream API - play"
+    },
+    {
+      "path": "/streams/save",
+      "methods": ["POST"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "New explicit stream API - save torrent"
+    },
+    {
+      "path": "/play/:hash/:id",
+      "methods": ["GET", "HEAD"],
+      "auth": "none",
+      "status": "compatible",
+      "notes": "Legacy play endpoint"
+    },
+    {
+      "path": "/settings",
+      "methods": ["POST"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "Legacy settings endpoint"
+    },
+    {
+      "path": "/torrents",
+      "methods": ["POST"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "Legacy torrent operations"
+    },
+    {
+      "path": "/torrent/upload",
+      "methods": ["POST"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "Torrent file upload"
+    },
+    {
+      "path": "/cache",
+      "methods": ["POST"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "Cache operations"
+    },
+    {
+      "path": "/viewed",
+      "methods": ["POST"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "Viewed history operations"
+    },
+    {
+      "path": "/download/:size",
+      "methods": ["GET"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "Download endpoint"
+    },
+    {
+      "path": "/playlist",
+      "methods": ["GET"],
+      "auth": "none",
+      "status": "compatible",
+      "notes": "M3U playlist"
+    },
+    {
+      "path": "/playlist/*fname",
+      "methods": ["GET"],
+      "auth": "none",
+      "status": "compatible",
+      "notes": "M3U playlist for specific file"
+    },
+    {
+      "path": "/playlistall/all.m3u",
+      "methods": ["GET"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "All playlists combined"
+    },
+    {
+      "path": "/torznab/search/*query",
+      "methods": ["GET"],
+      "auth": "conditional",
+      "status": "divergent",
+      "notes": "Public if SearchWA=true (config), protected otherwise. Upstream was always protected."
+    },
+    {
+      "path": "/torznab/test",
+      "methods": ["POST"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "Torznab test endpoint"
+    },
+    {
+      "path": "/storage/settings",
+      "methods": ["GET", "POST"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "Storage settings"
+    },
+    {
+      "path": "/tmdb/settings",
+      "methods": ["GET"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "TMDB settings (new in V2)"
+    },
+    {
+      "path": "/shutdown",
+      "methods": ["GET"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "Shutdown endpoint"
+    },
+    {
+      "path": "/shutdown/*reason",
+      "methods": ["GET"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "Shutdown with reason"
+    },
+    {
+      "path": "/ffp/:hash/:id",
+      "methods": ["GET"],
+      "auth": "required",
+      "status": "compatible",
+      "notes": "FFprobe endpoint"
+    }
+  ],
+  "divergent_endpoints": [
+    {
+      "path": "/torznab/search/*query",
+      "divergence": "Auth policy configurable via SearchWA",
+      "upstream": "Always protected",
+      "local": "Configurable (SearchWA=true -> public)"
+    }
+  ],
+  "removed_endpoints": [
+    {
+      "path": "/search/*query",
+      "reason": "Rutor search removed per product decision",
+      "status": "intentionally_removed"
+    }
+  ]
+}

@@ -1,0 +1,184 @@
+# TorrServer .gitignore
+
+# =============================================================================
+# RUNTIME DATA 
+# =============================================================================
+
+# CONFIG directory - runtime data (БД, сертификаты, настройки)
+CONFIG/*.db
+CONFIG/*.json
+CONFIG/*.key
+CONFIG/*.pem
+CONFIG/*.jsonl
+CONFIG/*.ls
+CONFIG/accs.db
+
+# LOGS directory - логи работы
+LOGS/*.log
+LOGS/*.txt
+
+# TORRENTS directory - кэш торрентов
+TORRENTS/
+*.torrent
+
+# MEDIA directory - медиа файлы
+MEDIA/
+
+# =============================================================================
+# BUILD ARTIFACTS - Результаты сборки
+# =============================================================================
+
+# Go build
+dist/
+build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Node.js (web-vite)
+web-vite/node_modules/
+web-vite/build/
+web-vite/dist/
+
+# Old web
+web/node_modules/
+web/build/
+
+# =============================================================================
+# IDE AND EDITORS
+# =============================================================================
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VS Code
+.vscode/
+*.swp
+*.swo
+*~
+
+# Vim
+*.swp
+*.swo
+*.swn
+*.un~
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# =============================================================================
+# OS FILES
+# =============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# =============================================================================
+# TEST AND COVERAGE
+# =============================================================================
+
+# Test artifacts
+server/artifacts/
+server/benchmarks/
+coverage.out
+coverage.html
+*.cover
+*.test
+
+# =============================================================================
+# LOCAL CONFIGS - Локальные конфигурации
+# =============================================================================
+
+# Auth files
+accs.db
+
+# Local configs
+*.cfg
+*.local
+*.local.example
+
+# =============================================================================
+# DOCKER
+# =============================================================================
+
+# Docker compose (локальные)
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Docker volumes (данные)
+.docker-data/
+
+# =============================================================================
+# DOCUMENTATION
+# =============================================================================
+
+# Analysis documents (internal research/analysis)
+ANALYSIS/
+
+# Temporary docs
+*.tmp.md
+*.draft.md
+
+# =============================================================================
+# SECRETS
+# =============================================================================
+
+# Secrets and keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# =============================================================================
+# MISCELLANEOUS
+# =============================================================================
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Cache
+.cache/
+.parrot/
+*.cache
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Go workspace
+go.work
+go.work.sum

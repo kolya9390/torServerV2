@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+!README.md
+!CHANGELOG.md
+server/docs/doc
+ANALYSIS/
+
+# Development - OLD legacy web (use web-vite instead)
+web/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+*.exe
+*.log
+
+# Test files
+*_test.go
+server/artifacts/
+server/benchmarks/
+server/scripts/
+
+# Local config
+accs.db
+config.db
+*.cfg
+
+# Docker
+.dockerignore
+docker-compose*.yml
+
+# Node modules (will be rebuilt in Docker)
+web-vite/node_modules/
+web/node_modules/
