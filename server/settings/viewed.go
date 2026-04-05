@@ -2,8 +2,6 @@ package settings
 
 import (
 	"encoding/json"
-
-	"server/log"
 )
 
 type Viewed struct {
@@ -37,9 +35,6 @@ func SetViewed(vv *Viewed) {
 			}
 		}
 	}
-	if err != nil {
-		log.TLogln("Error set viewed:", err)
-	}
 }
 
 func RemViewed(vv *Viewed) {
@@ -61,23 +56,14 @@ func RemViewed(vv *Viewed) {
 			tdb.Rem("Viewed", vv.Hash)
 		}
 	}
-	if err != nil {
-		log.TLogln("Error rem viewed:", err)
-	}
 }
 
 func ListViewed(hash string) []*Viewed {
-	log.TLogln("ListViewed called with hash:", hash)
-	log.TLogln("tdb is nil?", tdb == nil)
-
 	if tdb == nil {
-		log.TLogln("ListViewed: tdb is nil, returning empty")
 		return []*Viewed{}
 	}
 
-	log.TLogln("ListViewed: calling tdb.Get")
 	buf := tdb.Get("Viewed", hash)
-	log.TLogln("ListViewed: got buf, len:", len(buf))
 	if len(buf) == 0 {
 		return []*Viewed{}
 	}

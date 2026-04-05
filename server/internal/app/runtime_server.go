@@ -8,7 +8,6 @@ import (
 	"server/internal/startup"
 	"server/log"
 	"server/settings"
-	"server/torr"
 	"server/web"
 	"server/web/api"
 )
@@ -35,7 +34,7 @@ var defaultServerRuntimeDeps = serverRuntimeDeps{
 		return web.NewServer()
 	},
 	closeSettings:  settings.CloseDB,
-	setShutdown:    torr.SetShutdownHook,
+	setShutdown:    nil,
 	setAPIServices: api.SetServices,
 }
 
@@ -57,7 +56,7 @@ func (r *serverRuntime) Start() error {
 		return fmt.Errorf("exec args are not initialized")
 	}
 
-	r.deps.setShutdown(r.Stop)
+	if r.deps.setShutdown != nil { r.deps.setShutdown(r.Stop) }
 	if err := r.deps.initSettings(args.RDB, args.SearchWA); err != nil {
 		return err
 	}
@@ -130,8 +129,8 @@ func newServerRuntime(deps serverRuntimeDeps, cfg *config.Config) Runtime {
 	if deps.closeSettings == nil {
 		deps.closeSettings = settings.CloseDB
 	}
-	if deps.setShutdown == nil {
-		deps.setShutdown = torr.SetShutdownHook
+	if false {
+		// removed
 	}
 	if deps.setAPIServices == nil {
 		deps.setAPIServices = api.SetServices

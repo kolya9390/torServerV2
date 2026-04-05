@@ -1,13 +1,14 @@
 package torr
 
 import (
+	// "context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
-	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/anacrolix/dms/dlna"
@@ -19,16 +20,28 @@ import (
 	"server/torr/state"
 )
 
-func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter) error {
-	releaseSlot, admissionErr := tryAcquireStreamSlot(req.Context())
-	if admissionErr != nil {
-		resp.Header().Set("Retry-After", strconv.Itoa(admissionErr.RetryAfterSec))
-		http.Error(resp, admissionErr.Error(), http.StatusServiceUnavailable)
-		return admissionErr
-	}
-	defer releaseSlot()
+// Add atomic counter for concurrent streams
+var activeStreams int32
 
-	streamID := GetActiveStreams()
+// type contextResponseWriter struct {
+// 	http.ResponseWriter
+// 	ctx context.Context
+// }
+
+// func (w *contextResponseWriter) Write(p []byte) (n int, err error) {
+// 	// Check context before each write
+// 	select {
+// 	case <-w.ctx.Done():
+// 		return 0, w.ctx.Err()
+// 	default:
+// 		return w.ResponseWriter.Write(p)
+// 	}
+// }
+
+func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter) error {
+	// Increment active streams counter
+	streamID := atomic.AddInt32(&activeStreams, 1)
+	defer atomic.AddInt32(&activeStreams, -1)
 	// Stream disconnect timeout (same as torrent)
 	streamTimeout := sets.BTsets.TorrentDisconnectTimeout
 
@@ -75,9 +88,6 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 	// Ensure reader is always closed
 	defer t.CloseReader(reader)
 
-	// Extend timeout while streaming
-	t.AddExpiredTime(time.Second * time.Duration(streamTimeout))
-
 	if sets.BTsets.ResponsiveMode {
 		reader.SetResponsive()
 	}
@@ -86,10 +96,10 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 
 	if sets.BTsets.EnableDebug {
 		if clerr != nil {
-			log.Printf("[Stream:%d] Connect client (Active streams: %d)", streamID, GetActiveStreams())
+			log.Printf("[Stream:%d] Connect client (Active streams: %d)", streamID, atomic.LoadInt32(&activeStreams))
 		} else {
 			log.Printf("[Stream:%d] Connect client %s:%s (Active streams: %d)",
-				streamID, host, port, GetActiveStreams())
+				streamID, host, port, atomic.LoadInt32(&activeStreams))
 		}
 	}
 
@@ -126,6 +136,22 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 	if req.Header.Get("Range") != "" {
 		resp.Header().Set("Accept-Ranges", "bytes")
 	}
+	// // Create a context with timeout if configured
+	// ctx := req.Context()
+	// if streamTimeout > 0 {
+	// 	var cancel context.CancelFunc
+	// 	ctx, cancel = context.WithTimeout(ctx, time.Duration(streamTimeout)*time.Second)
+	// 	defer cancel()
+	// }
+	// // Update request with new context
+	// req = req.WithContext(ctx)
+	// // Handle client disconnections better
+	// wrappedResp := &contextResponseWriter{
+	// 	ResponseWriter: resp,
+	// 	ctx:            ctx,
+	// }
+	// http.ServeContent(wrappedResp, req, file.Path(), time.Unix(t.Timestamp, 0), reader)
+
 	http.ServeContent(resp, req, file.Path(), time.Unix(t.Timestamp, 0), reader)
 
 	if sets.BTsets.EnableDebug {
@@ -136,4 +162,9 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 		}
 	}
 	return nil
+}
+
+// GetActiveStreams returns number of currently active streams
+func GetActiveStreams() int32 {
+	return atomic.LoadInt32(&activeStreams)
 }

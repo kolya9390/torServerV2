@@ -315,6 +315,10 @@ func loadBTSets() {
 			if loaded.TorrentDisconnectTimeout == 0 {
 				loaded.TorrentDisconnectTimeout = 30
 			}
+			// ResponsiveMode is critical for streaming — default to true.
+			if !loaded.ResponsiveMode {
+				loaded.ResponsiveMode = true
+			}
 			loaded.CoreProfile = normalizeCoreProfile(loaded.CoreProfile)
 			if loaded.StreamQueueWaitSec <= 0 {
 				loaded.StreamQueueWaitSec = 3

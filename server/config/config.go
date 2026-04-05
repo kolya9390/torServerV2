@@ -314,7 +314,10 @@ func (c *Config) ApplyToBTSets(sets *settings.BTSets) {
 		ImageURLRu: c.TMDB.ImageURLRu,
 	}
 
-	sets.ResponsiveMode = c.Stream.ResponsiveMode
+	// ResponsiveMode is critical for streaming — never disable it via config defaults.
+	if c.Stream.ResponsiveMode {
+		sets.ResponsiveMode = c.Stream.ResponsiveMode
+	}
 	sets.CoreProfile = c.Stream.CoreProfile
 	sets.MaxConcurrentStreams = c.Stream.MaxConcurrentStreams
 	sets.StreamQueueSize = c.Stream.StreamQueueSize

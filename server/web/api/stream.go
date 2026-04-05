@@ -74,6 +74,14 @@ func stream(c *gin.Context) {
 		return
 	}
 
+	// Legacy compat: if preload is present without explicit play,
+	// treat it as play+preload (original TorrServer behavior).
+	if preload && !stat && !m3u && !save {
+		play = true
+		streamPlay(c)
+		return
+	}
+
 	notAuth := c.GetBool("auth_required") && c.GetString(gin.AuthUserKey) == ""
 
 	if notAuth {

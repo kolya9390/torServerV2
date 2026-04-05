@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"server/torr/state"
 	"server/torrshash"
 	"strings"
 
@@ -107,12 +108,30 @@ func addTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 		}
 	}
 
+	hashHex := torrSpec.InfoHash.HexString()
+	// Fast path for chatty clients: if torrent is already active in memory,
+	// don't call Add again (can block under heavy concurrent stream load).
+	log.TLogln("[TRACE] addTorrent: before Torrents.Get, hash=", hashHex)
+	existing := svc.Torrents.Get(hashHex)
+	log.TLogln("[TRACE] addTorrent: after Torrents.Get, hash=", hashHex, " tor=", existing != nil)
+	if existing != nil && existing.Stat != state.TorrentInDB {
+		if req.SaveToDB {
+			log.TLogln("[TRACE] addTorrent: enqueue save_to_db finalize, hash=", hashHex)
+			_ = svc.Torrents.EnqueueMetadataFinalize(existing, existing.TorrentSpec, true)
+		}
+		log.TLogln("[TRACE] addTorrent: returning fast-path status, hash=", hashHex)
+		c.JSON(200, existing.Status())
+		return
+	}
+
+	log.TLogln("[DEBUG] addTorrent: calling Torrents.Add, hash=", hashHex)
 	tor, err := svc.Torrents.Add(torrSpec, req.Title, req.Poster, req.Data, req.Category)
 	if err != nil {
 		log.TLogln("error add torrent:", err)
 		abortAPIError(c, http.StatusInternalServerError, newInternalError("failed to add torrent", err))
 		return
 	}
+	log.TLogln("[DEBUG] addTorrent: Torrents.Add succeeded, hash=", hashHex)
 
 	_ = svc.Torrents.EnqueueMetadataFinalize(tor, torrSpec, req.SaveToDB)
 
@@ -130,9 +149,12 @@ func getTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "is required for action=get"))
 		return
 	}
+	log.TLogln("[TRACE] getTorrent: before Torrents.Get, hash=", req.Hash)
 	tor := svc.Torrents.Get(req.Hash)
+	log.TLogln("[TRACE] getTorrent: after Torrents.Get, hash=", req.Hash, " tor=", tor != nil)
 
 	if tor != nil {
+		log.TLogln("[TRACE] getTorrent: using status, hash=", req.Hash)
 		st := tor.Status()
 		c.JSON(200, st)
 	} else {

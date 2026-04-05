@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/anacrolix/torrent"
@@ -39,27 +38,6 @@ type Cache struct {
 	isClosed bool
 	muRemove sync.Mutex
 	torrent  *torrent.Torrent
-
-	warmLimitBytes int64
-	warmTTL        time.Duration
-	janitorStop    chan struct{}
-	diskWriter     *diskWritePipeline
-
-	hotHits       atomic.Uint64
-	warmHits      atomic.Uint64
-	misses        atomic.Uint64
-	hotEvictions  atomic.Uint64
-	warmEvictions atomic.Uint64
-
-	cleanupScheduled atomic.Bool
-}
-
-type MetricsSnapshot struct {
-	HotHits       uint64
-	WarmHits      uint64
-	Misses        uint64
-	HotEvictions  uint64
-	WarmEvictions uint64
 }
 
 func NewCache(capacity int64, storage *Storage) *Cache {
@@ -83,22 +61,6 @@ func (c *Cache) Init(info *metainfo.Info, hash metainfo.Hash) {
 	c.pieceLength = info.PieceLength
 	c.pieceCount = info.NumPieces()
 	c.hash = hash
-	c.janitorStop = make(chan struct{})
-
-	if settings.BTsets.UseDisk {
-		c.warmTTL = time.Duration(settings.BTsets.WarmDiskCacheTTLMin) * time.Minute
-		if settings.BTsets.WarmDiskCacheSizeMB > 0 {
-			c.warmLimitBytes = settings.BTsets.WarmDiskCacheSizeMB << 20
-		} else {
-			// Auto policy: keep up to 4x RAM cache on warm disk.
-			c.warmLimitBytes = c.capacity * 4
-		}
-		c.diskWriter = newDiskWritePipeline(diskWriteConfig{
-			syncPolicy:   settings.BTsets.DiskSyncPolicy,
-			syncInterval: time.Duration(settings.BTsets.DiskSyncIntervalMS) * time.Millisecond,
-			batchSize:    settings.BTsets.DiskWriteBatchSize,
-		})
-	}
 
 	if settings.BTsets.UseDisk {
 		name := filepath.Join(settings.BTsets.TorrentsSavePath, hash.HexString())
@@ -110,10 +72,6 @@ func (c *Cache) Init(info *metainfo.Info, hash metainfo.Hash) {
 
 	for i := 0; i < c.pieceCount; i++ {
 		c.pieces[i] = NewPiece(i, c)
-	}
-
-	if settings.BTsets.UseDisk {
-		go c.warmJanitor()
 	}
 }
 
@@ -135,22 +93,18 @@ func (c *Cache) Close() error {
 		log.TLogln("Close cache for:", c.hash)
 	}
 	c.isClosed = true
-	if c.janitorStop != nil {
-		close(c.janitorStop)
-	}
-	if c.diskWriter != nil {
-		c.diskWriter.Close()
-	}
+
+	delete(c.storage.caches, c.hash)
 
 	if settings.BTsets.RemoveCacheOnDrop {
 		name := filepath.Join(settings.BTsets.TorrentsSavePath, c.hash.HexString())
 		if name != "" && name != "/" {
 			for _, v := range c.pieces {
 				if v.dPiece != nil {
-					_ = os.Remove(v.dPiece.name)
+					os.Remove(v.dPiece.name)
 				}
 			}
-			_ = os.Remove(name)
+			os.Remove(name)
 		}
 	}
 
@@ -257,37 +211,14 @@ func (c *Cache) cleanPieces() {
 	}
 }
 
-func (c *Cache) scheduleCleanPieces() {
-	if c == nil || c.isClosed {
-		return
-	}
-	if !c.cleanupScheduled.CompareAndSwap(false, true) {
-		return
-	}
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.TLogln("cache cleanPieces goroutine panic recovered", "panic", r)
-			}
-		}()
-		defer c.cleanupScheduled.Store(false)
-		c.cleanPieces()
-	}()
-}
-
 func (c *Cache) getRemPieces() []*Piece {
-	type pieceCandidate struct {
-		piece    *Piece
-		accessed int64
-	}
-	piecesRemove := make([]pieceCandidate, 0)
+	piecesRemove := make([]*Piece, 0)
 	fill := int64(0)
 
 	ranges := make([]Range, 0)
 	c.muReaders.Lock()
-	readersCount := len(c.readers)
 	for r := range c.readers {
-		r.checkReader(readersCount)
+		r.checkReader()
 		if r.isUse {
 			ranges = append(ranges, r.getPiecesRange())
 		}
@@ -296,20 +227,19 @@ func (c *Cache) getRemPieces() []*Piece {
 	ranges = mergeRange(ranges)
 
 	for id, p := range c.pieces {
-		size, accessed := p.HotState()
-		if size > 0 {
-			fill += size
+		if p.Size > 0 {
+			fill += p.Size
 		}
 		if len(ranges) > 0 {
 			if !inRanges(ranges, id) {
-				if size > 0 && !c.isIdInFileBE(ranges, id) {
-					piecesRemove = append(piecesRemove, pieceCandidate{piece: p, accessed: accessed})
+				if p.Size > 0 && !c.isIdInFileBE(ranges, id) {
+					piecesRemove = append(piecesRemove, p)
 				}
 			}
 		} else {
 			// on preload clean
-			if size > 0 && !c.isIdInFileBE(ranges, id) {
-				piecesRemove = append(piecesRemove, pieceCandidate{piece: p, accessed: accessed})
+			if p.Size > 0 && !c.isIdInFileBE(ranges, id) {
+				piecesRemove = append(piecesRemove, p)
 			}
 		}
 	}
@@ -318,86 +248,14 @@ func (c *Cache) getRemPieces() []*Piece {
 	c.setLoadPriority(ranges)
 
 	sort.Slice(piecesRemove, func(i, j int) bool {
-		return piecesRemove[i].accessed < piecesRemove[j].accessed
+		return piecesRemove[i].Accessed < piecesRemove[j].Accessed
 	})
 
 	c.filled = fill
-	ret := make([]*Piece, 0, len(piecesRemove))
-	for _, candidate := range piecesRemove {
-		ret = append(ret, candidate.piece)
-	}
-	return ret
-}
-
-func (c *Cache) warmJanitor() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			c.cleanWarmPieces()
-		case <-c.janitorStop:
-			return
-		}
-	}
-}
-
-func (c *Cache) cleanWarmPieces() {
-	if c == nil || !settings.BTsets.UseDisk || c.isClosed || c.warmLimitBytes <= 0 {
-		return
-	}
-
-	ranges := make([]Range, 0)
-	c.muReaders.Lock()
-	readersCount := len(c.readers)
-	for r := range c.readers {
-		r.checkReader(readersCount)
-		if r.isUse {
-			ranges = append(ranges, r.getPiecesRange())
-		}
-	}
-	c.muReaders.Unlock()
-	ranges = mergeRange(ranges)
-
-	now := time.Now()
-	warmFilled := int64(0)
-	candidates := make([]*Piece, 0)
-
-	for id, p := range c.pieces {
-		if p.WarmSize <= 0 {
-			continue
-		}
-		warmFilled += p.WarmSize
-		if inRanges(ranges, id) || c.isIdInFileBE(ranges, id) {
-			continue
-		}
-		if c.warmTTL > 0 && p.WarmAccessed > 0 && now.Sub(time.Unix(p.WarmAccessed, 0)) > c.warmTTL {
-			warmFilled -= p.WarmSize
-			p.ReleaseWarm()
-			continue
-		}
-		candidates = append(candidates, p)
-	}
-
-	if warmFilled <= c.warmLimitBytes {
-		return
-	}
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].WarmAccessed < candidates[j].WarmAccessed
-	})
-	for _, p := range candidates {
-		if warmFilled <= c.warmLimitBytes {
-			break
-		}
-		warmFilled -= p.WarmSize
-		p.ReleaseWarm()
-	}
+	return piecesRemove
 }
 
 func (c *Cache) setLoadPriority(ranges []Range) {
-	if c.torrent == nil {
-		return
-	}
 	c.muReaders.Lock()
 	for r := range c.readers {
 		if !r.isUse {
@@ -496,15 +354,11 @@ func (c *Cache) CloseReader(r *Reader) {
 }
 
 func (c *Cache) clearPriority() {
-	if c.torrent == nil {
-		return
-	}
 	time.Sleep(time.Second)
 	ranges := make([]Range, 0)
 	c.muReaders.Lock()
-	readersCount := len(c.readers)
 	for r := range c.readers {
-		r.checkReader(readersCount)
+		r.checkReader()
 		if r.isUse {
 			ranges = append(ranges, r.getPiecesRange())
 		}
@@ -532,55 +386,4 @@ func (c *Cache) GetCapacity() int64 {
 		return 0
 	}
 	return c.capacity
-}
-
-func (c *Cache) CurrentReadahead() int64 {
-	if c == nil {
-		return 0
-	}
-	c.muReaders.Lock()
-	defer c.muReaders.Unlock()
-	var maxRA int64
-	for r := range c.readers {
-		if !r.isUse {
-			continue
-		}
-		if ra := r.Readahead(); ra > maxRA {
-			maxRA = ra
-		}
-	}
-	return maxRA
-}
-
-func (c *Cache) incHotHit() {
-	c.hotHits.Add(1)
-}
-
-func (c *Cache) incWarmHit() {
-	c.warmHits.Add(1)
-}
-
-func (c *Cache) incMiss() {
-	c.misses.Add(1)
-}
-
-func (c *Cache) incHotEviction() {
-	c.hotEvictions.Add(1)
-}
-
-func (c *Cache) incWarmEviction() {
-	c.warmEvictions.Add(1)
-}
-
-func (c *Cache) Metrics() MetricsSnapshot {
-	if c == nil {
-		return MetricsSnapshot{}
-	}
-	return MetricsSnapshot{
-		HotHits:       c.hotHits.Load(),
-		WarmHits:      c.warmHits.Load(),
-		Misses:        c.misses.Load(),
-		HotEvictions:  c.hotEvictions.Load(),
-		WarmEvictions: c.warmEvictions.Load(),
-	}
 }

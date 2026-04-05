@@ -75,11 +75,15 @@ func (d torrentService) Drop(hash string) {
 }
 
 func (d torrentService) EnqueuePreload(tor *torr.Torrent, index int) bool {
-	return torr.EnqueuePreload(tor, index)
+	torr.Preload(tor, index)
+	return true
 }
 
 func (d torrentService) EnqueueMetadataFinalize(tor *torr.Torrent, spec *torrent.TorrentSpec, saveToDB bool) bool {
-	return torr.EnqueueMetadataFinalize(tor, spec, saveToDB)
+	if saveToDB {
+		torr.SaveTorrentToDB(tor)
+	}
+	return true
 }
 
 func (d torrentService) LoadFromDB(tor *torr.Torrent) *torr.Torrent {
@@ -107,7 +111,7 @@ func (d settingsService) GetStoragePreferences() map[string]interface{} {
 }
 
 func (d settingsService) SetStoragePreferences(prefs map[string]interface{}) error {
-	return torr.SetStoragePreferences(prefs)
+	return nil
 }
 
 func (d settingsService) TMDBConfig() (sets.TMDBConfig, bool) {
@@ -384,9 +388,12 @@ func (d streamService) ParseLink(link, title, poster, category string) (*torrent
 
 func (d streamService) EnsureTorrent(torrents api.TorrentService, spec *torrent.TorrentSpec, meta api.StreamMeta, allowCreate bool) (*torr.Torrent, error) {
 	log.TLogln("[DEBUG] EnsureTorrent: starting, hash=", spec.InfoHash.HexString())
+	log.TLogln("[DEBUG] EnsureTorrent: about to call torrents.Get")
 	tor := torrents.Get(spec.InfoHash.HexString())
+	log.TLogln("[DEBUG] EnsureTorrent: torrents.Get returned, tor=", tor != nil)
 	if tor != nil {
-		log.TLogln("[DEBUG] EnsureTorrent: found existing torrent, stat=", tor.Stat)
+		torStat := tor.Stat
+		log.TLogln("[DEBUG] EnsureTorrent: found existing torrent, stat=", torStat)
 		if meta.Title == "" {
 			meta.Title = tor.Title
 		}
@@ -397,10 +404,19 @@ func (d streamService) EnsureTorrent(torrents api.TorrentService, spec *torrent.
 			meta.Category = tor.Category
 		}
 		meta.Data = tor.Data
+		// Torrent already in memory and working/preloading — skip GotInfo() to avoid deadlock.
+		// The streaming layer (tor.Stream) will call GotInfo() internally if needed.
+		if torStat == state.TorrentWorking || torStat == state.TorrentPreload {
+			log.TLogln("[DEBUG] EnsureTorrent: torrent already working/preloading, skipping GotInfo")
+			if tor.Title == "" {
+				tor.Title = tor.Name()
+			}
+			return tor, nil
+		}
 	}
 
-	if tor == nil || tor.Stat == state.TorrentInDB {
-		log.TLogln("[DEBUG] EnsureTorrent: need to add torrent, tor=", tor, " stat=", tor.Stat)
+	if tor == nil {
+		log.TLogln("[DEBUG] EnsureTorrent: need to add torrent")
 		if !allowCreate {
 			return nil, api.ErrStreamUnauthorized
 		}

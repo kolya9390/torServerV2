@@ -65,6 +65,28 @@ func ListTorrent() []*TorrentDB {
 	return list
 }
 
+func GetTorrent(hash metainfo.Hash) *TorrentDB {
+	// Use read lock to prevent migration during read.
+	dbMigrationLock.RLock()
+	defer dbMigrationLock.RUnlock()
+
+	if tdb == nil {
+		return nil
+	}
+
+	buf := tdb.Get("Torrents", hash.HexString())
+	if len(buf) == 0 {
+		return nil
+	}
+
+	var torr *TorrentDB
+	if err := json.Unmarshal(buf, &torr); err != nil {
+		return nil
+	}
+
+	return torr
+}
+
 func RemTorrent(hash metainfo.Hash) {
 	mu.Lock()
 	defer mu.Unlock()

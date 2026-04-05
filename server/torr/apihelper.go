@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/anacrolix/torrent"
@@ -16,20 +15,9 @@ import (
 )
 
 var bts *BTServer
-var (
-	shutdownHook   func()
-	shutdownHookMu sync.RWMutex
-)
 
 func InitApiHelper(bt *BTServer) {
 	bts = bt
-	ensureJournalRecovered()
-}
-
-func SetShutdownHook(fn func()) {
-	shutdownHookMu.Lock()
-	defer shutdownHookMu.Unlock()
-	shutdownHook = fn
 }
 
 func LoadTorrent(tor *Torrent) *Torrent {
@@ -63,7 +51,7 @@ func AddTorrent(spec *torrent.TorrentSpec, title, poster string, data string, ca
 		if title == "" && torDB != nil {
 			torr.Title = torDB.Title
 		}
-		if torr.Title == "" && torr.Torrent != nil && torr.Info() != nil {
+		if torr.Title == "" && torr.Torrent != nil && torr.Torrent.Info() != nil {
 			torr.Title = torr.Info().Name
 		}
 	}
@@ -93,37 +81,18 @@ func AddTorrent(spec *torrent.TorrentSpec, title, poster string, data string, ca
 }
 
 func SaveTorrentToDB(torr *Torrent) {
-	jid := beginJournalOperation(journalOpSaveTorrentDB, snapshotTorrentDB(torr))
 	log.TLogln("save to db:", torr.Hash())
 	AddTorrentDB(torr)
-	commitJournalOperation(jid, journalOpSaveTorrentDB, snapshotTorrentDB(torr))
 }
 
 func GetTorrent(hashHex string) *Torrent {
-	if sets.BTsets == nil {
-		return nil
-	}
-	hash, ok := parseHashHex(hashHex)
-	if !ok {
-		return nil
-	}
-	if sets.BTsets == nil || bts == nil {
-		return nil
-	}
+	hash := metainfo.NewHashFromHex(hashHex)
 	timeout := time.Second * time.Duration(sets.BTsets.TorrentDisconnectTimeout)
 	if timeout > time.Minute {
 		timeout = time.Minute
 	}
 	tor := bts.GetTorrent(hash)
 	if tor != nil {
-		// Проверяем есть ли Info у торрента
-		if !tor.GotInfo() {
-			// Ждем Info с таймаутом 10 секунд
-			if !waitForInfo(tor, 10*time.Second) {
-				log.TLogln("GetTorrent timeout waiting for info:", hashHex)
-				return nil
-			}
-		}
 		tor.AddExpiredTime(timeout)
 		return tor
 	}
@@ -131,77 +100,38 @@ func GetTorrent(hashHex string) *Torrent {
 	tr := GetTorrentDB(hash)
 	if tr != nil {
 		tor = tr
-		if queued := EnqueueTorrentActivateFromDB(tor); !queued {
-			log.TLogln("failed to enqueue torrent activate from DB", "hash", hashHex)
-		}
+		go func() {
+			log.TLogln("New torrent", tor.Hash())
+			tr, _ := NewTorrent(tor.TorrentSpec, bts)
+			if tr != nil {
+				tr.Title = tor.Title
+				tr.Poster = tor.Poster
+				tr.Data = tor.Data
+				tr.Size = tor.Size
+				tr.Timestamp = tor.Timestamp
+				tr.Category = tor.Category
+				tr.GotInfo()
+			}
+		}()
 	}
 	return tor
 }
 
-// waitForInfo ждет получения Info от торрента с таймаутом
-func waitForInfo(tor *Torrent, timeout time.Duration) bool {
-	if tor == nil {
-		return false
-	}
-
-	done := make(chan bool, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.TLogln("waitForInfo panic recovered", "panic", r)
-				done <- false
-			}
-		}()
-		done <- tor.GotInfo()
-	}()
-
-	select {
-	case gotInfo := <-done:
-		return gotInfo
-	case <-time.After(timeout):
-		return false
-	}
-}
-
 func SetTorrent(hashHex, title, poster, category string, data string) *Torrent {
-	if sets.BTsets == nil {
-		return nil
-	}
-	hash, ok := parseHashHex(hashHex)
-	if !ok {
-		return nil
-	}
-	if bts == nil {
-		torrDb := GetTorrentDB(hash)
-		if torrDb != nil {
-			torrDb.Title = title
-			torrDb.Poster = poster
-			torrDb.Category = category
-			if data != "" {
-				torrDb.Data = data
-			}
-			AddTorrentDB(torrDb)
-		}
-		return torrDb
-	}
+	hash := metainfo.NewHashFromHex(hashHex)
 	torr := bts.GetTorrent(hash)
 	torrDb := GetTorrentDB(hash)
 
 	if title == "" && torr == nil && torrDb != nil {
 		torr = GetTorrent(hashHex)
-		if torr != nil {
-			// Ждём Info с таймаутом 5 секунд
-			if !waitForInfo(torr, 5*time.Second) {
-				log.TLogln("SetTorrent timeout waiting for info:", hashHex)
-			}
-		}
-		if torr != nil && torr.Torrent != nil && torr.Info() != nil {
+		torr.GotInfo()
+		if torr.Torrent != nil && torr.Torrent.Info() != nil {
 			title = torr.Info().Name
 		}
 	}
 
 	if torr != nil {
-		if title == "" && torr.Torrent != nil && torr.Info() != nil {
+		if title == "" && torr.Torrent != nil && torr.Torrent.Info() != nil {
 			title = torr.Info().Name
 		}
 		torr.Title = title
@@ -229,26 +159,17 @@ func SetTorrent(hashHex, title, poster, category string, data string) *Torrent {
 }
 
 func RemTorrent(hashHex string) {
-	if sets.BTsets == nil {
-		return
-	}
 	if sets.ReadOnly {
 		log.TLogln("API RemTorrent: Read-only DB mode!", hashHex)
 		return
 	}
-	hash, ok := parseHashHex(hashHex)
-	if !ok {
-		return
-	}
-	jid := beginJournalOperation(journalOpRemoveTorrentDB, hashPayload{Hash: hashHex})
-	if bts != nil && bts.RemoveTorrent(hash) {
-		if sets.BTsets != nil && sets.BTsets.UseDisk && hashHex != "" && hashHex != "/" {
+	hash := metainfo.NewHashFromHex(hashHex)
+	if bts.RemoveTorrent(hash) {
+		if sets.BTsets.UseDisk && hashHex != "" && hashHex != "/" {
 			name := filepath.Join(sets.BTsets.TorrentsSavePath, hashHex)
 			ff, _ := os.ReadDir(name)
 			for _, f := range ff {
-				if err := os.Remove(filepath.Join(name, f.Name())); err != nil {
-					log.TLogln("failed to remove file in torrent dir", "file", f.Name(), "err", err)
-				}
+				os.Remove(filepath.Join(name, f.Name()))
 			}
 			err := os.Remove(name)
 			if err != nil {
@@ -257,44 +178,10 @@ func RemTorrent(hashHex string) {
 		}
 	}
 	RemTorrentDB(hash)
-	commitJournalOperation(jid, journalOpRemoveTorrentDB, hashPayload{Hash: hashHex})
 }
 
 func ListTorrent() []*Torrent {
-	if sets.BTsets == nil {
-		return []*Torrent{}
-	}
-	if bts == nil {
-		dblist := ListTorrentsDB()
-		ret := make([]*Torrent, 0, len(dblist))
-		for _, t := range dblist {
-			ret = append(ret, t)
-		}
-		sort.Slice(ret, func(i, j int) bool {
-			if ret[i].Timestamp != ret[j].Timestamp {
-				return ret[i].Timestamp > ret[j].Timestamp
-			}
-			return ret[i].Title > ret[j].Title
-		})
-		return ret
-	}
-
-	// Get torrent list with timeout to avoid blocking
-	btlist := make(map[metainfo.Hash]*Torrent)
-	done := make(chan struct{}, 1)
-	go func() {
-		btlist = bts.ListTorrents()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// Got the list successfully
-	case <-time.After(5 * time.Second):
-		log.TLogln("ListTorrent timeout - returning cached list from DB")
-		btlist = make(map[metainfo.Hash]*Torrent)
-	}
-
+	btlist := bts.ListTorrents()
 	dblist := ListTorrentsDB()
 
 	for hash, t := range dblist {
@@ -302,7 +189,7 @@ func ListTorrent() []*Torrent {
 			btlist[hash] = t
 		}
 	}
-	ret := make([]*Torrent, 0, len(btlist))
+	var ret []*Torrent
 
 	for _, t := range btlist {
 		ret = append(ret, t)
@@ -320,29 +207,8 @@ func ListTorrent() []*Torrent {
 }
 
 func DropTorrent(hashHex string) {
-	if sets.BTsets == nil {
-		return
-	}
-	hash, ok := parseHashHex(hashHex)
-	if !ok {
-		return
-	}
-	if bts == nil {
-		return
-	}
-	jid := beginJournalOperation(journalOpDropTorrent, hashPayload{Hash: hashHex})
+	hash := metainfo.NewHashFromHex(hashHex)
 	bts.RemoveTorrent(hash)
-	commitJournalOperation(jid, journalOpDropTorrent, hashPayload{Hash: hashHex})
-}
-
-func parseHashHex(hashHex string) (hash metainfo.Hash, ok bool) {
-	defer func() {
-		if recover() != nil {
-			ok = false
-		}
-	}()
-	hash = metainfo.NewHashFromHex(hashHex)
-	return hash, true
 }
 
 func SetSettings(set *sets.BTSets) {
@@ -350,8 +216,6 @@ func SetSettings(set *sets.BTSets) {
 		log.TLogln("API SetSettings: Read-only DB mode!")
 		return
 	}
-	setCopy := cloneBTSets(set)
-	jid := beginJournalOperation(journalOpSetSettings, setCopy)
 	sets.SetBTSets(set)
 	log.TLogln("drop all torrents")
 	dropAllTorrent()
@@ -359,12 +223,9 @@ func SetSettings(set *sets.BTSets) {
 	log.TLogln("disconect")
 	bts.Disconnect()
 	log.TLogln("connect")
-	if err := bts.Connect(); err != nil {
-		log.TLogln("connect error:", err)
-	}
+	bts.Connect()
 	time.Sleep(time.Second * 1)
 	log.TLogln("end set settings")
-	commitJournalOperation(jid, journalOpSetSettings, setCopy)
 }
 
 func SetDefSettings() {
@@ -372,7 +233,6 @@ func SetDefSettings() {
 		log.TLogln("API SetDefSettings: Read-only DB mode!")
 		return
 	}
-	jid := beginJournalOperation(journalOpSetDefaultSettings, nil)
 	sets.SetDefaultConfig()
 	log.TLogln("drop all torrents")
 	dropAllTorrent()
@@ -380,22 +240,9 @@ func SetDefSettings() {
 	log.TLogln("disconect")
 	bts.Disconnect()
 	log.TLogln("connect")
-	if err := bts.Connect(); err != nil {
-		log.TLogln("connect error:", err)
-	}
+	bts.Connect()
 	time.Sleep(time.Second * 1)
 	log.TLogln("end set default settings")
-	commitJournalOperation(jid, journalOpSetDefaultSettings, nil)
-}
-
-func SetStoragePreferences(prefs map[string]interface{}) error {
-	jid := beginJournalOperation(journalOpSetStoragePrefs, prefs)
-	err := sets.SetStoragePreferences(prefs)
-	if err != nil {
-		return err
-	}
-	commitJournalOperation(jid, journalOpSetStoragePrefs, prefs)
-	return nil
 }
 
 func dropAllTorrent() {
@@ -406,18 +253,10 @@ func dropAllTorrent() {
 }
 
 func Shutdown() {
-	shutdownHookMu.RLock()
-	hook := shutdownHook
-	shutdownHookMu.RUnlock()
-	if hook != nil {
-		log.TLogln("Received shutdown. Stopping server")
-		hook()
-		return
-	}
-
 	bts.Disconnect()
 	sets.CloseDB()
-	log.TLogln("Received shutdown. Resources closed")
+	log.TLogln("Received shutdown. Quit")
+	os.Exit(0)
 }
 
 func WriteStatus(w io.Writer) {

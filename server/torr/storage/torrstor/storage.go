@@ -14,7 +14,7 @@ type Storage struct {
 
 	caches   map[metainfo.Hash]*Cache
 	capacity int64
-	mu       sync.RWMutex
+	mu       sync.Mutex
 }
 
 func NewStorage(capacity int64) *Storage {
@@ -48,7 +48,7 @@ func (s *Storage) CloseHash(hash metainfo.Hash) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if ch, ok := s.caches[hash]; ok {
-		_ = ch.Close()
+		ch.Close()
 		delete(s.caches, hash)
 	}
 }
@@ -57,15 +57,14 @@ func (s *Storage) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, ch := range s.caches {
-		_ = ch.Close()
+		ch.Close()
 	}
-	s.caches = make(map[metainfo.Hash]*Cache)
 	return nil
 }
 
 func (s *Storage) GetCache(hash metainfo.Hash) *Cache {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if cache, ok := s.caches[hash]; ok {
 		return cache
 	}

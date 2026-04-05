@@ -24,9 +24,9 @@ func NewDiskPiece(p *Piece) *DiskPiece {
 	name := filepath.Join(settings.BTsets.TorrentsSavePath, p.cache.hash.HexString(), strconv.Itoa(p.Id))
 	ff, err := os.Stat(name)
 	if err == nil {
-		p.WarmSize = ff.Size()
+		p.Size = ff.Size()
 		p.Complete = ff.Size() == p.cache.pieceLength
-		p.WarmAccessed = ff.ModTime().Unix()
+		p.Accessed = ff.ModTime().Unix()
 	}
 	return &DiskPiece{piece: p, name: name}
 }
@@ -35,25 +35,19 @@ func (p *DiskPiece) WriteAt(b []byte, off int64) (n int, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.piece.cache.diskWriter != nil {
-		n, err = p.piece.cache.diskWriter.WriteAt(p.name, b, off)
-	} else {
-		ff, openErr := os.OpenFile(p.name, os.O_RDWR|os.O_CREATE, 0o666)
-		if openErr != nil {
-			log.TLogln("Error open file:", openErr)
-			return 0, openErr
-		}
-		defer func() {
-			_ = ff.Close()
-		}()
-		n, err = ff.WriteAt(b, off)
+	ff, err := os.OpenFile(p.name, os.O_RDWR|os.O_CREATE, 0o666)
+	if err != nil {
+		log.TLogln("Error open file:", err)
+		return 0, err
 	}
+	defer ff.Close()
+	n, err = ff.WriteAt(b, off)
 
-	p.piece.WarmSize += int64(n)
-	if p.piece.WarmSize > p.piece.cache.pieceLength {
-		p.piece.WarmSize = p.piece.cache.pieceLength
+	p.piece.Size += int64(n)
+	if p.piece.Size > p.piece.cache.pieceLength {
+		p.piece.Size = p.piece.cache.pieceLength
 	}
-	p.piece.WarmAccessed = time.Now().Unix()
+	p.piece.Accessed = time.Now().Unix()
 	return
 }
 
@@ -69,21 +63,13 @@ func (p *DiskPiece) ReadAt(b []byte, off int64) (n int, err error) {
 		log.TLogln("Error open file:", err)
 		return 0, err
 	}
-	defer func() {
-		_ = ff.Close()
-	}()
+	defer ff.Close()
 
 	n, err = ff.ReadAt(b, off)
-	if err != nil && err != io.EOF {
-		return n, err
-	}
 
-	p.piece.WarmAccessed = time.Now().Unix()
-	if int64(len(b))+off >= p.piece.WarmSize {
-		p.piece.cache.scheduleCleanPieces()
-	}
-	if n == 0 {
-		return 0, io.EOF
+	p.piece.Accessed = time.Now().Unix()
+	if int64(len(b))+off >= p.piece.Size {
+		go p.piece.cache.cleanPieces()
 	}
 	return n, nil
 }
@@ -92,32 +78,8 @@ func (p *DiskPiece) Release() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.piece.WarmSize = 0
+	p.piece.Size = 0
+	p.piece.Complete = false
 
-	_ = os.Remove(p.name)
-}
-
-func (p *DiskPiece) WriteFull(b []byte) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	ff, err := os.OpenFile(p.name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o666)
-	if err != nil {
-		log.TLogln("Error open file:", err)
-		return err
-	}
-	defer func() {
-		_ = ff.Close()
-	}()
-
-	n, err := ff.WriteAt(b, 0)
-	if err != nil {
-		return err
-	}
-	p.piece.WarmSize = int64(n)
-	if p.piece.WarmSize > p.piece.cache.pieceLength {
-		p.piece.WarmSize = p.piece.cache.pieceLength
-	}
-	p.piece.WarmAccessed = time.Now().Unix()
-	return nil
+	os.Remove(p.name)
 }

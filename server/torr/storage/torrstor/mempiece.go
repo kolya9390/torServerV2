@@ -22,17 +22,15 @@ func (p *MemPiece) WriteAt(b []byte, off int64) (n int, err error) {
 	defer p.mu.Unlock()
 
 	if p.buffer == nil {
-		p.piece.cache.scheduleCleanPieces()
-		p.buffer = make([]byte, p.piece.cache.pieceLength)
+		go p.piece.cache.cleanPieces()
+		p.buffer = make([]byte, p.piece.cache.pieceLength, p.piece.cache.pieceLength)
 	}
 	n = copy(p.buffer[off:], b[:])
 	p.piece.Size += int64(n)
 	if p.piece.Size > p.piece.cache.pieceLength {
 		p.piece.Size = p.piece.cache.pieceLength
 	}
-	p.piece.muAccessed.Lock()
 	p.piece.Accessed = time.Now().Unix()
-	p.piece.muAccessed.Unlock()
 	return
 }
 
@@ -51,11 +49,9 @@ func (p *MemPiece) ReadAt(b []byte, off int64) (n int, err error) {
 		return 0, io.EOF
 	}
 	n = copy(b, p.buffer[int(off) : int(off)+size][:])
-	p.piece.muAccessed.Lock()
 	p.piece.Accessed = time.Now().Unix()
-	p.piece.muAccessed.Unlock()
 	if int64(len(b))+off >= p.piece.Size {
-		p.piece.cache.scheduleCleanPieces()
+		go p.piece.cache.cleanPieces()
 	}
 	if n == 0 {
 		return 0, io.EOF
@@ -70,15 +66,5 @@ func (p *MemPiece) Release() {
 		p.buffer = nil
 	}
 	p.piece.Size = 0
-}
-
-func (p *MemPiece) CloneBuffer() ([]byte, bool) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.buffer) == 0 {
-		return nil, false
-	}
-	clone := make([]byte, len(p.buffer))
-	copy(clone, p.buffer)
-	return clone, true
+	p.piece.Complete = false
 }

@@ -1,16 +1,13 @@
 package utils
 
 import (
-	cryptorand "crypto/rand"
 	"encoding/base32"
 	"io"
-	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
-	"time"
 
 	"server/settings"
 
@@ -37,13 +34,6 @@ var defTrackers = []string{
 }
 
 var loadedTrackers []string
-var loadedTrackersMu sync.RWMutex
-var trackerRefreshCh = make(chan struct{}, 1)
-
-func init() {
-	go trackerRefreshWorker()
-	triggerTrackerRefresh()
-}
 
 func GetTrackerFromFile() []string {
 	name := filepath.Join(settings.Path, "trackers.txt")
@@ -62,43 +52,20 @@ func GetTrackerFromFile() []string {
 }
 
 func GetDefTrackers() []string {
-	triggerTrackerRefresh()
-	loadedTrackersMu.RLock()
-	current := append([]string(nil), loadedTrackers...)
-	loadedTrackersMu.RUnlock()
-	if len(current) == 0 {
+	loadNewTracker()
+	if len(loadedTrackers) == 0 {
 		return defTrackers
 	}
-	return current
-}
-
-func triggerTrackerRefresh() {
-	select {
-	case trackerRefreshCh <- struct{}{}:
-	default:
-	}
-}
-
-func trackerRefreshWorker() {
-	for range trackerRefreshCh {
-		loadNewTracker()
-	}
+	return loadedTrackers
 }
 
 func loadNewTracker() {
-	loadedTrackersMu.RLock()
 	if len(loadedTrackers) > 0 {
-		loadedTrackersMu.RUnlock()
 		return
 	}
-	loadedTrackersMu.RUnlock()
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get("https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best_ip.txt")
+	resp, err := http.Get("https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best_ip.txt")
 	if err == nil {
-		defer func() {
-			_ = resp.Body.Close()
-		}()
+		defer resp.Body.Close()
 		buf, err := io.ReadAll(resp.Body)
 		if err == nil {
 			arr := strings.Split(string(buf), "\n")
@@ -109,18 +76,17 @@ func loadNewTracker() {
 					ret = append(ret, s)
 				}
 			}
-			loadedTrackersMu.Lock()
 			loadedTrackers = append(ret, defTrackers...)
-			loadedTrackersMu.Unlock()
 		}
-		return
 	}
-	log.Printf("failed to refresh trackers list: %v", err)
 }
 
 func PeerIDRandom(peer string) string {
 	randomBytes := make([]byte, 32)
-	_, _ = cryptorand.Read(randomBytes)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		panic(err)
+	}
 	return peer + base32.StdEncoding.EncodeToString(randomBytes)[:20-len(peer)]
 }
 
