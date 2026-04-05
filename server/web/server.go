@@ -88,6 +88,16 @@ func (s *Server) Start() error {
 	route.GET("/echo", echo)
 	route.GET("/healthz", healthz)
 	route.GET("/readyz", readyz)
+	// Debug/profiling endpoints (localhost only by default)
+	route.GET("/debug/pprof/", pprofIndex())
+	route.GET("/debug/pprof/profile", pprofProfile())
+	route.GET("/debug/pprof/trace", pprofTrace())
+	route.GET("/debug/pprof/cmdline", pprofCmdline())
+	route.GET("/debug/pprof/symbol", pprofSymbol())
+	route.GET("/debug/pprof/allocs", pprofAllocs())
+	route.GET("/debug/pprof/block", pprofBlock())
+	route.GET("/debug/pprof/mutex", pprofMutex())
+	route.GET("/debug/pprof/threadcreate", pprofThreadcreate())
 	route.GET("/debug/heap", heapHandler())
 	route.GET("/debug/goroutines", goroutinesHandler())
 
@@ -240,3 +250,14 @@ func goroutinesHandler() gin.HandlerFunc {
 		pprof.Handler("goroutine").ServeHTTP(c.Writer, c.Request)
 	}
 }
+
+// pprof wrapper handlers
+func pprofIndex() gin.HandlerFunc        { return gin.WrapF(pprof.Index) }
+func pprofProfile() gin.HandlerFunc      { return gin.WrapF(pprof.Profile) }
+func pprofTrace() gin.HandlerFunc        { return gin.WrapF(pprof.Trace) }
+func pprofCmdline() gin.HandlerFunc      { return gin.WrapF(pprof.Cmdline) }
+func pprofSymbol() gin.HandlerFunc       { return gin.WrapF(pprof.Symbol) }
+func pprofAllocs() gin.HandlerFunc       { return gin.WrapF(pprof.Handler("allocs").ServeHTTP) }
+func pprofBlock() gin.HandlerFunc        { return gin.WrapF(pprof.Handler("block").ServeHTTP) }
+func pprofMutex() gin.HandlerFunc        { return gin.WrapF(pprof.Handler("mutex").ServeHTTP) }
+func pprofThreadcreate() gin.HandlerFunc { return gin.WrapF(pprof.Handler("threadcreate").ServeHTTP) }
