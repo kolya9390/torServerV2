@@ -22,6 +22,7 @@ func securityHeadersMiddleware() gin.HandlerFunc {
 		if shouldSetHSTS(c) {
 			h.Set("Strict-Transport-Security", fmt.Sprintf("max-age=%d; includeSubDomains", getHSTSMaxAge()))
 		}
+
 		c.Next()
 	}
 }
@@ -30,18 +31,22 @@ func shouldSetHSTS(c *gin.Context) bool {
 	if strings.EqualFold(c.Request.Header.Get("X-Forwarded-Proto"), "https") {
 		return true
 	}
+
 	return c.Request.TLS != nil
 }
 
 func getHSTSMaxAge() int {
 	const defaultAge = 15552000 // 180 days
+
 	raw := strings.TrimSpace(os.Getenv("TS_HSTS_MAX_AGE"))
 	if raw == "" {
 		return defaultAge
 	}
+
 	v, err := strconv.Atoi(raw)
 	if err != nil || v <= 0 {
 		return defaultAge
 	}
+
 	return v
 }

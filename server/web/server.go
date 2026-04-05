@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"expvar"
 	"fmt"
 	"net/http"
 	"net/http/pprof"
@@ -14,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"server/log"
+	"server/metrics"
 	"server/modules"
 	"server/settings"
 	"server/torr"
@@ -51,9 +53,11 @@ func NewServer() *Server {
 func getDefaultServer() *Server {
 	defaultServerMu.Lock()
 	defer defaultServerMu.Unlock()
+
 	if defaultServer == nil {
 		defaultServer = NewServer()
 	}
+
 	return defaultServer
 }
 
@@ -63,14 +67,19 @@ func Start() error {
 
 func (s *Server) Start() error {
 	log.TLogln("Start TorrServer 3.0.0")
+
 	ips := webinfra.GetLocalIps()
 	if len(ips) > 0 {
 		log.TLogln("Local IPs:", ips)
 	}
+
 	err := s.bts.Connect()
 	if err != nil {
 		return fmt.Errorf("BTS.Connect() error: %w", err)
 	}
+
+	// Initialize runtime metrics
+	metrics.Init()
 
 	gin.SetMode(gin.ReleaseMode)
 
@@ -78,6 +87,7 @@ func (s *Server) Start() error {
 
 	route := gin.New()
 	trustedProxies := webinfra.CheckTrustedProxies()
+
 	if err := route.SetTrustedProxies(trustedProxies); err != nil {
 		log.TLogln("Invalid trusted proxies config:", err)
 	}
@@ -88,6 +98,7 @@ func (s *Server) Start() error {
 	route.GET("/echo", echo)
 	route.GET("/healthz", healthz)
 	route.GET("/readyz", readyz)
+	route.GET("/debug/vars", expvarHandler())
 	// Debug/profiling endpoints (localhost only by default)
 	route.GET("/debug/pprof/", pprofIndex())
 	route.GET("/debug/pprof/profile", pprofProfile())
@@ -102,6 +113,7 @@ func (s *Server) Start() error {
 	route.GET("/debug/goroutines", goroutinesHandler())
 
 	api.SetupRoute(route)
+
 	args := settings.GetArgs()
 	if args != nil && args.WebDAV {
 		webdav.MountWebDAV(route)
@@ -117,6 +129,7 @@ func (s *Server) Start() error {
 		if err := s.sslSvc.PrepareCertificates(ips); err != nil {
 			return fmt.Errorf("SSL prepare error: %w", err)
 		}
+
 		if err := s.sslSvc.VerifyOrRegenerateCerts(ips); err != nil {
 			return fmt.Errorf("SSL verify error: %w", err)
 		}
@@ -126,6 +139,7 @@ func (s *Server) Start() error {
 		s.mu.Lock()
 		s.httpsSrv = httpsSrv
 		s.mu.Unlock()
+
 		go func() {
 			defer func() {
 				if rec := recover(); rec != nil {
@@ -133,9 +147,11 @@ func (s *Server) Start() error {
 				}
 			}()
 			log.TLogln("Start https server at", httpsAddr)
+
 			err := httpsSrv.ListenAndServeTLS(settings.BTsets.SslCert, settings.BTsets.SslKey)
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				s.waitChan <- err
+
 				return
 			}
 			s.waitChan <- nil
@@ -150,9 +166,11 @@ func (s *Server) Start() error {
 		WriteTimeout: 0, // No timeout - streaming connections
 		IdleTimeout:  60 * time.Second,
 	}
+
 	s.mu.Lock()
 	s.httpServer = httpSrv
 	s.mu.Unlock()
+
 	go func() {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -160,9 +178,11 @@ func (s *Server) Start() error {
 			}
 		}()
 		log.TLogln("Start http server at", httpAddr)
+
 		err := httpSrv.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.waitChan <- err
+
 			return
 		}
 		s.waitChan <- nil
@@ -180,6 +200,7 @@ func (s *Server) Wait() error {
 	if err != nil && errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
+
 	return err
 }
 
@@ -205,6 +226,7 @@ func (s *Server) Stop() {
 			log.TLogln("HTTPS shutdown error:", err)
 		}
 	}
+
 	if httpLocal != nil {
 		if err := httpLocal.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.TLogln("HTTP shutdown error:", err)
@@ -239,6 +261,13 @@ func readyz(c *gin.Context) {
 	c.JSON(200, status)
 }
 
+func expvarHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Content-Type", "application/json; charset=utf-8")
+		expvar.Handler().ServeHTTP(c.Writer, c.Request)
+	}
+}
+
 func heapHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		pprof.Handler("heap").ServeHTTP(c.Writer, c.Request)
@@ -251,7 +280,7 @@ func goroutinesHandler() gin.HandlerFunc {
 	}
 }
 
-// pprof wrapper handlers
+// pprof wrapper handlers.
 func pprofIndex() gin.HandlerFunc        { return gin.WrapF(pprof.Index) }
 func pprofProfile() gin.HandlerFunc      { return gin.WrapF(pprof.Profile) }
 func pprofTrace() gin.HandlerFunc        { return gin.WrapF(pprof.Trace) }

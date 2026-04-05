@@ -1,5 +1,7 @@
 package torrshash
 
+import "strings"
+
 type TorrsHash struct {
 	Hash   string   `json:"hash"`
 	Fields []*Field `json:"fields"`
@@ -8,6 +10,7 @@ type TorrsHash struct {
 func New(hash string) *TorrsHash {
 	th := &TorrsHash{}
 	th.Hash = hash
+
 	return th
 }
 
@@ -21,6 +24,7 @@ func (h *TorrsHash) Title() string {
 			return f.Value
 		}
 	}
+
 	return ""
 }
 
@@ -30,6 +34,7 @@ func (h *TorrsHash) Poster() string {
 			return f.Value
 		}
 	}
+
 	return ""
 }
 
@@ -39,24 +44,30 @@ func (h *TorrsHash) Category() string {
 			return f.Value
 		}
 	}
+
 	return ""
 }
 
 func (h *TorrsHash) Trackers() []string {
 	var list []string
+
 	for _, f := range h.Fields {
 		if f.Tag == TagTracker {
 			list = append(list, f.Value)
 		}
 	}
+
 	return list
 }
 
 func (h *TorrsHash) String() string {
 	str := "Hash: " + h.Hash
 
+	var strSb58 strings.Builder
 	for _, f := range h.Fields {
-		str += " " + f.Tag.String() + ": " + f.Value
+		strSb58.WriteString(" " + f.Tag.String() + ": " + f.Value)
 	}
+	str += strSb58.String()
+
 	return str
 }

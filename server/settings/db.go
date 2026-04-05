@@ -26,9 +26,11 @@ func NewTDB() TorrServerDB {
 	if globalBboltDB != nil {
 		return globalBboltDB // Return existing instance
 	}
+
 	db, err := bolt.Open(filepath.Join(Path, "config.db"), 0o666, &bolt.Options{Timeout: 5 * time.Second})
 	if err != nil {
 		log.TLogln(err)
+
 		return nil
 	}
 
@@ -36,6 +38,7 @@ func NewTDB() TorrServerDB {
 	tdb.db = db
 	tdb.Path = Path
 	globalBboltDB = tdb
+
 	return globalBboltDB
 }
 
@@ -44,6 +47,7 @@ func (v *TDB) CloseDB() {
 		if err := v.db.Close(); err != nil {
 			log.TLogln("Error close db:", err)
 		}
+
 		v.db = nil
 	}
 }
@@ -52,11 +56,14 @@ func (v *TDB) Get(xpath, name string) []byte {
 	if v == nil || v.db == nil {
 		return nil
 	}
+
 	spath := strings.Split(xpath, "/")
 	if len(spath) == 0 {
 		return nil
 	}
+
 	var ret []byte
+
 	err := v.db.View(func(tx *bolt.Tx) error {
 		buckt := tx.Bucket([]byte(spath[0]))
 		if buckt == nil {
@@ -67,6 +74,7 @@ func (v *TDB) Get(xpath, name string) []byte {
 			if i == 0 {
 				continue
 			}
+
 			buckt = buckt.Bucket([]byte(p))
 			if buckt == nil {
 				return nil
@@ -79,6 +87,7 @@ func (v *TDB) Get(xpath, name string) []byte {
 			ret = make([]byte, len(data))
 			copy(ret, data)
 		}
+
 		return nil
 	})
 	if err != nil {
@@ -92,10 +101,12 @@ func (v *TDB) Set(xpath, name string, value []byte) {
 	if v == nil || v.db == nil {
 		return
 	}
+
 	spath := strings.Split(xpath, "/")
 	if len(spath) == 0 {
 		return
 	}
+
 	err := v.db.Update(func(tx *bolt.Tx) error {
 		buckt, err := tx.CreateBucketIfNotExists([]byte(spath[0]))
 		if err != nil {
@@ -106,6 +117,7 @@ func (v *TDB) Set(xpath, name string, value []byte) {
 			if i == 0 {
 				continue
 			}
+
 			buckt, err = buckt.CreateBucketIfNotExists([]byte(p))
 			if err != nil {
 				return err
@@ -124,11 +136,14 @@ func (v *TDB) List(xpath string) []string {
 	if v == nil || v.db == nil {
 		return nil
 	}
+
 	spath := strings.Split(xpath, "/")
 	if len(spath) == 0 {
 		return nil
 	}
+
 	var ret []string
+
 	err := v.db.View(func(tx *bolt.Tx) error {
 		buckt := tx.Bucket([]byte(spath[0]))
 		if buckt == nil {
@@ -139,6 +154,7 @@ func (v *TDB) List(xpath string) []string {
 			if i == 0 {
 				continue
 			}
+
 			buckt = buckt.Bucket([]byte(p))
 			if buckt == nil {
 				return nil
@@ -149,6 +165,7 @@ func (v *TDB) List(xpath string) []string {
 			if len(k) > 0 {
 				ret = append(ret, string(k))
 			}
+
 			return nil
 		})
 	})
@@ -163,10 +180,12 @@ func (v *TDB) Rem(xpath, name string) {
 	if v == nil || v.db == nil {
 		return
 	}
+
 	spath := strings.Split(xpath, "/")
 	if len(spath) == 0 {
 		return
 	}
+
 	err := v.db.Update(func(tx *bolt.Tx) error {
 		buckt := tx.Bucket([]byte(spath[0]))
 		if buckt == nil {
@@ -177,6 +196,7 @@ func (v *TDB) Rem(xpath, name string) {
 			if i == 0 {
 				continue
 			}
+
 			buckt = buckt.Bucket([]byte(p))
 			if buckt == nil {
 				return nil
@@ -194,6 +214,7 @@ func (v *TDB) Clear(xPath string) {
 	if v == nil || v.db == nil {
 		return
 	}
+
 	spath := strings.Split(xPath, "/")
 	if len(spath) == 0 {
 		return
@@ -209,6 +230,7 @@ func (v *TDB) Clear(xPath string) {
 			if i == 0 {
 				continue
 			}
+
 			buckt = buckt.Bucket([]byte(p))
 			if buckt == nil {
 				return nil

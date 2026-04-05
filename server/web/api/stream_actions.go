@@ -30,27 +30,34 @@ type streamMeta struct {
 //	@Router			/streams/stat [get]
 func streamStat(c *gin.Context) {
 	svc := getServices()
+
 	if isNotAuthRequest(c) {
 		c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
 		abortAPIError(c, http.StatusUnauthorized, newUnauthorizedError("authorization required"))
+
 		return
 	}
 
 	spec, _, err := parseStreamLink(c)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
+
 		return
 	}
 
 	tor := svc.Torrents.Get(spec.InfoHash.HexString())
 	if tor == nil {
 		abortAPIError(c, http.StatusNotFound, newNotFoundError("torrent not active"))
+
 		return
 	}
+
 	if tor.Stat == state.TorrentInDB {
 		abortAPIError(c, http.StatusConflict, newConflictError("torrent is stored only, activate via play"))
+
 		return
 	}
+
 	c.JSON(http.StatusOK, tor.Status())
 }
 
@@ -66,9 +73,11 @@ func streamStat(c *gin.Context) {
 //	@Router			/streams/m3u [get]
 func streamM3U(c *gin.Context) {
 	svc := getServices()
+
 	spec, _, err := parseStreamLink(c)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
+
 		return
 	}
 
@@ -77,19 +86,25 @@ func streamM3U(c *gin.Context) {
 		if isNotAuthRequest(c) {
 			c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
 			abortAPIError(c, http.StatusUnauthorized, newUnauthorizedError("authorization required"))
+
 			return
 		}
+
 		abortAPIError(c, http.StatusNotFound, newNotFoundError("torrent not active"))
+
 		return
 	}
+
 	if tor.Stat == state.TorrentInDB {
 		abortAPIError(c, http.StatusConflict, newConflictError("torrent is stored only, activate via play"))
+
 		return
 	}
 
 	status := tor.Status()
 	if len(status.FileStats) == 0 {
 		abortAPIError(c, http.StatusConflict, newConflictError("torrent info is not ready yet"))
+
 		return
 	}
 
@@ -116,13 +131,17 @@ func streamM3U(c *gin.Context) {
 //	@Router			/streams/play [get]
 func streamPlay(c *gin.Context) {
 	svc := getServices()
+
 	log.TLogln("[DEBUG] streamPlay: starting")
+
 	spec, meta, err := parseStreamLink(c)
 	if err != nil {
 		log.TLogln("[DEBUG] streamPlay: parseStreamLink error:", err)
 		abortAPIError(c, http.StatusBadRequest, err)
+
 		return
 	}
+
 	log.TLogln("[DEBUG] streamPlay: spec parsed, calling EnsureTorrent")
 
 	tor, err := svc.Streams.EnsureTorrent(svc.Torrents, spec, StreamMeta{
@@ -136,13 +155,16 @@ func streamPlay(c *gin.Context) {
 		if statusCode == http.StatusUnauthorized {
 			c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
 		}
+
 		abortAPIError(c, statusCode, apiErr)
+
 		return
 	}
 
 	index, err := parseStreamFileIndex(c, len(tor.Files()))
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
+
 		return
 	}
 
@@ -152,8 +174,10 @@ func streamPlay(c *gin.Context) {
 			log.TLogln("preload queue is full, skipping preload")
 		}
 	}
+
 	if err := c.Request.Context().Err(); err != nil {
 		abortAPIError(c, http.StatusRequestTimeout, newValidationError("request", "request canceled"))
+
 		return
 	}
 
@@ -176,9 +200,11 @@ func streamPlay(c *gin.Context) {
 //	@Router			/streams/save [post]
 func streamSave(c *gin.Context) {
 	svc := getServices()
+
 	spec, meta, err := parseStreamLink(c)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
+
 		return
 	}
 
@@ -187,9 +213,11 @@ func streamSave(c *gin.Context) {
 		tor, err = svc.Torrents.Add(spec, meta.title, meta.poster, meta.data, meta.category)
 		if err != nil {
 			abortAPIError(c, http.StatusInternalServerError, newInternalError("failed to add torrent", err))
+
 			return
 		}
 	}
+
 	if tor.Title == "" && tor.Name() != "" {
 		tor.Title = tor.Name()
 	}
@@ -200,6 +228,7 @@ func streamSave(c *gin.Context) {
 
 func parseStreamLink(c *gin.Context) (*torrent.TorrentSpec, streamMeta, error) {
 	svc := getServices()
+
 	spec, meta, err := svc.Streams.ParseLink(c.Query("link"), c.Query("title"), c.Query("poster"), c.Query("category"))
 	if err != nil {
 		switch {
@@ -211,15 +240,18 @@ func parseStreamLink(c *gin.Context) (*torrent.TorrentSpec, streamMeta, error) {
 			return nil, streamMeta{}, newValidationError("link", "invalid magnet/hash/link")
 		}
 	}
+
 	return spec, streamMeta{title: meta.Title, poster: meta.Poster, category: meta.Category, data: meta.Data}, nil
 }
 
 func parseStreamFileIndex(c *gin.Context, fileCount int) (int, error) {
 	svc := getServices()
+
 	index, err := svc.Streams.ParseFileIndex(c.Query("index"), fileCount)
 	if err != nil {
 		return 0, newValidationError("index", "should be valid file index")
 	}
+
 	return index, nil
 }
 

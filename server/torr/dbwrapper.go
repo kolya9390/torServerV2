@@ -21,9 +21,11 @@ func AddTorrentDB(torr *Torrent) {
 	t.TorrentSpec = torr.TorrentSpec
 	t.Title = torr.Title
 	t.Category = torr.Category
+
 	if torr.Data == "" {
 		files := new(tsFiles)
 		files.TorrServer.Files = torr.Status().FileStats
+
 		buf, err := json.Marshal(files)
 		if err == nil {
 			t.Data = string(buf)
@@ -36,6 +38,7 @@ func AddTorrentDB(torr *Torrent) {
 	if torr.Poster != "" && utils.CheckImgUrl(torr.Poster) {
 		t.Poster = torr.Poster
 	}
+
 	t.Size = torr.Size
 	if t.Size == 0 && torr.Torrent != nil {
 		t.Size = torr.Torrent.Length()
@@ -59,9 +62,11 @@ func GetTorrentDB(hash metainfo.Hash) *Torrent {
 			torr.Size = db.Size
 			torr.Data = db.Data
 			torr.Stat = state.TorrentInDB
+
 			return torr
 		}
 	}
+
 	return nil
 }
 
@@ -71,6 +76,7 @@ func RemTorrentDB(hash metainfo.Hash) {
 
 func ListTorrentsDB() map[metainfo.Hash]*Torrent {
 	ret := make(map[metainfo.Hash]*Torrent)
+
 	list := settings.ListTorrent()
 	for _, db := range list {
 		torr := new(Torrent)
@@ -84,5 +90,6 @@ func ListTorrentsDB() map[metainfo.Hash]*Torrent {
 		torr.Stat = state.TorrentInDB
 		ret[torr.TorrentSpec.InfoHash] = torr
 	}
+
 	return ret
 }

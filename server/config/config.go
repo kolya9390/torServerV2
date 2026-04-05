@@ -155,6 +155,7 @@ func Load(configPath string) (*Config, error) {
 
 	applyDefaults(cfg)
 	loadedConfig = cfg
+
 	return cfg, nil
 }
 
@@ -163,11 +164,13 @@ func Get() *Config {
 		loadedConfig = &Config{}
 		applyDefaults(loadedConfig)
 	}
+
 	return loadedConfig
 }
 
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
+
 	return err == nil
 }
 
@@ -193,6 +196,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.Server.Port == "" {
 		cfg.Server.Port = "8090"
 	}
+
 	if cfg.Server.SSLPort == "" {
 		cfg.Server.SSLPort = "8091"
 	}
@@ -200,6 +204,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.Cache.SizeMB == 0 {
 		cfg.Cache.SizeMB = 64
 	}
+
 	if cfg.Cache.PreloadPercent == 0 {
 		cfg.Cache.PreloadPercent = 50
 	}
@@ -207,9 +212,11 @@ func applyDefaults(cfg *Config) {
 	if cfg.Torrent.RetrackersMode == 0 {
 		cfg.Torrent.RetrackersMode = 1
 	}
+
 	if cfg.Torrent.DisconnectTimeoutSec == 0 {
 		cfg.Torrent.DisconnectTimeoutSec = 30
 	}
+
 	if cfg.Torrent.ConnectionsLimit == 0 {
 		cfg.Torrent.ConnectionsLimit = 25
 	}
@@ -217,15 +224,19 @@ func applyDefaults(cfg *Config) {
 	if cfg.Stream.CoreProfile == "" {
 		cfg.Stream.CoreProfile = "custom"
 	}
+
 	if cfg.Stream.StreamQueueWaitSec == 0 {
 		cfg.Stream.StreamQueueWaitSec = 3
 	}
+
 	if cfg.Stream.AdaptiveRAMinMB == 0 {
 		cfg.Stream.AdaptiveRAMinMB = 4
 	}
+
 	if cfg.Stream.AdaptiveRAMaxMB == 0 {
 		cfg.Stream.AdaptiveRAMaxMB = 64
 	}
+
 	if cfg.Stream.ReadAheadPercent == 0 {
 		cfg.Stream.ReadAheadPercent = 95
 	}
@@ -233,12 +244,15 @@ func applyDefaults(cfg *Config) {
 	if cfg.DiskCache.SyncPolicy == "" {
 		cfg.DiskCache.SyncPolicy = "periodic"
 	}
+
 	if cfg.DiskCache.SyncIntervalMS == 0 {
 		cfg.DiskCache.SyncIntervalMS = 1000
 	}
+
 	if cfg.DiskCache.WriteBatchSize == 0 {
 		cfg.DiskCache.WriteBatchSize = 16
 	}
+
 	if cfg.DiskCache.WarmTTLMin == 0 {
 		cfg.DiskCache.WarmTTLMin = 180
 	}
@@ -246,9 +260,11 @@ func applyDefaults(cfg *Config) {
 	if cfg.TMDB.APIURL == "" {
 		cfg.TMDB.APIURL = "https://api.themoviedb.org"
 	}
+
 	if cfg.TMDB.ImageURL == "" {
 		cfg.TMDB.ImageURL = "https://image.tmdb.org"
 	}
+
 	if cfg.TMDB.ImageURLRu == "" {
 		cfg.TMDB.ImageURLRu = "https://imagetmdb.com"
 	}
@@ -264,6 +280,7 @@ func applyDefaults(cfg *Config) {
 
 func (c *Config) GetConfigPath() string {
 	execPath, _ := os.Executable()
+
 	return filepath.Join(filepath.Dir(execPath), "config.yml")
 }
 
@@ -299,6 +316,7 @@ func (c *Config) ApplyToBTSets(sets *settings.BTSets) {
 	sets.EnableRutorSearch = c.Search.EnableRutor
 	sets.EnableTorznabSearch = c.Search.EnableTorznab
 	sets.TorznabUrls = make([]settings.TorznabConfig, len(c.Search.TorznabURLs))
+
 	for i, url := range c.Search.TorznabURLs {
 		sets.TorznabUrls[i] = settings.TorznabConfig{
 			Host: url.Host,
@@ -318,6 +336,7 @@ func (c *Config) ApplyToBTSets(sets *settings.BTSets) {
 	if c.Stream.ResponsiveMode {
 		sets.ResponsiveMode = c.Stream.ResponsiveMode
 	}
+
 	sets.CoreProfile = c.Stream.CoreProfile
 	sets.MaxConcurrentStreams = c.Stream.MaxConcurrentStreams
 	sets.StreamQueueSize = c.Stream.StreamQueueSize
@@ -351,6 +370,7 @@ func (c *Config) ApplyToBTSets(sets *settings.BTSets) {
 			sets.SslPort = port
 		}
 	}
+
 	sets.SslCert = c.Server.SSLCert
 	sets.SslKey = c.Server.SSLKey
 }
@@ -358,5 +378,6 @@ func (c *Config) ApplyToBTSets(sets *settings.BTSets) {
 func parsePort(s string) (int, error) {
 	var port int
 	_, err := fmt.Sscanf(s, "%d", &port)
+
 	return port, err
 }

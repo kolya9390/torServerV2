@@ -18,7 +18,9 @@ func tmdbSettings(c *gin.Context) {
 	cfg, ok := getServices().Settings.TMDBConfig()
 	if !ok {
 		abortAPIError(c, 500, newInternalError("settings not initialized", nil))
+
 		return
 	}
+
 	c.JSON(200, cfg)
 }

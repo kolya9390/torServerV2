@@ -59,6 +59,7 @@ func (d *RootDir) ReadDir(n int) ([]fs.DirEntry, error) {
 		if cat == "" {
 			cat = "other"
 		}
+
 		nodes[cat] = NewCategoryDir(cat)
 	}
 
@@ -66,26 +67,29 @@ func (d *RootDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	for _, c := range nodes {
 		entries = append(entries, c)
 	}
+
 	if n > 0 && len(entries) > n {
 		entries = entries[:n]
 	}
+
 	return entries, nil
 }
 
-// INode
+// INode.
 func (d *RootDir) Parent() INode                 { return nil }
 func (d *RootDir) Torrent() *torr.Torrent        { return nil }
 func (d *RootDir) SetTorrent(torr *torr.Torrent) {}
 
-// DirEntry
+// DirEntry.
 func (d *RootDir) Name() string { return d.info.Name() }
 func (d *RootDir) IsDir() bool  { return true }
 func (d *RootDir) Type() fs.FileMode {
 	s, _ := d.Stat()
+
 	return s.Mode()
 }
 func (d *RootDir) Info() (fs.FileInfo, error) { return d.info, nil }
 
-// File
+// File.
 func (d *RootDir) Read(bytes []byte) (int, error) { return 0, fs.ErrInvalid }
 func (d *RootDir) Close() error                   { return nil }

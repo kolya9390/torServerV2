@@ -33,8 +33,8 @@ type SettingsService interface {
 	Set(*sets.BTSets)
 	SetDefault()
 	ReadOnly() bool
-	GetStoragePreferences() map[string]interface{}
-	SetStoragePreferences(map[string]interface{}) error
+	GetStoragePreferences() map[string]any
+	SetStoragePreferences(map[string]any) error
 	TMDBConfig() (sets.TMDBConfig, bool)
 	BuildPlayURL(hash, fileID string) string
 	EnableDLNA() bool
@@ -196,19 +196,19 @@ func (noopSettingsService) Current() *sets.BTSets { return nil }
 func (noopSettingsService) Set(*sets.BTSets)      {}
 func (noopSettingsService) SetDefault()           {}
 func (noopSettingsService) ReadOnly() bool        { return false }
-func (noopSettingsService) GetStoragePreferences() map[string]interface{} {
-	return map[string]interface{}{}
+func (noopSettingsService) GetStoragePreferences() map[string]any {
+	return map[string]any{}
 }
-func (noopSettingsService) SetStoragePreferences(map[string]interface{}) error { return nil }
-func (noopSettingsService) TMDBConfig() (sets.TMDBConfig, bool)                { return sets.TMDBConfig{}, false }
-func (noopSettingsService) BuildPlayURL(hash, fileID string) string            { return "" }
-func (noopSettingsService) EnableDLNA() bool                                   { return false }
-func (noopSettingsService) EnableDebug() bool                                  { return false }
-func (noopViewedService) SetViewed(v *sets.Viewed)                             {}
-func (noopViewedService) RemoveViewed(v *sets.Viewed)                          {}
-func (noopViewedService) ListViewed(hash string) []*sets.Viewed                { return []*sets.Viewed{} }
-func (noopSystemService) Shutdown()                                            {}
-func (noopSearchService) EnableTorznabSearch() bool                            { return false }
+func (noopSettingsService) SetStoragePreferences(map[string]any) error { return nil }
+func (noopSettingsService) TMDBConfig() (sets.TMDBConfig, bool)        { return sets.TMDBConfig{}, false }
+func (noopSettingsService) BuildPlayURL(hash, fileID string) string    { return "" }
+func (noopSettingsService) EnableDLNA() bool                           { return false }
+func (noopSettingsService) EnableDebug() bool                          { return false }
+func (noopViewedService) SetViewed(v *sets.Viewed)                     {}
+func (noopViewedService) RemoveViewed(v *sets.Viewed)                  {}
+func (noopViewedService) ListViewed(hash string) []*sets.Viewed        { return []*sets.Viewed{} }
+func (noopSystemService) Shutdown()                                    {}
+func (noopSearchService) EnableTorznabSearch() bool                    { return false }
 func (noopSearchService) TorznabSearch(query string, index int) []*torznab.TorrentDetails {
 	return []*torznab.TorrentDetails{}
 }
@@ -262,7 +262,9 @@ func SetServices(s *APIServices) {
 	if s == nil {
 		return
 	}
+
 	s = withNoopFallbacks(s)
+
 	apiServicesMu.Lock()
 	apiServices = s
 	apiServicesMu.Unlock()
@@ -272,11 +274,13 @@ func getServices() *APIServices {
 	apiServicesMu.RLock()
 	s := apiServices
 	apiServicesMu.RUnlock()
+
 	if s != nil {
 		return withNoopFallbacks(s)
 	}
 
 	noop := newNoopServices()
+
 	apiServicesMu.Lock()
 	if apiServices == nil {
 		apiServices = noop
@@ -285,6 +289,7 @@ func getServices() *APIServices {
 		apiServices = noop
 	}
 	apiServicesMu.Unlock()
+
 	return noop
 }
 
@@ -292,33 +297,43 @@ func withNoopFallbacks(s *APIServices) *APIServices {
 	if s == nil {
 		return newNoopServices()
 	}
+
 	if s.Torrents == nil {
 		s.Torrents = noopTorrentService{}
 	}
+
 	if s.Settings == nil {
 		s.Settings = noopSettingsService{}
 	}
+
 	if s.Viewed == nil {
 		s.Viewed = noopViewedService{}
 	}
+
 	if s.System == nil {
 		s.System = noopSystemService{}
 	}
+
 	if s.Search == nil {
 		s.Search = noopSearchService{}
 	}
+
 	if s.Media == nil {
 		s.Media = noopMediaService{}
 	}
+
 	if s.Modules == nil {
 		s.Modules = noopModulesService{}
 	}
+
 	if s.Streams == nil {
 		s.Streams = noopStreamService{}
 	}
+
 	if s.Playback == nil {
 		s.Playback = noopPlaybackService{}
 	}
+
 	return s
 }
 
@@ -327,9 +342,11 @@ func listTorrentStatuses(service TorrentService) []*state.TorrentStatus {
 	if len(list) == 0 {
 		return []*state.TorrentStatus{}
 	}
+
 	stats := make([]*state.TorrentStatus, 0, len(list))
 	for _, tr := range list {
 		stats = append(stats, tr.Status())
 	}
+
 	return stats
 }

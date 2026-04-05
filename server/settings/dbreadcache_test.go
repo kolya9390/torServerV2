@@ -12,6 +12,7 @@ func TestDBReadCacheReturnsDefensiveCopies(t *testing.T) {
 	if first == nil {
 		t.Fatalf("expected data from cache")
 	}
+
 	first[0] = '['
 
 	second := cache.Get("Settings", "BitTorr")
@@ -25,10 +26,12 @@ func TestDBReadCacheListReturnsDefensiveCopies(t *testing.T) {
 	backend.Set("Viewed", "one", []byte(`{"i":1}`))
 
 	cache := NewDBReadCache(backend)
+
 	names := cache.List("Viewed")
 	if len(names) != 1 {
 		t.Fatalf("unexpected list length: %d", len(names))
 	}
+
 	names[0] = "mutated"
 
 	names2 := cache.List("Viewed")

@@ -49,18 +49,22 @@ func ReadField(reader io.Reader) (*Field, error) {
 	if _, err := reader.Read(tagb); err == io.EOF {
 		return nil, nil
 	}
+
 	tag := Tag(tagb[0])
 
 	if isBinary(tag) {
 		var value int64
+
 		err := binary.Read(reader, binary.LittleEndian, &value)
 		if err != nil {
 			return nil, err
 		}
+
 		return NewField(tag, strconv.FormatInt(value, 10)), nil
 	}
 
 	var length uint16
+
 	err := binary.Read(reader, binary.LittleEndian, &length)
 	if err != nil {
 		return nil, err
@@ -85,6 +89,7 @@ func (f *Field) write(writer io.Writer) error {
 	if len(value) == 0 {
 		return nil
 	}
+
 	if isBinary(f.Tag) && value == "0" {
 		return nil
 	}
@@ -99,18 +104,23 @@ func (f *Field) write(writer io.Writer) error {
 		if err != nil {
 			return err
 		}
+
 		if ii == 0 {
 			return nil
 		}
+
 		return binary.Write(writer, binary.LittleEndian, ii)
 	}
 
 	strBytes := []byte(value)
+
 	err = binary.Write(writer, binary.LittleEndian, uint16(len(strBytes)))
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(strBytes)
+
 	return err
 }
 
@@ -126,5 +136,6 @@ func isBinary(t Tag) bool {
 	default:
 		return false
 	}
+
 	return false
 }

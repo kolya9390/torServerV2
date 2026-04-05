@@ -29,11 +29,13 @@ func New(initSorted []Range) *IPList {
 	if len(initSorted) == 0 {
 		return &IPList{}
 	}
+
 	ranges := make([]Range, len(initSorted))
 	copy(ranges, initSorted)
 	sort.Slice(ranges, func(i, j int) bool {
 		return ipLess(ranges[i].First, ranges[j].First)
 	})
+
 	return &IPList{
 		ranges: ranges,
 	}
@@ -42,9 +44,11 @@ func New(initSorted []Range) *IPList {
 func ipLess(a, b net.IP) bool {
 	la := len(a)
 	lb := len(b)
+
 	if la != lb {
 		return la < lb
 	}
+
 	return bytes.Compare(a, b) < 0
 }
 
@@ -52,6 +56,7 @@ func (ipl *IPList) NumRanges() int {
 	if ipl == nil {
 		return 0
 	}
+
 	return len(ipl.ranges)
 }
 
@@ -59,6 +64,7 @@ func (ipl *IPList) Lookup(ip net.IP) (r Range, ok bool) {
 	if ipl == nil || len(ipl.ranges) == 0 {
 		return
 	}
+
 	return ipl.lookupBinary(ip)
 }
 
@@ -78,6 +84,7 @@ func (ipl *IPList) lookupBinary(ip net.IP) (Range, bool) {
 			return r, true
 		}
 	}
+
 	return Range{}, false
 }
 

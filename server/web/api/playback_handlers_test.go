@@ -51,6 +51,7 @@ func TestPlayMapsUnauthorizedError(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d body=%s", w.Code, w.Body.String())
 	}
+
 	if got := w.Header().Get("WWW-Authenticate"); !strings.Contains(got, "Basic") {
 		t.Fatalf("expected WWW-Authenticate header, got %q", got)
 	}
@@ -96,9 +97,11 @@ func TestAllPlayListUsesPlaybackServiceResult(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
+
 	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "audio/x-mpegurl") {
 		t.Fatalf("expected m3u content-type, got %q", ct)
 	}
+
 	if !strings.Contains(w.Body.String(), "#EXTM3U") {
 		t.Fatalf("expected m3u body, got %s", w.Body.String())
 	}

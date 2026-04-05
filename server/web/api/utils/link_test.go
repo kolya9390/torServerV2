@@ -6,10 +6,12 @@ import (
 
 func TestParseLink_Magnet(t *testing.T) {
 	magnet := "magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335aa7c1367a88a&dn=torrent"
+
 	spec, err := ParseLink(magnet)
 	if err != nil {
 		t.Fatalf("ParseLink failed: %v", err)
 	}
+
 	if spec == nil {
 		t.Fatal("expected non-nil spec")
 	}
@@ -17,10 +19,12 @@ func TestParseLink_Magnet(t *testing.T) {
 
 func TestParseLink_InfoHashOnly(t *testing.T) {
 	infoHash := "c12fe1c06bba254a9dc9f519b335aa7c1367a88a"
+
 	spec, err := ParseLink(infoHash)
 	if err != nil {
 		t.Fatalf("ParseLink failed: %v", err)
 	}
+
 	if spec == nil {
 		t.Fatal("expected non-nil spec")
 	}
@@ -56,13 +60,16 @@ func TestParseTorrsHash_WithPrefix(t *testing.T) {
 
 func TestFromMagnet(t *testing.T) {
 	magnet := "magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335aa7c1367a88a&dn=test"
+
 	spec, err := fromMagnet(magnet)
 	if err != nil {
 		t.Fatalf("fromMagnet failed: %v", err)
 	}
+
 	if spec == nil {
 		t.Fatal("expected non-nil spec")
 	}
+
 	if len(spec.DisplayName) == 0 {
 		t.Error("expected non-empty DisplayName")
 	}

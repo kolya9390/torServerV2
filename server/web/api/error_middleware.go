@@ -13,6 +13,7 @@ func ErrorResponder() gin.HandlerFunc {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Error("panic in handler", "request_id", log.GetRequestID(c), "panic", r, "path", c.FullPath())
+
 				body := gin.H{
 					"error": gin.H{
 						"type":    "internal_error",
@@ -22,6 +23,7 @@ func ErrorResponder() gin.HandlerFunc {
 				if rid := log.GetRequestID(c); rid != "" {
 					body["request_id"] = rid
 				}
+
 				c.AbortWithStatusJSON(http.StatusInternalServerError, body)
 			}
 		}()
@@ -31,11 +33,13 @@ func ErrorResponder() gin.HandlerFunc {
 		if len(c.Errors) == 0 {
 			return
 		}
+
 		if c.Writer.Size() > 0 {
 			return
 		}
 
 		lastErr := c.Errors.Last().Err
+
 		status := c.Writer.Status()
 		if status < http.StatusBadRequest {
 			status = http.StatusInternalServerError
@@ -58,8 +62,12 @@ func buildErrorBody(c *gin.Context, err error, status int) gin.H {
 
 	if apiErr, ok := err.(APIError); ok {
 		if apiErr.Status > 0 {
-			status = apiErr.Status
+			body["error"] = gin.H{
+				"type":    apiErr.Type,
+				"message": apiErr.Message,
+			}
 		}
+
 		errBody := gin.H{
 			"type":    apiErr.Type,
 			"message": apiErr.Message,
@@ -67,15 +75,18 @@ func buildErrorBody(c *gin.Context, err error, status int) gin.H {
 		if apiErr.Field != "" {
 			errBody["field"] = apiErr.Field
 		}
+
 		if apiErr.Cause != nil {
 			errBody["cause"] = apiErr.Cause.Error()
 		}
+
 		body["error"] = errBody
 	}
 
 	if rid := log.GetRequestID(c); rid != "" {
 		body["request_id"] = rid
 	}
+
 	return body
 }
 

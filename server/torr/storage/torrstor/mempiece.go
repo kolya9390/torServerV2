@@ -3,8 +3,43 @@ package torrstor
 import (
 	"io"
 	"sync"
-	"time"
 )
+
+// memPieceBufPool reuses byte slices for piece buffers.
+// Buffers are sized to common torrent piece lengths (16KB–4MB).
+// Get() returns a buffer >= requested size; Put() returns it to the pool.
+var memPieceBufPool = sync.Pool{
+	New: func() any {
+		return new([]byte)
+	},
+}
+
+func getBuffer(size int) []byte {
+	ptr := memPieceBufPool.Get().(*[]byte)
+
+	buf := *ptr
+	if cap(buf) < size {
+		// Grow buffer to avoid reallocation on every write
+		buf = make([]byte, size)
+	}
+
+	return buf[:size]
+}
+
+func putBuffer(buf []byte) {
+	// Don't pool tiny buffers — not worth the GC overhead
+	if cap(buf) < 4096 {
+		return
+	}
+
+	ptr := memPieceBufPool.Get().(*[]byte)
+	if cap(buf) > cap(*ptr) {
+		// Replace pooled buffer with larger one
+		*ptr = buf
+	}
+
+	memPieceBufPool.Put(ptr)
+}
 
 type MemPiece struct {
 	piece *Piece
@@ -22,15 +57,24 @@ func (p *MemPiece) WriteAt(b []byte, off int64) (n int, err error) {
 	defer p.mu.Unlock()
 
 	if p.buffer == nil {
-		go p.piece.cache.cleanPieces()
-		p.buffer = make([]byte, p.piece.cache.pieceLength, p.piece.cache.pieceLength)
+		go func() {
+			defer func() { _ = recover() }()
+			p.piece.cache.cleanPieces()
+		}()
+
+		pieceLen := int(p.piece.cache.pieceLength)
+		p.buffer = getBuffer(pieceLen)
 	}
+
 	n = copy(p.buffer[off:], b[:])
+
 	p.piece.Size += int64(n)
 	if p.piece.Size > p.piece.cache.pieceLength {
 		p.piece.Size = p.piece.cache.pieceLength
 	}
-	p.piece.Accessed = time.Now().Unix()
+
+	p.piece.markAccessed()
+
 	return
 }
 
@@ -40,31 +84,36 @@ func (p *MemPiece) ReadAt(b []byte, off int64) (n int, err error) {
 
 	size := len(b)
 	if size+int(off) > len(p.buffer) {
-		size = len(p.buffer) - int(off)
-		if size < 0 {
-			size = 0
-		}
+		size = max(len(p.buffer)-int(off), 0)
 	}
+
 	if len(p.buffer) < int(off) || len(p.buffer) < int(off)+size {
 		return 0, io.EOF
 	}
+
 	n = copy(b, p.buffer[int(off) : int(off)+size][:])
-	p.piece.Accessed = time.Now().Unix()
+	p.piece.markAccessed()
+
 	if int64(len(b))+off >= p.piece.Size {
 		go p.piece.cache.cleanPieces()
 	}
+
 	if n == 0 {
 		return 0, io.EOF
 	}
+
 	return n, nil
 }
 
 func (p *MemPiece) Release() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	if p.buffer != nil {
+		putBuffer(p.buffer)
 		p.buffer = nil
 	}
+
 	p.piece.Size = 0
 	p.piece.Complete = false
 }

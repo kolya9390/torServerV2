@@ -31,16 +31,19 @@ func init() {
 
 func Exists() bool {
 	_, err := os.Stat(binFile)
+
 	return !os.IsNotExist(err)
 }
 
 func ProbeUrl(link string) (*ffprobe.ProbeData, error) {
 	data, err := ffprobe.ProbeURL(getCtx(), link)
+
 	return data, err
 }
 
 func ProbeReader(reader io.Reader) (*ffprobe.ProbeData, error) {
 	data, err := ffprobe.ProbeReader(getCtx(), reader)
+
 	return data, err
 }
 
@@ -55,5 +58,6 @@ func getCtx() context.Context {
 		time.Sleep(5 * time.Minute)
 		cancel()
 	}()
+
 	return ctx
 }

@@ -20,6 +20,7 @@ func TestGenerateSelfSignedCert(t *testing.T) {
 	if len(certPEM) == 0 {
 		t.Error("expected non-empty certificate")
 	}
+
 	if len(privPEM) == 0 {
 		t.Error("expected non-empty private key")
 	}
@@ -86,6 +87,7 @@ func TestVerifyCertKeyFiles_InvalidCert(t *testing.T) {
 	if err := os.WriteFile(certFile, []byte("invalid cert"), 0644); err != nil {
 		t.Fatalf("failed to write cert: %v", err)
 	}
+
 	if err := os.WriteFile(keyFile, []byte("invalid key"), 0644); err != nil {
 		t.Fatalf("failed to write key: %v", err)
 	}
@@ -109,6 +111,7 @@ func TestVerifyCertKeyFiles_ExpiredCert(t *testing.T) {
 	if err := os.WriteFile(certFile, certPEM, 0644); err != nil {
 		t.Fatalf("failed to write cert: %v", err)
 	}
+
 	if err := os.WriteFile(keyFile, privPEM, 0644); err != nil {
 		t.Fatalf("failed to write key: %v", err)
 	}
@@ -123,6 +126,7 @@ func TestMakeCertKeyFiles(t *testing.T) {
 	origPath := settings.Path
 	tmpDir := t.TempDir()
 	settings.Path = tmpDir
+
 	defer func() { settings.Path = origPath }()
 
 	certPath, keyPath, err := MakeCertKeyFiles([]string{"127.0.0.1"})
@@ -138,6 +142,7 @@ func TestMakeCertKeyFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read cert: %v", err)
 	}
+
 	if len(certData) == 0 {
 		t.Error("cert file is empty")
 	}
@@ -146,6 +151,7 @@ func TestMakeCertKeyFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read key: %v", err)
 	}
+
 	if len(keyData) == 0 {
 		t.Error("key file is empty")
 	}

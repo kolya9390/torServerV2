@@ -1,8 +1,7 @@
 package app
 
 import (
-	"fmt"
-
+	"errors"
 	"server/config"
 	"server/internal/app/apiservices"
 	"server/internal/startup"
@@ -53,18 +52,22 @@ func NewServerRuntime() Runtime {
 func (r *serverRuntime) Start() error {
 	args := settings.GetArgs()
 	if args == nil {
-		return fmt.Errorf("exec args are not initialized")
+		return errors.New("exec args are not initialized")
 	}
 
-	if r.deps.setShutdown != nil { r.deps.setShutdown(r.Stop) }
+	if r.deps.setShutdown != nil {
+		r.deps.setShutdown(r.Stop)
+	}
 	if err := r.deps.initSettings(args.RDB, args.SearchWA); err != nil {
 		return err
 	}
+
 	if r.deps.setAPIServices != nil {
 		r.deps.setAPIServices(r.apiServices)
 	} else {
 		api.SetServices(r.apiServices)
 	}
+
 	if err := r.deps.prepareStartup(args); err != nil {
 		return err
 	}
@@ -90,6 +93,7 @@ func (r *serverRuntime) Start() error {
 	if err := r.web.Start(); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -120,18 +124,23 @@ func newServerRuntime(deps serverRuntimeDeps, cfg *config.Config) Runtime {
 	if deps.initSettings == nil {
 		deps.initSettings = settings.InitSets
 	}
+
 	if deps.prepareStartup == nil {
 		deps.prepareStartup = startup.PrepareNetwork
 	}
+
 	if deps.newWebServer == nil {
 		deps.newWebServer = func() webRuntime { return web.NewServer() }
 	}
+
 	if deps.closeSettings == nil {
 		deps.closeSettings = settings.CloseDB
 	}
+
 	if false {
 		// removed
 	}
+
 	if deps.setAPIServices == nil {
 		deps.setAPIServices = api.SetServices
 	}

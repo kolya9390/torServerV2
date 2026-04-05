@@ -39,11 +39,13 @@ func main() {
 	app, err := bootstrap.New(args, cfg)
 	if err != nil {
 		log.TLogln("Failed to initialize:", err)
+
 		return
 	}
 
 	if err := app.Start(context.Background()); err != nil {
 		log.TLogln("Failed to start:", err)
+
 		return
 	}
 
@@ -73,12 +75,13 @@ func main() {
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	if err := app.Stop(stopCtx); err != nil {
 		log.TLogln("Stop error:", err)
 	}
 }
 
-func parseArgs(args []string) (*settings.ExecArgs, error) {
+func parseArgs(_ []string) (*settings.ExecArgs, error) {
 	var parsed settings.ExecArgs
 	p := arg.MustParse(&parsed)
 
@@ -104,6 +107,7 @@ func loadConfig(args *settings.ExecArgs) (*config.Config, error) {
 	if args.Ssl {
 		cfg.Server.SSL = true
 	}
+
 	if args.SslCert != "" {
 		cfg.Server.SSLCert = args.SslCert
 		cfg.Server.SSLKey = args.SslKey

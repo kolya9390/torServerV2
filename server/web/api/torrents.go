@@ -13,7 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Action: add, get, set, rem, list, drop
+// Action: add, get, set, rem, list, drop.
 type torrReqJS struct {
 	requestI
 	Link     string `json:"link,omitempty"`
@@ -40,16 +40,22 @@ type torrReqJS struct {
 //	@Router			/torrents [post]
 func torrents(c *gin.Context) {
 	svc := getServices()
+
 	var req torrReqJS
+
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("request", "invalid json body"))
+
 		return
 	}
+
 	if req.Action == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("action", "is required"))
+
 		return
 	}
+
 	switch req.Action {
 	case "add":
 		addTorrent(svc, req, c)
@@ -73,6 +79,7 @@ func torrents(c *gin.Context) {
 func addTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 	if req.Link == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("link", "is required for action=add"))
+
 		return
 	}
 
@@ -80,7 +87,9 @@ func addTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 	req.Link = strings.ReplaceAll(req.Link, "&amp;", "&")
 
 	var torrSpec *torrent.TorrentSpec
+
 	var torrsHash *torrshash.TorrsHash
+
 	var err error
 
 	if strings.HasPrefix(req.Link, "torrs://") {
@@ -88,14 +97,18 @@ func addTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 		if err != nil {
 			log.TLogln("error parse torrshash:", err)
 			abortAPIError(c, http.StatusBadRequest, newValidationError("link", "invalid torrs hash"))
+
 			return
 		}
+
 		if req.Title == "" {
 			req.Title = torrsHash.Title()
 		}
+
 		if req.Poster == "" {
 			req.Poster = torrsHash.Poster()
 		}
+
 		if req.Category == "" {
 			req.Category = torrsHash.Category()
 		}
@@ -104,6 +117,7 @@ func addTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 		if err != nil {
 			log.TLogln("error parse link:", err)
 			abortAPIError(c, http.StatusBadRequest, newValidationError("link", "invalid magnet/hash/link"))
+
 			return
 		}
 	}
@@ -114,23 +128,30 @@ func addTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 	log.TLogln("[TRACE] addTorrent: before Torrents.Get, hash=", hashHex)
 	existing := svc.Torrents.Get(hashHex)
 	log.TLogln("[TRACE] addTorrent: after Torrents.Get, hash=", hashHex, " tor=", existing != nil)
+
 	if existing != nil && existing.Stat != state.TorrentInDB {
 		if req.SaveToDB {
 			log.TLogln("[TRACE] addTorrent: enqueue save_to_db finalize, hash=", hashHex)
+
 			_ = svc.Torrents.EnqueueMetadataFinalize(existing, existing.TorrentSpec, true)
 		}
+
 		log.TLogln("[TRACE] addTorrent: returning fast-path status, hash=", hashHex)
 		c.JSON(200, existing.Status())
+
 		return
 	}
 
 	log.TLogln("[DEBUG] addTorrent: calling Torrents.Add, hash=", hashHex)
+
 	tor, err := svc.Torrents.Add(torrSpec, req.Title, req.Poster, req.Data, req.Category)
 	if err != nil {
 		log.TLogln("error add torrent:", err)
 		abortAPIError(c, http.StatusInternalServerError, newInternalError("failed to add torrent", err))
+
 		return
 	}
+
 	log.TLogln("[DEBUG] addTorrent: Torrents.Add succeeded, hash=", hashHex)
 
 	_ = svc.Torrents.EnqueueMetadataFinalize(tor, torrSpec, req.SaveToDB)
@@ -141,20 +162,24 @@ func addTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 			log.TLogln("dlna restart error:", modulesErr)
 		}
 	}
+
 	c.JSON(200, tor.Status())
 }
 
 func getTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 	if req.Hash == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "is required for action=get"))
+
 		return
 	}
+
 	log.TLogln("[TRACE] getTorrent: before Torrents.Get, hash=", req.Hash)
 	tor := svc.Torrents.Get(req.Hash)
 	log.TLogln("[TRACE] getTorrent: after Torrents.Get, hash=", req.Hash, " tor=", tor != nil)
 
 	if tor != nil {
 		log.TLogln("[TRACE] getTorrent: using status, hash=", req.Hash)
+
 		st := tor.Status()
 		c.JSON(200, st)
 	} else {
@@ -165,8 +190,10 @@ func getTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 func setTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 	if req.Hash == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "is required for action=set"))
+
 		return
 	}
+
 	svc.Torrents.Set(req.Hash, req.Title, req.Poster, req.Category, req.Data)
 	c.Status(200)
 }
@@ -174,8 +201,10 @@ func setTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 func remTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 	if req.Hash == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "is required for action=rem"))
+
 		return
 	}
+
 	svc.Torrents.Remove(req.Hash)
 	// TODO: remove
 	if svc.Settings.EnableDLNA() {
@@ -183,6 +212,7 @@ func remTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 			log.TLogln("dlna restart error:", err)
 		}
 	}
+
 	c.Status(200)
 }
 
@@ -193,8 +223,10 @@ func listTorrents(svc *APIServices, c *gin.Context) {
 func dropTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 	if req.Hash == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "is required for action=drop"))
+
 		return
 	}
+
 	svc.Torrents.Drop(req.Hash)
 	c.Status(200)
 }
@@ -210,5 +242,6 @@ func wipeTorrents(svc *APIServices, c *gin.Context) {
 			log.TLogln("dlna restart error:", err)
 		}
 	}
+
 	c.Status(200)
 }

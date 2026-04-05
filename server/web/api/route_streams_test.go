@@ -23,6 +23,7 @@ func TestExplicitStreamsRoutesRegistered(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
+
 		if w.Code == http.StatusNotFound {
 			t.Fatalf("route %s is not registered", path)
 		}
@@ -31,6 +32,7 @@ func TestExplicitStreamsRoutesRegistered(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/streams/save", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+
 	if w.Code == http.StatusNotFound {
 		t.Fatalf("route %s is not registered", "/streams/save")
 	}

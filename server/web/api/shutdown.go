@@ -17,15 +17,19 @@ import (
 // @Tags			API
 //
 // @Success		200
-// @Router			/shutdown [get]
+// @Router			/shutdown [get].
 func shutdown(c *gin.Context) {
 	svc := getServices()
 	reasonStr := strings.ReplaceAll(c.Param("reason"), "/", "")
+
 	if svc.Settings.ReadOnly() && reasonStr == "" {
 		c.Status(http.StatusForbidden)
+
 		return
 	}
+
 	c.Status(200)
+
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {

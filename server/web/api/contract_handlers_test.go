@@ -42,6 +42,7 @@ func (s *contractSettingsService) Current() *sets.BTSets {
 	if s.current == nil {
 		return &sets.BTSets{}
 	}
+
 	return s.current
 }
 
@@ -71,7 +72,9 @@ func (s *contractTorrentService) Add(spec *torrent.TorrentSpec, title, poster, d
 
 func withServices(t *testing.T, s *APIServices) {
 	t.Helper()
+
 	prev := getServices()
+
 	SetServices(s)
 	t.Cleanup(func() {
 		SetServices(prev)
@@ -98,15 +101,18 @@ func TestSettingsDefLegacyContract(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(`{"action":"def"}`))
 	req.Header.Set("Content-Type", "application/json")
+
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
+
 	if !settingsSvc.defaultSet {
 		t.Fatal("expected SetDefault to be called")
 	}
+
 	if !modulesSvc.stopCalled {
 		t.Fatal("expected StopDLNA to be called")
 	}
@@ -140,6 +146,7 @@ func TestTorznabSearchDisabledLegacyContract(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("expected []string response, got err: %v body=%s", err, w.Body.String())
 	}
+
 	if len(body) != 0 {
 		t.Fatalf("expected empty list, got %v", body)
 	}

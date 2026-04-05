@@ -29,8 +29,11 @@ func New(args *settings.ExecArgs, cfg *config.Config) (*Bootstrap, error) {
 	if args == nil {
 		return nil, errors.New("nil exec args")
 	}
+
 	settings.SetArgs(args)
+
 	container := internalapp.NewContainerWithConfig(cfg)
+
 	return newWithContainer(container)
 }
 
@@ -38,7 +41,9 @@ func newWithContainer(container *internalapp.Container) (*Bootstrap, error) {
 	if container == nil || container.Runtime == nil {
 		return nil, errors.New("runtime container is not initialized")
 	}
+
 	app := internalapp.New(container.Runtime, defaultStopTimeout)
+
 	return &Bootstrap{app: app}, nil
 }
 
@@ -47,10 +52,13 @@ func (b *Bootstrap) Start(ctx context.Context) error {
 	if b == nil || b.app == nil {
 		return errors.New("bootstrap is not initialized")
 	}
+
 	if err := b.app.Start(ctx); err != nil {
 		return fmt.Errorf("start app: %w", err)
 	}
+
 	b.startCleanupWorker()
+
 	return nil
 }
 
@@ -59,11 +67,15 @@ func (b *Bootstrap) Stop(ctx context.Context) error {
 	if b == nil || b.app == nil {
 		return errors.New("bootstrap is not initialized")
 	}
+
 	b.stopCleanupWorker(ctx)
+
 	if err := b.app.Stop(ctx); err != nil {
 		return fmt.Errorf("stop app: %w", err)
 	}
+
 	log.TLogln("Bootstrap stop complete")
+
 	return nil
 }
 
@@ -72,18 +84,22 @@ func (b *Bootstrap) Wait() error {
 	if b == nil || b.app == nil {
 		return errors.New("bootstrap is not initialized")
 	}
+
 	return b.app.Wait()
 }
 
 func (b *Bootstrap) startCleanupWorker() {
 	b.cleanupMu.Lock()
 	defer b.cleanupMu.Unlock()
+
 	if b.cleanupCancel != nil {
 		return
 	}
+
 	cleanupCtx, cancel := context.WithCancel(context.Background())
 	b.cleanupCancel = cancel
 	b.cleanupWG.Add(1)
+
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -100,6 +116,7 @@ func (b *Bootstrap) stopCleanupWorker(ctx context.Context) {
 	cancel := b.cleanupCancel
 	b.cleanupCancel = nil
 	b.cleanupMu.Unlock()
+
 	if cancel != nil {
 		cancel()
 	}

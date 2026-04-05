@@ -18,16 +18,19 @@ cache:
   size_mb: 128
   preload_percent: 75
 `
+
 	tmpFile, err := os.CreateTemp("", "config-*.yml")
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if _, err := tmpFile.WriteString(yamlContent); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
-	tmpFile.Close()
+
+	_ = tmpFile.Close()
 
 	cfg, err := Load(tmpFile.Name())
 	if err != nil {
@@ -37,15 +40,19 @@ cache:
 	if cfg.Server.Port != "8090" {
 		t.Errorf("Server.Port = %q, want %q", cfg.Server.Port, "8090")
 	}
+
 	if !cfg.Server.SSL {
 		t.Error("Server.SSL = false, want true")
 	}
+
 	if !cfg.DLNA.Enabled {
 		t.Error("DLNA.Enabled = false, want true")
 	}
+
 	if cfg.DLNA.FriendlyName != "Test Server" {
 		t.Errorf("DLNA.FriendlyName = %q, want %q", cfg.DLNA.FriendlyName, "Test Server")
 	}
+
 	if cfg.Cache.SizeMB != 128 {
 		t.Errorf("Cache.SizeMB = %d, want %d", cfg.Cache.SizeMB, 128)
 	}
@@ -58,18 +65,23 @@ func TestApplyDefaults(t *testing.T) {
 	if cfg.Server.Port != "8090" {
 		t.Errorf("Server.Port = %q, want %q", cfg.Server.Port, "8090")
 	}
+
 	if cfg.Cache.SizeMB != 64 {
 		t.Errorf("Cache.SizeMB = %d, want %d", cfg.Cache.SizeMB, 64)
 	}
+
 	if cfg.Cache.PreloadPercent != 50 {
 		t.Errorf("Cache.PreloadPercent = %d, want %d", cfg.Cache.PreloadPercent, 50)
 	}
+
 	if cfg.Torrent.ConnectionsLimit != 25 {
 		t.Errorf("Torrent.ConnectionsLimit = %d, want %d", cfg.Torrent.ConnectionsLimit, 25)
 	}
+
 	if cfg.Stream.CoreProfile != "custom" {
 		t.Errorf("Stream.CoreProfile = %q, want %q", cfg.Stream.CoreProfile, "custom")
 	}
+
 	if cfg.DiskCache.SyncPolicy != "periodic" {
 		t.Errorf("DiskCache.SyncPolicy = %q, want %q", cfg.DiskCache.SyncPolicy, "periodic")
 	}
@@ -77,10 +89,12 @@ func TestApplyDefaults(t *testing.T) {
 
 func TestLoadNonExistentFile(t *testing.T) {
 	ResetForTest()
+
 	_, err := Load("/nonexistent/config.yml")
 	if err != nil {
 		t.Fatalf("Load() unexpected error for nonexistent file: %v", err)
 	}
+
 	cfg := Get()
 	if cfg == nil {
 		t.Error("Get() returned nil after loading defaults")
@@ -110,16 +124,19 @@ search:
       key: "test-key"
       name: "Example"
 `
+
 	tmpFile, err := os.CreateTemp("", "config-*.yml")
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if _, err := tmpFile.WriteString(yamlContent); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
-	tmpFile.Close()
+
+	_ = tmpFile.Close()
 
 	cfg, err := Load(tmpFile.Name())
 	if err != nil {
@@ -129,9 +146,11 @@ search:
 	if !cfg.Search.EnableTorznab {
 		t.Error("Search.EnableTorznab = false, want true")
 	}
+
 	if len(cfg.Search.TorznabURLs) != 1 {
 		t.Fatalf("len(Search.TorznabURLs) = %d, want 1", len(cfg.Search.TorznabURLs))
 	}
+
 	if cfg.Search.TorznabURLs[0].Host != "https://api.example.com" {
 		t.Errorf("TorznabURLs[0].Host = %q, want %q", cfg.Search.TorznabURLs[0].Host, "https://api.example.com")
 	}

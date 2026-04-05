@@ -15,6 +15,7 @@ func TestIPListLookup_Empty(t *testing.T) {
 	if ok {
 		t.Error("expected not found for empty list")
 	}
+
 	_ = r
 }
 
@@ -111,7 +112,8 @@ func TestIPListLookup_MultipleRanges(t *testing.T) {
 
 func TestIPList_LargeList(t *testing.T) {
 	ranges := make([]Range, 100)
-	for i := 0; i < 100; i++ {
+
+	for i := range 100 {
 		base := net.ParseIP("192.168.0.0")
 		base[2] = byte(i)
 		ranges[i] = Range{
@@ -119,6 +121,7 @@ func TestIPList_LargeList(t *testing.T) {
 			Last:  net.ParseIP("192.168.255.255"),
 		}
 	}
+
 	ipl := New(ranges)
 
 	if ipl.NumRanges() != 100 {
@@ -155,7 +158,8 @@ func TestRange_Description(t *testing.T) {
 
 func BenchmarkIPListLookup_Found(b *testing.B) {
 	ranges := make([]Range, 1000)
-	for i := 0; i < 1000; i++ {
+
+	for i := range 1000 {
 		base := net.ParseIP("192.168.1.0")
 		base[3] = byte(i % 256)
 		ranges[i] = Range{
@@ -163,17 +167,20 @@ func BenchmarkIPListLookup_Found(b *testing.B) {
 			Last:  net.ParseIP("192.168.1.255"),
 		}
 	}
+
 	ipl := New(ranges)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		ipl.Lookup(net.ParseIP("192.168.1.128"))
 	}
 }
 
 func BenchmarkIPListLookup_NotFound(b *testing.B) {
 	ranges := make([]Range, 1000)
-	for i := 0; i < 1000; i++ {
+
+	for i := range 1000 {
 		base := net.ParseIP("192.168.1.0")
 		base[3] = byte(i % 256)
 		ranges[i] = Range{
@@ -181,10 +188,12 @@ func BenchmarkIPListLookup_NotFound(b *testing.B) {
 			Last:  net.ParseIP("192.168.1.255"),
 		}
 	}
+
 	ipl := New(ranges)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		ipl.Lookup(net.ParseIP("10.0.0.1"))
 	}
 }

@@ -38,12 +38,15 @@ func TestApplyCoreProfilePresetAndOverride(t *testing.T) {
 	if sets.CacheSize != 96*1024*1024 {
 		t.Fatalf("override CacheSize not applied, got %d", sets.CacheSize)
 	}
+
 	if sets.ConnectionsLimit != 33 {
 		t.Fatalf("override ConnectionsLimit not applied, got %d", sets.ConnectionsLimit)
 	}
+
 	if sets.DiskWriteBatchSize != 11 {
 		t.Fatalf("override DiskWriteBatchSize not applied, got %d", sets.DiskWriteBatchSize)
 	}
+
 	if sets.StreamQueueSize <= 0 {
 		t.Fatalf("expected low-end profile to set positive StreamQueueSize")
 	}
@@ -52,12 +55,15 @@ func TestApplyCoreProfilePresetAndOverride(t *testing.T) {
 func TestBalancedProfileDefaults(t *testing.T) {
 	sets := &BTSets{}
 	applyCoreProfilePreset(sets, "balanced")
+
 	if sets.CacheSize != 64*1024*1024 {
 		t.Fatalf("unexpected balanced CacheSize: %d", sets.CacheSize)
 	}
+
 	if sets.StreamQueueWaitSec != 3 {
 		t.Fatalf("unexpected balanced StreamQueueWaitSec: %d", sets.StreamQueueWaitSec)
 	}
+
 	if sets.DiskSyncPolicy != "periodic" {
 		t.Fatalf("unexpected balanced DiskSyncPolicy: %s", sets.DiskSyncPolicy)
 	}

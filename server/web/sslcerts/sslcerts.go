@@ -34,6 +34,7 @@ func generateSelfSignedCert(ips []string) ([]byte, []byte, error) {
 	}
 
 	netIps := make([]net.IP, 0)
+
 	if len(ips) != 0 {
 		for _, ip := range ips {
 			netIps = append(netIps, net.ParseIP(ip))
@@ -76,10 +77,12 @@ func MakeCertKeyFiles(ips []string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+
 	certFile, err := os.Create(filepath.Join(settings.Path, "server.pem"))
 	if err != nil {
 		return "", "", err
 	}
+
 	defer func() {
 		if cerr := certFile.Close(); cerr != nil {
 			log.TLogln("error closing cert file:", cerr)
@@ -90,6 +93,7 @@ func MakeCertKeyFiles(ips []string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+
 	defer func() {
 		if cerr := privFile.Close(); cerr != nil {
 			log.TLogln("error closing key file:", cerr)
@@ -100,16 +104,19 @@ func MakeCertKeyFiles(ips []string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+
 	_, err = privFile.Write(privPEM)
 	if err != nil {
 		return "", "", err
 	}
+
 	log.TLogln("Self-signed certificate and private key generated successfully.")
 
 	certPath, err := getAbsPath(certFile.Name())
 	if err != nil {
 		return "", "", err
 	}
+
 	keyPath, err := getAbsPath(privFile.Name())
 	if err != nil {
 		return "", "", err
@@ -123,6 +130,7 @@ func getAbsPath(fileName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	return filePath, nil
 }
 
@@ -138,6 +146,7 @@ func VerifyCertKeyFiles(certFile, keyFile, port string) error {
 		if err != nil {
 			return err
 		}
+
 		if x509Cert.NotAfter.Before(time.Now()) {
 			return errors.New("certificate has expired")
 		}
@@ -151,11 +160,13 @@ func VerifyCertKeyFiles(certFile, keyFile, port string) error {
 	if err != nil {
 		return err
 	}
+
 	defer func() {
 		if cerr := ln.Close(); cerr != nil {
 			log.TLogln("error closing tls listener:", cerr)
 		}
 	}()
 	log.TLogln("Certificate and key are valid.")
+
 	return nil
 }

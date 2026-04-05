@@ -17,6 +17,7 @@ func inRanges(ranges []Range, ind int) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -31,9 +32,11 @@ func mergeRange(ranges []Range) []Range {
 		if merged[i].Start < merged[j].Start {
 			return true
 		}
+
 		if merged[i].Start == merged[j].Start && merged[i].End < merged[j].End {
 			return true
 		}
+
 		return false
 	})
 
@@ -48,5 +51,6 @@ func mergeRange(ranges []Range) []Range {
 			merged[j] = merged[i]
 		}
 	}
+
 	return merged[:j+1]
 }

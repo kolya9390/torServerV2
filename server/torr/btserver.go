@@ -50,6 +50,7 @@ func init() {
 		if err != nil {
 			panic(fmt.Errorf("parse error on %q: %v", cidr, err))
 		}
+
 		privateIPBlocks = append(privateIPBlocks, block)
 	}
 }
@@ -57,30 +58,37 @@ func init() {
 func NewBTS() *BTServer {
 	bts := new(BTServer)
 	bts.torrents = make(map[metainfo.Hash]*Torrent)
+
 	return bts
 }
 
 func (bt *BTServer) Connect() error {
 	bt.mu.Lock()
 	defer bt.mu.Unlock()
+
 	var err error
+
 	bt.configure(context.TODO())
 	bt.client, err = torrent.NewClient(bt.config)
 	bt.torrents = make(map[metainfo.Hash]*Torrent)
 	InitApiHelper(bt)
 
 	proxy.Start()
+
 	return err
 }
 
 func (bt *BTServer) Disconnect() {
 	bt.mu.Lock()
 	defer bt.mu.Unlock()
+
 	if bt.client != nil {
 		bt.client.Close()
 		bt.client = nil
+
 		utils.FreeOSMemGC()
 	}
+
 	proxy.Stop()
 }
 
@@ -126,10 +134,12 @@ func (bt *BTServer) configure(ctx context.Context) {
 	if settings.BTsets.DownloadRateLimit > 0 {
 		bt.config.DownloadRateLimiter = utils.Limit(settings.BTsets.DownloadRateLimit * 1024)
 	}
+
 	if settings.BTsets.UploadRateLimit > 0 {
 		bt.config.Seed = true
 		bt.config.UploadRateLimiter = utils.Limit(settings.BTsets.UploadRateLimit * 1024)
 	}
+
 	if settings.TorAddr != "" {
 		log.Println("Set listen addr", settings.TorAddr)
 		bt.config.SetListenAddr(settings.TorAddr)
@@ -139,6 +149,7 @@ func (bt *BTServer) configure(ctx context.Context) {
 			bt.config.ListenPort = settings.BTsets.PeersListenPort
 		} else {
 			log.Println("Set listen port to random autoselect (0)")
+
 			bt.config.ListenPort = 0
 		}
 	}
@@ -158,15 +169,18 @@ func (bt *BTServer) configure(ctx context.Context) {
 			bt.config.PublicIp4 = ip4
 		}
 	}
+
 	if bt.config.PublicIp4 == nil {
 		bt.config.PublicIp4, err = publicip.Get4(ctx)
 		if err != nil {
 			log.Printf("error getting public ipv4 address: %v", err)
 		}
 	}
+
 	if bt.config.PublicIp4.To4() == nil { // possible IPv6 from publicip.Get4(ctx)
 		bt.config.PublicIp4 = nil
 	}
+
 	if bt.config.PublicIp4 != nil {
 		log.Println("PublicIp4:", bt.config.PublicIp4)
 	}
@@ -177,15 +191,18 @@ func (bt *BTServer) configure(ctx context.Context) {
 			bt.config.PublicIp6 = ip6
 		}
 	}
+
 	if bt.config.PublicIp6 == nil && settings.BTsets.EnableIPv6 {
 		bt.config.PublicIp6, err = publicip.Get6(ctx)
 		if err != nil {
 			log.Printf("error getting public ipv6 address: %v", err)
 		}
 	}
+
 	if bt.config.PublicIp6.To16() == nil { // just 4 sure it's valid IPv6
 		bt.config.PublicIp6 = nil
 	}
+
 	if bt.config.PublicIp6 != nil {
 		log.Println("PublicIp6:", bt.config.PublicIp6)
 	}
@@ -218,19 +235,20 @@ func (bt *BTServer) configureProxy() error {
 		return fmt.Errorf("unsupported proxy protocol: %s (supported: http, https, socks4, socks4a, socks5, socks5h)", scheme)
 	}
 
-	if proxyMode == "full" {
+	switch proxyMode {
+	case "full":
 		log.Printf("Configuring proxy for all BitTorrent traffic: %s://%s", scheme, parsedURL.Host)
 
 		// Set ProxyURL - this will be used by anacrolix/torrent for all BitTorrent traffic
 		bt.config.ProxyURL = proxyURL
 
 		// Also set HTTPProxy explicitly for HTTP tracker requests
-		bt.config.HTTPProxy = func(req *http.Request) (*url.URL, error) {
+		bt.config.HTTPProxy = func(_ *http.Request) (*url.URL, error) {
 			return parsedURL, nil
 		}
 
 		log.Println("Proxy configured successfully for all BitTorrent connections (tracker, DHT, peers)")
-	} else if proxyMode == "peers" {
+	case "peers":
 		log.Printf("Configuring proxy for peer connections only: %s://%s", scheme, parsedURL.Host)
 
 		// Set ProxyURL for peer connections, but don't set HTTPProxy
@@ -238,11 +256,11 @@ func (bt *BTServer) configureProxy() error {
 		bt.config.ProxyURL = proxyURL
 
 		log.Println("Proxy configured successfully for peer and DHT connections only")
-	} else {
+	default:
 		log.Printf("Configuring proxy for HTTP tracker requests only: %s://%s", scheme, parsedURL.Host)
 
 		// Only set HTTPProxy for tracker requests, don't set ProxyURL
-		bt.config.HTTPProxy = func(req *http.Request) (*url.URL, error) {
+		bt.config.HTTPProxy = func(_ *http.Request) (*url.URL, error) {
 			return parsedURL, nil
 		}
 
@@ -256,12 +274,14 @@ func (bt *BTServer) GetTorrent(hash torrent.InfoHash) *Torrent {
 	if torr, ok := bt.torrents[hash]; ok {
 		return torr
 	}
+
 	return nil
 }
 
 func (bt *BTServer) ListTorrents() map[metainfo.Hash]*Torrent {
 	list := make(map[metainfo.Hash]*Torrent)
 	maps.Copy(list, bt.torrents)
+
 	return list
 }
 
@@ -269,6 +289,7 @@ func (bt *BTServer) RemoveTorrent(hash torrent.InfoHash) bool {
 	if torr, ok := bt.torrents[hash]; ok {
 		return torr.Close()
 	}
+
 	return false
 }
 
@@ -282,6 +303,7 @@ func isPrivateIP(ip net.IP) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -289,8 +311,10 @@ func getPublicIp4() net.IP {
 	ifaces, err := anet.Interfaces()
 	if err != nil {
 		log.Println("Error get public IPv4")
+
 		return nil
 	}
+
 	for _, i := range ifaces {
 		addrs, _ := anet.InterfaceAddrsByInterface(&i)
 		if i.Flags&net.FlagUp == net.FlagUp {
@@ -302,12 +326,14 @@ func getPublicIp4() net.IP {
 				case *net.IPAddr:
 					ip = v.IP
 				}
+
 				if !isPrivateIP(ip) && ip.To4() != nil {
 					return ip
 				}
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -315,8 +341,10 @@ func getPublicIp6() net.IP {
 	ifaces, err := anet.Interfaces()
 	if err != nil {
 		log.Println("Error get public IPv6")
+
 		return nil
 	}
+
 	for _, i := range ifaces {
 		addrs, _ := anet.InterfaceAddrsByInterface(&i)
 		if i.Flags&net.FlagUp == net.FlagUp {
@@ -328,11 +356,13 @@ func getPublicIp6() net.IP {
 				case *net.IPAddr:
 					ip = v.IP
 				}
+
 				if !isPrivateIP(ip) && ip.To16() != nil && ip.To4() == nil {
 					return ip
 				}
 			}
 		}
 	}
+
 	return nil
 }

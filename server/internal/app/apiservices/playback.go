@@ -16,21 +16,26 @@ import (
 
 func (d playbackService) BuildAllPlaylist(host string, torrents api.TorrentService) api.PlaylistPayload {
 	torrs := torrents.List()
+
 	var body strings.Builder
+
 	body.Grow(len(torrs) * 128)
 	body.WriteString("#EXTM3U\n")
 
 	var hash strings.Builder
+
 	hash.Grow(len(torrs) * 40)
 
 	// fn=file.m3u fixes forkplayer bug with trailing .m3u in link.
 	for _, tr := range torrs {
 		body.WriteString("#EXTINF:0")
+
 		if tr.Poster != "" {
 			body.WriteString(` tvg-logo="`)
 			body.WriteString(tr.Poster)
 			body.WriteString(`"`)
 		}
+
 		body.WriteString(` type="playlist",`)
 		body.WriteString(tr.Title)
 		body.WriteString("\n")
@@ -69,6 +74,7 @@ func (d playbackService) BuildPlaylistByHash(hash, requestedName string, fromLas
 
 	name := normalizePlaylistName(requestedName, tor.Name())
 	body := d.BuildM3UFromStatus(tor.Status(), host, fromLast, viewed)
+
 	return api.PlaylistPayload{
 		Name: name,
 		Hash: tor.Hash().HexString(),
@@ -90,6 +96,7 @@ func (d playbackService) ResolvePlay(hash, index string, unauthorized bool, torr
 	if tor == nil && unauthorized {
 		return api.PlayTarget{}, api.ErrPlayUnauthorized
 	}
+
 	if tor == nil {
 		return api.PlayTarget{}, api.ErrPlayTorrentNotFound
 	}
@@ -114,6 +121,7 @@ func (d playbackService) ResolvePlay(hash, index string, unauthorized bool, torr
 			fileIndex = ind
 		}
 	}
+
 	if fileIndex == -1 {
 		return api.PlayTarget{}, api.ErrPlayFileIndexInvalid
 	}
@@ -129,16 +137,20 @@ func normalizePlaylistName(rawName, fallback string) string {
 	if name == "" {
 		return fallback + ".m3u"
 	}
+
 	lower := strings.ToLower(name)
 	if strings.HasSuffix(lower, ".m3u") || strings.HasSuffix(lower, ".m3u8") {
 		return name
 	}
+
 	return name + ".m3u"
 }
 
 func (d playbackService) BuildM3UFromStatus(tor *state.TorrentStatus, host string, fromLast bool, viewed api.ViewedService) string {
 	var body strings.Builder
+
 	from := 0
+
 	if fromLast {
 		pos := searchLastPlayed(viewed, tor)
 		if pos != -1 {
@@ -147,9 +159,11 @@ func (d playbackService) BuildM3UFromStatus(tor *state.TorrentStatus, host strin
 	}
 
 	hasPlayableFiles := false
+
 	for i, f := range tor.FileStats {
 		if i >= from && utils.GetMimeType(f.Path) != "*/*" {
 			hasPlayableFiles = true
+
 			break
 		}
 	}
@@ -177,8 +191,10 @@ func (d playbackService) BuildM3UFromStatus(tor *state.TorrentStatus, host strin
 		fileNamesakes := findFileNamesakes(tor.FileStats, f)
 		if len(fileNamesakes) > 0 {
 			body.WriteString("#EXTVLCOPT:input-slave=")
+
 			for _, namesake := range fileNamesakes {
 				sname := filepath.Base(namesake.Path)
+
 				body.WriteString(host)
 				body.WriteString("/stream/")
 				body.WriteString(url.PathEscape(sname))
@@ -188,10 +204,12 @@ func (d playbackService) BuildM3UFromStatus(tor *state.TorrentStatus, host strin
 				body.WriteString(strconv.Itoa(namesake.Id))
 				body.WriteString("&play#")
 			}
+
 			body.WriteString("\n")
 		}
 
 		name := filepath.Base(f.Path)
+
 		body.WriteString(host)
 		body.WriteString("/stream/")
 		body.WriteString(url.PathEscape(name))
@@ -201,18 +219,22 @@ func (d playbackService) BuildM3UFromStatus(tor *state.TorrentStatus, host strin
 		body.WriteString(strconv.Itoa(f.Id))
 		body.WriteString("&play\n")
 	}
+
 	return body.String()
 }
 
 func findFileNamesakes(files []*state.TorrentFileStat, file *state.TorrentFileStat) []*state.TorrentFileStat {
 	name := filepath.Base(strings.TrimSuffix(file.Path, filepath.Ext(file.Path)))
+
 	var namesakes []*state.TorrentFileStat
+
 	for _, f := range files {
 		// External audio/subtitle files usually contain video filename fragment.
 		if f != file && strings.Contains(f.Path, name) {
 			namesakes = append(namesakes, f)
 		}
 	}
+
 	return namesakes
 }
 
@@ -221,6 +243,7 @@ func searchLastPlayed(viewedSvc api.ViewedService, tor *state.TorrentStatus) int
 	if len(viewed) == 0 {
 		return -1
 	}
+
 	sort.Slice(viewed, func(i, j int) bool {
 		return viewed[i].FileIndex > viewed[j].FileIndex
 	})
@@ -231,8 +254,10 @@ func searchLastPlayed(viewedSvc api.ViewedService, tor *state.TorrentStatus) int
 			if i >= len(tor.FileStats) {
 				return -1
 			}
+
 			return i
 		}
 	}
+
 	return -1
 }

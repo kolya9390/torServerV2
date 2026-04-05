@@ -25,8 +25,10 @@ func (m *testStreamService) ParseLink(link, title, poster, category string) (*to
 	if m.parseLinkErr != nil {
 		return nil, StreamMeta{}, m.parseLinkErr
 	}
+
 	spec := torrent.TorrentSpec{}
 	spec.InfoHash = torrent.InfoHash{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
+
 	return &spec, StreamMeta{}, nil
 }
 
@@ -34,6 +36,7 @@ func (m *testStreamService) EnsureTorrent(torrents TorrentService, spec *torrent
 	if m.ensureTorrentErr != nil {
 		return nil, m.ensureTorrentErr
 	}
+
 	return m.ensureTorrentTor, nil
 }
 
@@ -41,6 +44,7 @@ func (m *testStreamService) ParseFileIndex(index string, fileCount int) (int, er
 	if m.parseFileIndexErr != nil {
 		return 0, m.parseFileIndexErr
 	}
+
 	return m.parseFileIndexVal, nil
 }
 
@@ -48,6 +52,7 @@ func (m *testStreamService) NormalizePlaylistName(rawName, fallback string) stri
 	if m.normalizeResult != "" {
 		return m.normalizeResult
 	}
+
 	return fallback + ".m3u"
 }
 
@@ -96,9 +101,9 @@ func (m *testTorrentService) LoadFromDB(tor *torr.Torrent) *torr.Torrent {
 
 type testViewedService struct{}
 
-func (m *testViewedService) SetViewed(v interface{})    {}
-func (m *testViewedService) RemoveViewed(v interface{}) {}
-func (m *testViewedService) ListViewed(hash string) []interface{} {
+func (m *testViewedService) SetViewed(v any)    {}
+func (m *testViewedService) RemoveViewed(v any) {}
+func (m *testViewedService) ListViewed(hash string) []any {
 	return nil
 }
 
@@ -110,9 +115,11 @@ func TestStreamPlayValidationErrors(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/streams/play", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
+
 	if !strings.Contains(w.Body.String(), `"field":"link"`) {
 		t.Fatalf("expected link validation error, got %s", w.Body.String())
 	}
@@ -126,9 +133,11 @@ func TestStreamStatValidationLink(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/streams/stat?link=not-a-link", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
+
 	if !strings.Contains(w.Body.String(), `"field":"link"`) {
 		t.Fatalf("expected link validation error, got %s", w.Body.String())
 	}
@@ -145,6 +154,7 @@ func TestStreamStatNotFound(t *testing.T) {
 		Streams:  streamSvc,
 	}
 	SetServices(svc)
+
 	defer SetServices(nil)
 
 	r := gin.New()
@@ -168,6 +178,7 @@ func TestStreamServiceParseLinkError(t *testing.T) {
 		},
 	}
 	SetServices(svc)
+
 	defer SetServices(nil)
 
 	r := gin.New()
@@ -200,6 +211,7 @@ func TestIsNotAuthRequest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())
 			c.Set("auth_required", tt.authReq)
+
 			if tt.authUser != "" {
 				c.Set(gin.AuthUserKey, tt.authUser)
 			}
@@ -242,6 +254,7 @@ func TestStreamServiceParseLink(t *testing.T) {
 		},
 	}
 	SetServices(svc)
+
 	defer SetServices(nil)
 
 	r := gin.New()

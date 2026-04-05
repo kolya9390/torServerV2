@@ -1,13 +1,14 @@
 package torr
 
 import (
-	// "context"
+	// "context".
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -20,7 +21,7 @@ import (
 	"server/torr/state"
 )
 
-// Add atomic counter for concurrent streams
+// Add atomic counter for concurrent streams.
 var activeStreams int32
 
 // type contextResponseWriter struct {
@@ -47,29 +48,38 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 
 	if !t.GotInfo() {
 		http.NotFound(resp, req)
+
 		return errors.New("torrent doesn't have info yet")
 	}
 	// Get file information
 	st := t.Status()
+
 	var stFile *state.TorrentFileStat
+
 	for _, fileStat := range st.FileStats {
 		if fileStat.Id == fileID {
 			stFile = fileStat
+
 			break
 		}
 	}
+
 	if stFile == nil {
 		return fmt.Errorf("file with id %v not found", fileID)
 	}
 	// Find the actual torrent file
 	files := t.Files()
+
 	var file *torrent.File
+
 	for _, tfile := range files {
 		if tfile.Path() == stFile.Path {
 			file = tfile
+
 			break
 		}
 	}
+
 	if file == nil {
 		return fmt.Errorf("file with id %v not found", fileID)
 	}
@@ -78,6 +88,7 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 		err := fmt.Errorf("file size exceeded max allowed %d bytes", sets.MaxSize)
 		log.Printf("File %s size (%d) exceeded max allowed %d bytes", file.DisplayPath(), file.Length(), sets.MaxSize)
 		http.Error(resp, err.Error(), http.StatusForbidden)
+
 		return err
 	}
 	// Create reader with context for timeout
@@ -113,10 +124,14 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 	resp.Header().Set("Connection", "close")
 	// Add timeout header if configured
 	if streamTimeout > 0 {
-		resp.Header().Set("X-Stream-Timeout", fmt.Sprintf("%d", streamTimeout))
+		resp.Header().Set("X-Stream-Timeout", strconv.Itoa(streamTimeout))
 	}
-	// Add ETag
-	etag := hex.EncodeToString([]byte(fmt.Sprintf("%s/%s", t.Hash().HexString(), file.Path())))
+	// Add ETag — use byte slice append to avoid fmt.Sprintf alloc
+	etagBuf := make([]byte, 0, 40+1+len(file.Path()))
+	etagBuf = append(etagBuf, t.Hash().HexString()...)
+	etagBuf = append(etagBuf, '/')
+	etagBuf = append(etagBuf, file.Path()...)
+	etag := hex.EncodeToString(etagBuf)
 	resp.Header().Set("ETag", httptoo.EncodeQuotedString(etag))
 	// DLNA headers
 	resp.Header().Set("transferMode.dlna.org", "Streaming")
@@ -161,10 +176,11 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 			log.Printf("[Stream:%d] Disconnect client %s:%s", streamID, host, port)
 		}
 	}
+
 	return nil
 }
 
-// GetActiveStreams returns number of currently active streams
+// GetActiveStreams returns number of currently active streams.
 func GetActiveStreams() int32 {
 	return atomic.LoadInt32(&activeStreams)
 }

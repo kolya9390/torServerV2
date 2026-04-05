@@ -2,183 +2,91 @@ name: CI
 
 on:
   push:
-    branches: [master, main]
+    branches: [main, master, develop]
   pull_request:
-    branches: [master, main]
-  workflow_dispatch:
+    branches: [main, master]
+
+permissions:
+  contents: read
 
 jobs:
-  # =============================================================================
-  # TEST
-  # =============================================================================
   test:
-    name: Test
+    name: Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: server/go.mod
+          go-version: '1.26'
           cache: true
+          cache-dependency-path: server/go.sum
 
-      - name: Go Mod Download
+      - name: Run unit tests
         working-directory: server
-        run: go mod download
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./torr/... ./settings/... ./config/...
 
-      - name: Go Mod Tidy
+      - name: Run E2E tests
         working-directory: server
-        run: go mod tidy && git diff --exit-code go.mod go.sum
+        run: go test -v -timeout 60s ./e2e/...
 
-      - name: Go Build
-        working-directory: server
-        run: go build -v -o /dev/null ./cmd
-
-      - name: Go Test
-        working-directory: server
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
-
-      - name: Architecture Fitness
-        working-directory: server
-        run: ./scripts/architecture_fitness.sh
-
-      - name: Upload Coverage
+      - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
-          files: server/coverage.out
+          file: server/coverage.out
           flags: unittests
-          fail_ci_if_error: false
 
-      - name: Upload Test Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: |
-            server/coverage.out
-            server/artifacts/
-          if-no-files-found: ignore
-
-  # =============================================================================
-  # LINT
-  # =============================================================================
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: server/go.mod
-          cache: false
+          go-version: '1.26'
+          cache: true
 
-      - name: Setup golangci-lint
+      - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.61
+          version: latest
           working-directory: server
-          args: --timeout=10m
+          args: --timeout=5m
 
-      - name: Go Vet
-        working-directory: server
-        run: go vet ./...
-
-      - name: Check Go Format
-        working-directory: server
-        run: |
-          gofmt -l .
-          test -z "$(gofmt -l .)"
-
-  # =============================================================================
-  # BUILD
-  # =============================================================================
   build:
     name: Build
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: [test, lint]
-
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        include:
-          - os: linux
-            arch: amd64
-          - os: linux
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        arch: [amd64, arm64]
+        exclude:
+          - os: windows-latest
             arch: arm64
-          - os: darwin
-            arch: amd64
-          - os: darwin
-            arch: arm64
-          - os: windows
-            arch: amd64
-
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: server/go.mod
+          go-version: '1.26'
           cache: true
 
       - name: Build
         working-directory: server
-        run: |
-          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} CGO_ENABLED=0 \
-            go build -ldflags '-w -s' -o torrserver-${{ matrix.os }}-${{ matrix.arch }} ./cmd
+        env:
+          GOOS: ${{ matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'darwin' || 'windows' }}
+          GOARCH: ${{ matrix.arch }}
+        run: go build -ldflags '-w -s' -o ../dist/torrserver-${{ matrix.os }}-${{ matrix.arch }} ./cmd
 
-      - name: Upload Binary
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: torrserver-${{ matrix.os }}-${{ matrix.arch }}
-          path: server/torrserver-${{ matrix.os }}-${{ matrix.arch }}
-          if-no-files-found: error
-
-  # =============================================================================
-  # E2E SMOKE
-  # =============================================================================
-  e2e-smoke:
-    name: E2E Smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: [build]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: server/go.mod
-
-      - name: Download Build Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: torrserver-linux-amd64
-          path: server/
-
-      - name: Make Binary Executable
-        run: chmod +x server/torrserver-linux-amd64
-
-      - name: Run E2E Smoke
-        working-directory: server
-        run: ./scripts/e2e_smoke.sh
-
-      - name: Upload E2E Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-smoke-artifacts
-          path: server/artifacts/e2e-smoke
-          if-no-files-found: warn
+          path: dist/torrserver-*

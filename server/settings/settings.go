@@ -11,15 +11,17 @@ import (
 	"server/log"
 )
 
-// Add a global lock for database operations during migration
+// Add a global lock for database operations during migration.
 var dbMigrationLock sync.RWMutex
 
 func IsDebug() bool {
 	btsetsMu.RLock()
 	defer btsetsMu.RUnlock()
+
 	if BTsets != nil {
 		return BTsets.EnableDebug
 	}
+
 	return false
 }
 
@@ -55,7 +57,8 @@ func InitSets(readOnly, searchWA bool) error {
 
 	// Optional forced migration (for manual control)
 	if migrationMode := os.Getenv("TS_MIGRATION_MODE"); migrationMode != "" {
-		log.TLogln(fmt.Sprintf("Executing forced migration: %s", migrationMode))
+		log.TLogln("Executing forced migration: " + migrationMode)
+
 		if err := SmartMigrate(bboltDB, jsonDB, migrationMode); err != nil {
 			log.TLogln("Migration warning:", err)
 		}
@@ -77,6 +80,7 @@ func InitSets(readOnly, searchWA bool) error {
 	btsetsMu.RLock()
 	curSets := BTsets
 	btsetsMu.RUnlock()
+
 	if curSets != nil && (curSets.StoreSettingsInJson != settingsStoragePref || curSets.StoreViewedInJson != viewedStoragePref) {
 		curSets.StoreSettingsInJson = settingsStoragePref
 		curSets.StoreViewedInJson = viewedStoragePref
@@ -87,6 +91,7 @@ func InitSets(readOnly, searchWA bool) error {
 	MigrateTorrents()
 
 	logConfiguration(settingsStoragePref, viewedStoragePref)
+
 	return nil
 }
 
@@ -110,6 +115,7 @@ func determineStoragePreferences(bboltDB, jsonDB TorrServerDB) (settingsInJson, 
 	if env := os.Getenv("TS_SETTINGS_STORAGE"); env != "" {
 		settingsInJson = (env == "json")
 	}
+
 	if env := os.Getenv("TS_VIEWED_STORAGE"); env != "" {
 		viewedInJson = (env == "json")
 	}
@@ -118,6 +124,7 @@ func determineStoragePreferences(bboltDB, jsonDB TorrServerDB) (settingsInJson, 
 		log.TLogln(fmt.Sprintf("Using flags: settingsInJson=%v, viewedInJson=%v",
 			settingsInJson, viewedInJson))
 	}
+
 	return settingsInJson, viewedInJson
 }
 
@@ -136,6 +143,7 @@ func loadExistingSettings(bboltDB, jsonDB TorrServerDB) *BTSets {
 			return &sets
 		}
 	}
+
 	return nil
 }
 
@@ -203,6 +211,7 @@ func safeMigrate(source, target TorrServerDB, xpath, name, targetName string, cl
 	migrated, err := MigrateSingle(source, target, xpath, name)
 	if err != nil {
 		log.TLogln(fmt.Sprintf("Migration error for %s/%s: %v", xpath, name, err))
+
 		return
 	}
 
@@ -211,6 +220,7 @@ func safeMigrate(source, target TorrServerDB, xpath, name, targetName string, cl
 		// Clear source if requested
 		if clearSource {
 			source.Rem(xpath, name)
+
 			if IsDebug() {
 				log.TLogln(fmt.Sprintf("Cleared %s/%s from source", xpath, name))
 			}
@@ -235,6 +245,7 @@ func safeMigrateAll(source, target TorrServerDB, xpath, targetName string, clear
 	migrated := postReport.MigratedCount
 	log.TLogln(fmt.Sprintf("%s migration result -> %s: %d migrated, %d skipped, %d failed",
 		xpath, targetName, postReport.MigratedCount, postReport.SkippedCount, postReport.FailedCount))
+
 	if err != nil {
 		log.TLogln(fmt.Sprintf("Migration had errors: %v", err))
 	}
@@ -245,6 +256,7 @@ func safeMigrateAll(source, target TorrServerDB, xpath, targetName string, clear
 		// (accounting for possible duplicates)
 		if migrated >= sourceCount {
 			source.Clear(xpath)
+
 			if IsDebug() {
 				log.TLogln(fmt.Sprintf("Cleared all %s entries from source", xpath))
 			}
@@ -276,6 +288,7 @@ func setupDatabaseRouting(bboltDB, jsonDB TorrServerDB, settingsInJson, viewedIn
 	}
 
 	registerRoute(bboltDB, "Torrents")
+
 	tdb = NewDBReadCache(dbRouter)
 }
 
@@ -284,6 +297,7 @@ func logConfiguration(settingsInJson, viewedInJson bool) {
 	if !settingsInJson {
 		settingsLoc = "BBolt"
 	}
+
 	viewedLoc := "JSON"
 	if !viewedInJson {
 		viewedLoc = "BBolt"
@@ -293,7 +307,7 @@ func logConfiguration(settingsInJson, viewedInJson bool) {
 		settingsLoc, viewedLoc))
 }
 
-// SwitchSettingsStorage - simplified version
+// SwitchSettingsStorage - simplified version.
 func SwitchSettingsStorage(useJson bool) error {
 	if ReadOnly {
 		return errors.New("read-only mode")
@@ -316,13 +330,13 @@ func SwitchSettingsStorage(useJson bool) error {
 	// DON'T CLOSE! They're still in use by tdb
 	// defer jsonDB.CloseDB()
 
-	log.TLogln(fmt.Sprintf("Switching Settings storage to %s",
-		map[bool]string{true: "JSON", false: "BBolt"}[useJson]))
+	log.TLogln("Switching Settings storage to " + map[bool]string{true: "JSON", false: "BBolt"}[useJson])
 
 	// Update storage preference (must be called before migrate as this setting migrate too)
 	btsetsMu.RLock()
 	curSets := BTsets
 	btsetsMu.RUnlock()
+
 	if curSets != nil {
 		curSets.StoreSettingsInJson = useJson
 		SetBTSets(curSets)
@@ -340,10 +354,11 @@ func SwitchSettingsStorage(useJson bool) error {
 	}
 
 	log.TLogln("Settings storage switched. Restart required for routing changes.")
+
 	return nil
 }
 
-// SwitchViewedStorage - simplified version
+// SwitchViewedStorage - simplified version.
 func SwitchViewedStorage(useJson bool) error {
 	if ReadOnly {
 		return errors.New("read-only mode")
@@ -366,8 +381,7 @@ func SwitchViewedStorage(useJson bool) error {
 	// DON'T CLOSE! They're still in use by tdb
 	// defer jsonDB.CloseDB()
 
-	log.TLogln(fmt.Sprintf("Switching Viewed storage to %s",
-		map[bool]string{true: "JSON", false: "BBolt"}[useJson]))
+	log.TLogln("Switching Viewed storage to " + map[bool]string{true: "JSON", false: "BBolt"}[useJson])
 
 	var err error
 	if useJson {
@@ -390,21 +404,23 @@ func SwitchViewedStorage(useJson bool) error {
 	btsetsMu.RLock()
 	curSets := BTsets
 	btsetsMu.RUnlock()
+
 	if curSets != nil {
 		curSets.StoreViewedInJson = useJson
 		SetBTSets(curSets)
 	}
 
 	log.TLogln("Viewed storage switched. Restart required for routing changes.")
+
 	return nil
 }
 
-// Used in /storage/settings web API
-func GetStoragePreferences() map[string]interface{} {
+// Used in /storage/settings web API.
+func GetStoragePreferences() map[string]any {
 	dbMigrationLock.RLock()
 	defer dbMigrationLock.RUnlock()
 
-	prefs := map[string]interface{}{
+	prefs := map[string]any{
 		"settings": "json",  // Default fallback
 		"viewed":   "bbolt", // Default fallback
 	}
@@ -412,6 +428,7 @@ func GetStoragePreferences() map[string]interface{} {
 	btsetsMu.RLock()
 	curSets := BTsets
 	btsetsMu.RUnlock()
+
 	if curSets != nil {
 		// Convert boolean preferences to string values
 		if curSets.StoreSettingsInJson {
@@ -431,6 +448,7 @@ func GetStoragePreferences() map[string]interface{} {
 		log.TLogln(fmt.Sprintf("GetStoragePreferences: settings=%s, viewed=%s",
 			prefs["settings"], prefs["viewed"]))
 	}
+
 	if tdb != nil {
 		prefs["viewedCount"] = len(tdb.List("Viewed"))
 	}
@@ -438,11 +456,12 @@ func GetStoragePreferences() map[string]interface{} {
 	return prefs
 }
 
-// Used in /storage/settings web API
-func SetStoragePreferences(prefs map[string]interface{}) error {
+// Used in /storage/settings web API.
+func SetStoragePreferences(prefs map[string]any) error {
 	btsetsMu.RLock()
 	curSets := BTsets
 	btsetsMu.RUnlock()
+
 	if ReadOnly || curSets == nil {
 		return errors.New("cannot change storage preferences. Read-only mode")
 	}
@@ -458,6 +477,7 @@ func SetStoragePreferences(prefs map[string]interface{}) error {
 			log.TLogln(fmt.Sprintf("Changing settings storage to useJson=%v (was %v)",
 				useJson, BTsets.StoreSettingsInJson))
 		}
+
 		if curSets.StoreSettingsInJson != useJson {
 			if err := SwitchSettingsStorage(useJson); err != nil {
 				return fmt.Errorf("failed to switch settings storage: %w", err)
@@ -471,6 +491,7 @@ func SetStoragePreferences(prefs map[string]interface{}) error {
 			log.TLogln(fmt.Sprintf("Changing viewed storage to useJson=%v (was %v)",
 				useJson, BTsets.StoreViewedInJson))
 		}
+
 		if curSets.StoreViewedInJson != useJson {
 			if err := SwitchViewedStorage(useJson); err != nil {
 				return fmt.Errorf("failed to switch viewed storage: %w", err)

@@ -16,7 +16,7 @@ import (
 // @Success 200 {object} map[string]interface{} "Storage preferences"
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
-// @Router /storage/settings [get]
+// @Router /storage/settings [get].
 func GetStorageSettings(c *gin.Context) {
 	prefs := getServices().Settings.GetStoragePreferences()
 	c.JSON(http.StatusOK, prefs)
@@ -37,15 +37,16 @@ func GetStorageSettings(c *gin.Context) {
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 403 {object} map[string]string "Read-only mode"
 // @Failure 500 {object} map[string]string "Internal server error"
-// @Router /storage/settings [post]
+// @Router /storage/settings [post].
 func UpdateStorageSettings(c *gin.Context) {
 	svc := getServices()
 	if svc.Settings.ReadOnly() {
 		abortAPIError(c, http.StatusForbidden, newValidationError("mode", "read-only mode"))
+
 		return
 	}
 
-	var prefs map[string]interface{}
+	var prefs map[string]any
 
 	// Check Content-Type to handle both JSON and form data
 	contentType := c.GetHeader("Content-Type")
@@ -55,10 +56,11 @@ func UpdateStorageSettings(c *gin.Context) {
 		settings := c.PostForm("settings")
 		viewed := c.PostForm("viewed")
 
-		prefs = make(map[string]interface{})
+		prefs = make(map[string]any)
 		if settings != "" {
 			prefs["settings"] = settings
 		}
+
 		if viewed != "" {
 			prefs["viewed"] = viewed
 		}
@@ -66,6 +68,7 @@ func UpdateStorageSettings(c *gin.Context) {
 		// Handle JSON (default)
 		if err := c.ShouldBindJSON(&prefs); err != nil {
 			abortAPIError(c, http.StatusBadRequest, newValidationError("request", "invalid input data"))
+
 			return
 		}
 	}
@@ -74,6 +77,7 @@ func UpdateStorageSettings(c *gin.Context) {
 	if settingsPref, ok := prefs["settings"].(string); ok && settingsPref != "" {
 		if settingsPref != "json" && settingsPref != "bbolt" {
 			abortAPIError(c, http.StatusBadRequest, newValidationError("settings", "must be json or bbolt"))
+
 			return
 		}
 	}
@@ -81,6 +85,7 @@ func UpdateStorageSettings(c *gin.Context) {
 	if viewedPref, ok := prefs["viewed"].(string); ok && viewedPref != "" {
 		if viewedPref != "json" && viewedPref != "bbolt" {
 			abortAPIError(c, http.StatusBadRequest, newValidationError("viewed", "must be json or bbolt"))
+
 			return
 		}
 	}
@@ -88,11 +93,13 @@ func UpdateStorageSettings(c *gin.Context) {
 	// Check if we have at least one value to update
 	if len(prefs) == 0 {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("request", "no preferences provided"))
+
 		return
 	}
 
 	if err := svc.Settings.SetStoragePreferences(prefs); err != nil {
 		abortAPIError(c, http.StatusInternalServerError, newInternalError("failed to update storage preferences", err))
+
 		return
 	}
 

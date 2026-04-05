@@ -22,6 +22,7 @@ func (f *fakeRuntime) Start() error {
 	if f.startFn != nil {
 		return f.startFn()
 	}
+
 	return nil
 }
 
@@ -35,6 +36,7 @@ func (f *fakeRuntime) Wait() error {
 	if f.waitFn != nil {
 		return f.waitFn()
 	}
+
 	return nil
 }
 
@@ -47,6 +49,7 @@ func TestNewRequiresArgs(t *testing.T) {
 
 func TestNewCreatesBootstrap(t *testing.T) {
 	prevArgs := settings.GetArgs()
+
 	t.Cleanup(func() {
 		settings.SetArgs(prevArgs)
 	})
@@ -55,6 +58,7 @@ func TestNewCreatesBootstrap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new failed: %v", err)
 	}
+
 	if b == nil || b.app == nil {
 		t.Fatal("expected bootstrap with initialized app")
 	}
@@ -69,12 +73,15 @@ func TestNewWithContainerRequiresRuntime(t *testing.T) {
 
 func TestBootstrapStartStopWaitLifecycle(t *testing.T) {
 	var started atomic.Bool
+
 	var stopped atomic.Bool
+
 	waitDone := make(chan struct{})
 
 	rt := &fakeRuntime{
 		startFn: func() error {
 			started.Store(true)
+
 			return nil
 		},
 		stopFn: func() {
@@ -83,6 +90,7 @@ func TestBootstrapStartStopWaitLifecycle(t *testing.T) {
 		},
 		waitFn: func() error {
 			<-waitDone
+
 			return nil
 		},
 	}
@@ -91,9 +99,11 @@ func TestBootstrapStartStopWaitLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithContainer error: %v", err)
 	}
+
 	if err := b.Start(context.Background()); err != nil {
 		t.Fatalf("start error: %v", err)
 	}
+
 	if !started.Load() {
 		t.Fatal("runtime was not started")
 	}
@@ -105,9 +115,11 @@ func TestBootstrapStartStopWaitLifecycle(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+
 	if err := b.Stop(ctx); err != nil {
 		t.Fatalf("stop error: %v", err)
 	}
+
 	if !stopped.Load() {
 		t.Fatal("runtime was not stopped")
 	}
@@ -124,6 +136,7 @@ func TestBootstrapStartStopWaitLifecycle(t *testing.T) {
 
 func TestBootstrapStartWrapsRuntimeError(t *testing.T) {
 	rtErr := errors.New("boom")
+
 	b, err := newWithContainer(&internalapp.Container{
 		Runtime: &fakeRuntime{
 			startFn: func() error { return rtErr },
@@ -132,6 +145,7 @@ func TestBootstrapStartWrapsRuntimeError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithContainer error: %v", err)
 	}
+
 	err = b.Start(context.Background())
 	if err == nil || !errors.Is(err, rtErr) {
 		t.Fatalf("expected wrapped runtime error, got %v", err)
@@ -143,9 +157,11 @@ func TestBootstrapLifecycleRequiresInitializedValue(t *testing.T) {
 	if err := b.Start(context.Background()); err == nil {
 		t.Fatal("expected start error for nil bootstrap")
 	}
+
 	if err := b.Stop(context.Background()); err == nil {
 		t.Fatal("expected stop error for nil bootstrap")
 	}
+
 	if err := b.Wait(); err == nil {
 		t.Fatal("expected wait error for nil bootstrap")
 	}
@@ -163,12 +179,14 @@ func TestBootstrapStopWrapsRuntimeError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithContainer error: %v", err)
 	}
+
 	if err := b.Start(context.Background()); err != nil {
 		t.Fatalf("start error: %v", err)
 	}
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
+
 	err = b.Stop(stopCtx)
 	if err == nil {
 		t.Fatal("expected stop timeout error")

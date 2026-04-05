@@ -10,6 +10,7 @@ func GetScheme(c *gin.Context) string {
 	if url == nil {
 		return "http"
 	}
+
 	return url.Scheme
 }
 
@@ -18,5 +19,6 @@ func GetHost(c *gin.Context) string {
 	if url == nil {
 		return c.Request.Host
 	}
+
 	return url.Host
 }

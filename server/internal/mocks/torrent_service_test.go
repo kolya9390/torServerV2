@@ -68,7 +68,8 @@ func BenchmarkMockTorrentService_Get(b *testing.B) {
 	mockSvc.On("Get", "hash").Return(tor)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		mockSvc.Get("hash")
 	}
 }

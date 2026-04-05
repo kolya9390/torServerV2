@@ -25,6 +25,7 @@ func newFR(size int64) *fileReader {
 
 func (f *fileReader) Read(p []byte) (n int, err error) {
 	f.pos = f.pos + int64(len(p))
+
 	return len(p), nil
 }
 
@@ -37,6 +38,7 @@ func (f *fileReader) Seek(offset int64, whence int) (int64, error) {
 	case 2:
 		f.pos = f.size + offset
 	}
+
 	return f.pos, nil
 }
 
@@ -54,9 +56,11 @@ func (f *fileReader) Seek(offset int64, whence int) (int64, error) {
 //	@Router			/download/{size} [get]
 func download(c *gin.Context) {
 	szStr := c.Param("size")
+
 	sz, err := strconv.Atoi(szStr)
 	if err != nil {
 		_ = c.Error(err)
+
 		return
 	}
 

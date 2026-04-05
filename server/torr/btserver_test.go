@@ -12,13 +12,13 @@ import (
 
 func setupTestSettings() {
 	sets := &settings.BTSets{
-		CacheSize:               64 * 1024 * 1024,
-		PreloadCache:            50,
-		ConnectionsLimit:        10,
+		CacheSize:                64 * 1024 * 1024,
+		PreloadCache:             50,
+		ConnectionsLimit:         10,
 		TorrentDisconnectTimeout: 10,
-		ReaderReadAHead:         50,
-		ResponsiveMode:          true,
-		RetrackersMode:          1,
+		ReaderReadAHead:          50,
+		ResponsiveMode:           true,
+		RetrackersMode:           1,
 	}
 	settings.BTsets = sets
 	// Initialize Args to avoid nil pointer in configureProxy
@@ -33,6 +33,7 @@ func TestNewBTS(t *testing.T) {
 	if bts == nil {
 		t.Fatal("NewBTS() returned nil")
 	}
+
 	if bts.torrents == nil {
 		t.Fatal("NewBTS() torrents not initialized")
 	}
@@ -40,14 +41,18 @@ func TestNewBTS(t *testing.T) {
 
 func TestBTServerConnectDisconnect(t *testing.T) {
 	setupTestSettings()
+
 	bts := NewBTS()
 	if err := bts.Connect(); err != nil {
 		t.Fatalf("Connect() error: %v", err)
 	}
+
 	if bts.client == nil {
 		t.Fatal("client not initialized after Connect")
 	}
+
 	bts.Disconnect()
+
 	if bts.client != nil {
 		t.Fatal("client not nil after Disconnect")
 	}
@@ -55,10 +60,12 @@ func TestBTServerConnectDisconnect(t *testing.T) {
 
 func TestBTServerGetTorrent(t *testing.T) {
 	setupTestSettings()
+
 	bts := NewBTS()
 	if err := bts.Connect(); err != nil {
 		t.Skipf("Connect() error: %v", err)
 	}
+
 	defer bts.Disconnect()
 
 	hash := bts.GetTorrent([20]byte{1, 2, 3})
@@ -69,16 +76,19 @@ func TestBTServerGetTorrent(t *testing.T) {
 
 func TestBTServerListTorrents(t *testing.T) {
 	setupTestSettings()
+
 	bts := NewBTS()
 	if err := bts.Connect(); err != nil {
 		t.Skipf("Connect() error: %v", err)
 	}
+
 	defer bts.Disconnect()
 
 	list := bts.ListTorrents()
 	if list == nil {
 		t.Fatal("ListTorrents() returned nil")
 	}
+
 	if len(list) != 0 {
 		t.Fatalf("ListTorrents() expected 0, got %d", len(list))
 	}
@@ -86,10 +96,12 @@ func TestBTServerListTorrents(t *testing.T) {
 
 func TestBTServerRemoveTorrent(t *testing.T) {
 	setupTestSettings()
+
 	bts := NewBTS()
 	if err := bts.Connect(); err != nil {
 		t.Skipf("Connect() error: %v", err)
 	}
+
 	defer bts.Disconnect()
 
 	// Remove non-existent torrent should return false
@@ -116,6 +128,7 @@ func TestIsPrivateIP(t *testing.T) {
 		if parsed == nil {
 			t.Fatalf("failed to parse IP %q", tt.ip)
 		}
+
 		got := isPrivateIP(parsed)
 		if got != tt.want {
 			t.Errorf("isPrivateIP(%q) = %v, want %v", tt.ip, got, tt.want)
@@ -125,10 +138,12 @@ func TestIsPrivateIP(t *testing.T) {
 
 func TestTorrentStateTransitions(t *testing.T) {
 	setupTestSettings()
+
 	bts := NewBTS()
 	if err := bts.Connect(); err != nil {
 		t.Skipf("Connect() error: %v", err)
 	}
+
 	defer bts.Disconnect()
 
 	spec := &torrent.TorrentSpec{
@@ -141,9 +156,11 @@ func TestTorrentStateTransitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTorrent() error: %v", err)
 	}
+
 	if torr == nil {
 		t.Fatal("NewTorrent() returned nil")
 	}
+
 	if torr.Stat != state.TorrentAdded {
 		t.Errorf("Torrent stat = %v, want %v", torr.Stat, state.TorrentAdded)
 	}

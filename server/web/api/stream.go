@@ -59,26 +59,33 @@ func stream(c *gin.Context) {
 	// route simple/explicit legacy intents to new separated endpoints.
 	if stat && !play && !save && !m3u {
 		streamStat(c)
+
 		return
 	}
+
 	if m3u && !play && !save && !stat {
 		streamM3U(c)
+
 		return
 	}
+
 	if save && !play && !stat && !m3u {
 		streamSave(c)
+
 		return
 	}
+
 	if play && !stat && !m3u && !save {
 		streamPlay(c)
+
 		return
 	}
 
 	// Legacy compat: if preload is present without explicit play,
 	// treat it as play+preload (original TorrServer behavior).
 	if preload && !stat && !m3u && !save {
-		play = true
 		streamPlay(c)
+
 		return
 	}
 
@@ -88,29 +95,37 @@ func stream(c *gin.Context) {
 		err := utils.TestLink(link, !notAuth)
 		if err != nil {
 			abortAPIError(c, http.StatusBadRequest, newValidationError("link", "wrong link"))
+
 			return
 		}
 	}
 
 	if notAuth && (play || m3u) {
 		streamNoAuth(c)
+
 		return
 	}
+
 	if notAuth {
 		c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
 		abortAPIError(c, http.StatusUnauthorized, newUnauthorizedError("authorization required"))
+
 		return
 	}
+
 	if link == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("link", "should not be empty"))
+
 		return
 	}
 
 	spec, meta, err := parseStreamLink(c)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
+
 		return
 	}
+
 	tor, err := svc.Streams.EnsureTorrent(svc.Torrents, spec, StreamMeta{
 		Title:    meta.title,
 		Poster:   meta.poster,
@@ -120,6 +135,7 @@ func stream(c *gin.Context) {
 	if err != nil {
 		statusCode, apiErr := mapStreamEnsureError(err)
 		abortAPIError(c, statusCode, apiErr)
+
 		return
 	}
 
@@ -131,38 +147,51 @@ func stream(c *gin.Context) {
 	index, err := parseStreamFileIndex(c, len(tor.Files()))
 	if err != nil && play {
 		abortAPIError(c, http.StatusBadRequest, err)
+
 		return
 	}
+
 	if preload {
 		if queued := svc.Torrents.EnqueuePreload(tor, index); !queued {
 			log.TLogln("preload queue is full, skipping preload")
 		}
 	}
+
 	if stat {
 		c.JSON(200, tor.Status())
+
 		return
 	}
+
 	if m3u {
 		name := svc.Streams.NormalizePlaylistName(c.Param("fname"), tor.Name())
 		host := utils2.GetScheme(c) + "://" + utils2.GetHost(c)
 		m3ulist := svc.Playback.BuildM3UFromStatus(tor.Status(), host, fromlast, svc.Viewed)
 		sendM3U(c, name, tor.Hash().HexString(), m3ulist)
+
 		return
 	}
+
 	if play {
 		if err := c.Request.Context().Err(); err != nil {
 			abortAPIError(c, http.StatusRequestTimeout, newValidationError("request", "request canceled"))
+
 			return
 		}
+
 		if err := tor.Stream(index, c.Request, c.Writer); err != nil {
 			_ = c.Error(err)
 		}
+
 		return
 	}
+
 	if save {
 		c.Status(200)
+
 		return
 	}
+
 	abortAPIError(c, http.StatusBadRequest, newValidationError("action", "no supported stream action specified"))
 }
 
@@ -176,14 +205,17 @@ func streamNoAuth(c *gin.Context) {
 
 	if link == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("link", "should not be empty"))
+
 		return
 	}
 
 	spec, meta, err := parseStreamLink(c)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
+
 		return
 	}
+
 	tor, err := svc.Streams.EnsureTorrent(svc.Torrents, spec, StreamMeta{
 		Title:    meta.title,
 		Poster:   meta.poster,
@@ -195,37 +227,48 @@ func streamNoAuth(c *gin.Context) {
 		if statusCode == http.StatusUnauthorized {
 			c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
 		}
+
 		abortAPIError(c, statusCode, apiErr)
+
 		return
 	}
 
 	index, err := parseStreamFileIndex(c, len(tor.Files()))
 	if err != nil && play {
 		abortAPIError(c, http.StatusBadRequest, err)
+
 		return
 	}
+
 	if preload {
 		if queued := svc.Torrents.EnqueuePreload(tor, index); !queued {
 			log.TLogln("preload queue is full, skipping preload")
 		}
 	}
+
 	if m3u {
 		name := svc.Streams.NormalizePlaylistName(c.Param("fname"), tor.Name())
 		host := utils2.GetScheme(c) + "://" + utils2.GetHost(c)
 		m3ulist := svc.Playback.BuildM3UFromStatus(tor.Status(), host, fromlast, svc.Viewed)
 		sendM3U(c, name, tor.Hash().HexString(), m3ulist)
+
 		return
 	}
+
 	if play {
 		if err := c.Request.Context().Err(); err != nil {
 			abortAPIError(c, http.StatusRequestTimeout, newValidationError("request", "request canceled"))
+
 			return
 		}
+
 		if err := tor.Stream(index, c.Request, c.Writer); err != nil {
 			_ = c.Error(err)
 		}
+
 		return
 	}
+
 	c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
 	abortAPIError(c, http.StatusUnauthorized, newUnauthorizedError("authorization required"))
 }

@@ -19,6 +19,8 @@ func (a *ioFSAdapter) Open(name string) (fs.File, error) {
 	if name == "." || name == "/" || name == "" {
 		return a.root.Open(".")
 	}
+
 	name = strings.TrimPrefix(name, "/")
+
 	return a.root.Open(name)
 }

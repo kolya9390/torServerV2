@@ -26,11 +26,14 @@ func torznabSearch(c *gin.Context) {
 	svc := getServices()
 	if !svc.Search.EnableTorznabSearch() {
 		c.JSON(http.StatusBadRequest, []string{})
+
 		return
 	}
+
 	query := c.Query("query")
 	indexStr := c.DefaultQuery("index", "-1")
 	index := -1
+
 	if i, err := strconv.Atoi(indexStr); err == nil {
 		index = i
 	}
@@ -38,13 +41,17 @@ func torznabSearch(c *gin.Context) {
 	decodedQuery, err := url.QueryUnescape(query)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("query", "invalid query encoding"))
+
 		return
 	}
+
 	query = decodedQuery
+
 	list := svc.Search.TorznabSearch(query, index)
 	if list == nil {
 		list = []*torznab.TorrentDetails{}
 	}
+
 	c.JSON(200, list)
 }
 
@@ -57,16 +64,21 @@ func torznabTest(c *gin.Context) {
 	var req torznabTestReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("request", "invalid json body"))
+
 		return
 	}
+
 	if req.Host == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("host", "is required"))
+
 		return
 	}
 
 	if err := getServices().Search.TorznabTest(req.Host, req.Key); err != nil {
 		c.JSON(200, gin.H{"success": false, "error": err.Error()})
+
 		return
 	}
+
 	c.JSON(200, gin.H{"success": true})
 }

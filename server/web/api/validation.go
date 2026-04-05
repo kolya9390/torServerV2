@@ -23,6 +23,7 @@ func (e APIError) Error() string {
 	if e.Field != "" {
 		return e.Field + ": " + e.Message
 	}
+
 	return e.Message
 }
 
@@ -81,6 +82,7 @@ func abortAPIError(c *gin.Context, fallbackStatus int, err error) {
 		if apiErr.Status > 0 {
 			status = apiErr.Status
 		}
+
 		e := gin.H{
 			"type":    apiErr.Type,
 			"message": apiErr.Message,
@@ -88,15 +90,18 @@ func abortAPIError(c *gin.Context, fallbackStatus int, err error) {
 		if apiErr.Field != "" {
 			e["field"] = apiErr.Field
 		}
+
 		if apiErr.Cause != nil {
 			e["cause"] = apiErr.Cause.Error()
 		}
+
 		body["error"] = e
 	}
 
 	if rid := log.GetRequestID(c); rid != "" {
 		body["request_id"] = rid
 	}
+
 	c.AbortWithStatusJSON(status, body)
 }
 
@@ -107,5 +112,6 @@ func generateSettingsETag(s *sets.BTSets) string {
 		byte(s.PreloadCache),
 	}
 	hash := sha256.Sum256(data)
+
 	return hex.EncodeToString(hash[:8])
 }

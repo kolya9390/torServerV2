@@ -21,11 +21,13 @@ func (m *mockViewedService) RemoveViewed(v *sets.Viewed) {}
 
 func (m *mockViewedService) ListViewed(hash string) []*sets.Viewed {
 	var result []*sets.Viewed
+
 	for _, v := range m.viewed {
 		if v.hash == hash {
 			result = append(result, &sets.Viewed{Hash: v.hash, FileIndex: v.fileIndex})
 		}
 	}
+
 	return result
 }
 

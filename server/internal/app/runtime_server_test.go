@@ -17,11 +17,13 @@ type fakeWebRuntime struct {
 
 func (f *fakeWebRuntime) Start() error {
 	f.started = true
+
 	return f.startErr
 }
 
 func (f *fakeWebRuntime) Wait() error {
 	f.waited = true
+
 	return f.waitErr
 }
 
@@ -32,6 +34,7 @@ func (f *fakeWebRuntime) Stop() {
 func TestServerRuntimeStartRequiresArgs(t *testing.T) {
 	prevArgs := settings.GetArgs()
 	settings.Args = nil
+
 	t.Cleanup(func() {
 		if prevArgs != nil {
 			settings.SetArgs(prevArgs)
@@ -39,6 +42,7 @@ func TestServerRuntimeStartRequiresArgs(t *testing.T) {
 	})
 
 	rt := newServerRuntime(serverRuntimeDeps{}, nil)
+
 	err := rt.Start()
 	if err == nil || err.Error() != "exec args are not initialized" {
 		t.Fatalf("expected nil-args error, got %v", err)
@@ -75,7 +79,7 @@ func TestServerRuntimeStartPropagatesPrepareError(t *testing.T) {
 	prepareErr := errors.New("prepare failed")
 	deps := serverRuntimeDeps{
 		initSettings:   func(readOnly, searchWA bool) error { return nil },
-		prepareStartup: func(args *settings.ExecArgs) error { return prepareErr },
+		prepareStartup: func(_ *settings.ExecArgs) error { return prepareErr },
 		setShutdown:    func(func()) {},
 	}
 	rt := newServerRuntime(deps, nil)
@@ -110,7 +114,7 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 	shutdownHookSet := false
 	deps := serverRuntimeDeps{
 		initSettings:   func(readOnly, searchWA bool) error { return nil },
-		prepareStartup: func(args *settings.ExecArgs) error { return nil },
+		prepareStartup: func(_ *settings.ExecArgs) error { return nil },
 		newWebServer:   func() webRuntime { return web },
 		setShutdown: func(fn func()) {
 			shutdownHookSet = fn != nil
@@ -122,18 +126,23 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 	if !errors.Is(err, webErr) {
 		t.Fatalf("expected web start error, got %v", err)
 	}
+
 	if !shutdownHookSet {
 		t.Fatal("expected shutdown hook to be set")
 	}
+
 	if settings.Port != "18090" || settings.SslPort != "18443" || settings.IP != "127.0.0.1" {
 		t.Fatalf("runtime settings were not applied: port=%s ssl=%s ip=%s", settings.Port, settings.SslPort, settings.IP)
 	}
+
 	if !settings.HttpAuth {
 		t.Fatal("expected HttpAuth to be enabled from args")
 	}
+
 	if settings.BTsets.SslCert != "cert.pem" || settings.BTsets.SslKey != "key.pem" {
 		t.Fatalf("expected ssl cert/key to be applied, got cert=%q key=%q", settings.BTsets.SslCert, settings.BTsets.SslKey)
 	}
+
 	if !web.started {
 		t.Fatal("expected web start to be called")
 	}
@@ -155,6 +164,7 @@ func TestServerRuntimeWaitAndStop(t *testing.T) {
 	}
 
 	rt.Stop()
+
 	if !web.stopped || !closedDB {
 		t.Fatalf("expected stop chain to be called, web=%v db=%v", web.stopped, closedDB)
 	}

@@ -63,42 +63,43 @@ func init() {
 		{"text/smi", ".smi"},
 		{"text/ssa", ".ssa"},
 	} {
-		for _, ext := range strings.Split(t.extensions, ",") {
+		for ext := range strings.SplitSeq(t.extensions, ",") {
 			err := mime.AddExtensionType(ext, t.mimeType)
 			if err != nil {
 				log.Printf("Could not register %s for %s: %v", ext, t.mimeType, err)
 			}
 		}
 	}
+
 	if err := mime.AddExtensionType(".rmvb", "application/vnd.rn-realmedia-vbr"); err != nil {
 		log.Printf("Could not register application/vnd.rn-realmedia-vbr MIME type: %s", err)
 	}
 }
 
-// Example: "video/mpeg"
+// Example: "video/mpeg".
 type mimeType string
 
-// IsMedia returns true for media MIME-types
+// IsMedia returns true for media MIME-types.
 func (mt mimeType) IsMedia() bool {
 	return mt.IsVideo() || mt.IsAudio() || mt.IsImage()
 }
 
-// IsVideo returns true for video MIME-types
+// IsVideo returns true for video MIME-types.
 func (mt mimeType) IsVideo() bool {
 	return strings.HasPrefix(string(mt), "video/") || mt == "application/vnd.rn-realmedia-vbr"
 }
 
-// IsAudio returns true for audio MIME-types
+// IsAudio returns true for audio MIME-types.
 func (mt mimeType) IsAudio() bool {
 	return strings.HasPrefix(string(mt), "audio/")
 }
 
-// IsImage returns true for image MIME-types
+// IsImage returns true for image MIME-types.
 func (mt mimeType) IsImage() bool {
 	return strings.HasPrefix(string(mt), "image/")
 }
 
-// IsSub returns true for subtitles MIME-types
+// IsSub returns true for subtitles MIME-types.
 func (mt mimeType) IsSub() bool {
 	return strings.HasPrefix(string(mt), "text/srt") || strings.HasPrefix(string(mt), "text/smi") || strings.HasPrefix(string(mt), "text/ssa")
 }
@@ -108,12 +109,12 @@ func (mt mimeType) Type() string {
 	return strings.SplitN(string(mt), "/", 2)[0]
 }
 
-// Returns the string representation of this MIME-type
+// Returns the string representation of this MIME-type.
 func (mt mimeType) String() string {
 	return string(mt)
 }
 
-// MimeTypeByPath determines the MIME-type of file at the given path
+// MimeTypeByPath determines the MIME-type of file at the given path.
 func MimeTypeByPath(filePath string) (ret mimeType, err error) {
 	ret = mimeTypeByBaseName(path.Base(filePath))
 	if ret == "" {
@@ -131,16 +132,19 @@ func MimeTypeByPath(filePath string) (ret mimeType, err error) {
 	case "":
 		ret = "application/octet-stream"
 	}
+
 	return
 }
 
 // Guess MIME-type from the extension, ignoring ".part".
 func mimeTypeByBaseName(name string) mimeType {
 	name = strings.TrimSuffix(name, ".part")
+
 	ext := path.Ext(name)
 	if ext != "" {
 		return mimeType(mime.TypeByExtension(ext))
 	}
+
 	return mimeType("")
 }
 
@@ -150,12 +154,15 @@ func mimeTypeByContent(path string) (ret mimeType, err error) {
 	if err != nil {
 		return
 	}
+
 	defer func() {
 		_ = file.Close()
 	}()
+
 	var data [512]byte
 	if n, err := file.Read(data[:]); err == nil {
 		ret = mimeType(http.DetectContentType(data[:n]))
 	}
+
 	return
 }

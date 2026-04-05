@@ -126,6 +126,7 @@ type BTSets struct {
 
 func (v *BTSets) String() string {
 	buf, _ := json.Marshal(v)
+
 	return string(buf)
 }
 
@@ -136,7 +137,9 @@ func SetBTSets(sets *BTSets) {
 	if ReadOnly {
 		return
 	}
+
 	input := *sets
+
 	sets.CoreProfile = normalizeCoreProfile(sets.CoreProfile)
 	if sets.CoreProfile != "custom" {
 		applyCoreProfilePreset(sets, sets.CoreProfile)
@@ -146,60 +149,78 @@ func SetBTSets(sets *BTSets) {
 	if sets.CacheSize == 0 {
 		sets.CacheSize = 64 * 1024 * 1024
 	}
+
 	if sets.ConnectionsLimit == 0 {
 		sets.ConnectionsLimit = 25
 	}
+
 	if sets.TorrentDisconnectTimeout == 0 {
 		sets.TorrentDisconnectTimeout = 30
 	}
+
 	if sets.StreamQueueWaitSec <= 0 {
 		sets.StreamQueueWaitSec = 3
 	}
+
 	if sets.MaxConcurrentStreams < 0 {
 		sets.MaxConcurrentStreams = 0
 	}
+
 	if sets.StreamQueueSize < 0 {
 		sets.StreamQueueSize = 0
 	}
+
 	if sets.AdaptiveRAMinMB < 0 {
 		sets.AdaptiveRAMinMB = 0
 	}
+
 	if sets.AdaptiveRAMaxMB < 0 {
 		sets.AdaptiveRAMaxMB = 0
 	}
+
 	if sets.AdaptiveRAMaxMB > 0 && sets.AdaptiveRAMinMB > sets.AdaptiveRAMaxMB {
 		sets.AdaptiveRAMinMB = sets.AdaptiveRAMaxMB
 	}
+
 	if sets.WarmDiskCacheSizeMB < 0 {
 		sets.WarmDiskCacheSizeMB = 0
 	}
+
 	if sets.WarmDiskCacheTTLMin < 0 {
 		sets.WarmDiskCacheTTLMin = 0
 	}
+
 	if sets.DiskSyncPolicy == "" {
 		sets.DiskSyncPolicy = "periodic"
 	}
+
 	switch strings.ToLower(sets.DiskSyncPolicy) {
 	case "none", "periodic", "always":
 		sets.DiskSyncPolicy = strings.ToLower(sets.DiskSyncPolicy)
 	default:
 		sets.DiskSyncPolicy = "periodic"
 	}
+
 	if sets.DiskSyncIntervalMS <= 0 {
 		sets.DiskSyncIntervalMS = 1000
 	}
+
 	if sets.DiskWriteBatchSize <= 0 {
 		sets.DiskWriteBatchSize = 16
 	}
+
 	if sets.MetadataWorkers < 0 {
 		sets.MetadataWorkers = 0
 	}
+
 	if sets.MetadataQueueSize < 0 {
 		sets.MetadataQueueSize = 0
 	}
+
 	if sets.PreloadWorkers < 0 {
 		sets.PreloadWorkers = 0
 	}
+
 	if sets.PreloadQueueSize < 0 {
 		sets.PreloadQueueSize = 0
 	}
@@ -207,6 +228,7 @@ func SetBTSets(sets *BTSets) {
 	if sets.ReaderReadAHead < 5 {
 		sets.ReaderReadAHead = 5
 	}
+
 	if sets.ReaderReadAHead > 100 {
 		sets.ReaderReadAHead = 100
 	}
@@ -214,6 +236,7 @@ func SetBTSets(sets *BTSets) {
 	if sets.PreloadCache < 0 {
 		sets.PreloadCache = 0
 	}
+
 	if sets.PreloadCache > 100 {
 		sets.PreloadCache = 100
 	}
@@ -225,14 +248,18 @@ func SetBTSets(sets *BTSets) {
 			if err != nil {
 				return err
 			}
+
 			if d.IsDir() && strings.ToLower(d.Name()) == ".tsc" {
 				sets.TorrentsSavePath = path
 				log.TLogln("Find directory \"" + sets.TorrentsSavePath + "\", use as cache dir")
+
 				return io.EOF
 			}
+
 			if d.IsDir() && strings.HasPrefix(d.Name(), ".") {
 				return filepath.SkipDir
 			}
+
 			return nil
 		})
 	}
@@ -240,11 +267,14 @@ func SetBTSets(sets *BTSets) {
 	btsetsMu.Lock()
 	BTsets = sets
 	btsetsMu.Unlock()
+
 	buf, err := json.Marshal(sets)
 	if err != nil {
 		log.TLogln("Error marshal btsets", err)
+
 		return
 	}
+
 	tdb.Set("Settings", "BitTorr", buf)
 }
 
@@ -281,15 +311,19 @@ func SetDefaultConfig() {
 		ImageURL:   "https://image.tmdb.org",
 		ImageURLRu: "https://imagetmdb.com",
 	}
+
 	btsetsMu.Lock()
 	BTsets = sets
 	btsetsMu.Unlock()
+
 	if !ReadOnly {
 		buf, err := json.Marshal(sets)
 		if err != nil {
 			log.TLogln("Error marshal btsets", err)
+
 			return
 		}
+
 		tdb.Set("Settings", "BitTorr", buf)
 	}
 	//Proxy
@@ -302,16 +336,20 @@ func loadBTSets() {
 	if len(buf) > 0 {
 		loaded := new(BTSets)
 		err := json.Unmarshal(buf, loaded)
+
 		if err == nil {
 			if loaded.ReaderReadAHead < 5 {
 				loaded.ReaderReadAHead = 5
 			}
+
 			if loaded.CacheSize == 0 {
 				loaded.CacheSize = 64 * 1024 * 1024
 			}
+
 			if loaded.ConnectionsLimit == 0 {
 				loaded.ConnectionsLimit = 25
 			}
+
 			if loaded.TorrentDisconnectTimeout == 0 {
 				loaded.TorrentDisconnectTimeout = 30
 			}
@@ -319,61 +357,79 @@ func loadBTSets() {
 			if !loaded.ResponsiveMode {
 				loaded.ResponsiveMode = true
 			}
+
 			loaded.CoreProfile = normalizeCoreProfile(loaded.CoreProfile)
 			if loaded.StreamQueueWaitSec <= 0 {
 				loaded.StreamQueueWaitSec = 3
 			}
+
 			if loaded.MaxConcurrentStreams < 0 {
 				loaded.MaxConcurrentStreams = 0
 			}
+
 			if loaded.StreamQueueSize < 0 {
 				loaded.StreamQueueSize = 0
 			}
+
 			if loaded.AdaptiveRAMinMB < 0 {
 				loaded.AdaptiveRAMinMB = 0
 			}
+
 			if loaded.AdaptiveRAMaxMB < 0 {
 				loaded.AdaptiveRAMaxMB = 0
 			}
+
 			if loaded.AdaptiveRAMinMB == 0 {
 				loaded.AdaptiveRAMinMB = 4
 			}
+
 			if loaded.AdaptiveRAMaxMB == 0 {
 				loaded.AdaptiveRAMaxMB = 64
 			}
+
 			if loaded.AdaptiveRAMinMB > loaded.AdaptiveRAMaxMB {
 				loaded.AdaptiveRAMinMB = loaded.AdaptiveRAMaxMB
 			}
+
 			if loaded.WarmDiskCacheSizeMB < 0 {
 				loaded.WarmDiskCacheSizeMB = 0
 			}
+
 			if loaded.WarmDiskCacheTTLMin <= 0 {
 				loaded.WarmDiskCacheTTLMin = 180
 			}
+
 			if loaded.DiskSyncPolicy == "" {
 				loaded.DiskSyncPolicy = "periodic"
 			}
+
 			switch strings.ToLower(loaded.DiskSyncPolicy) {
 			case "none", "periodic", "always":
 				loaded.DiskSyncPolicy = strings.ToLower(loaded.DiskSyncPolicy)
 			default:
 				loaded.DiskSyncPolicy = "periodic"
 			}
+
 			if loaded.DiskSyncIntervalMS <= 0 {
 				loaded.DiskSyncIntervalMS = 1000
 			}
+
 			if loaded.DiskWriteBatchSize <= 0 {
 				loaded.DiskWriteBatchSize = 16
 			}
+
 			if loaded.MetadataWorkers < 0 {
 				loaded.MetadataWorkers = 0
 			}
+
 			if loaded.MetadataQueueSize < 0 {
 				loaded.MetadataQueueSize = 0
 			}
+
 			if loaded.PreloadWorkers < 0 {
 				loaded.PreloadWorkers = 0
 			}
+
 			if loaded.PreloadQueueSize < 0 {
 				loaded.PreloadQueueSize = 0
 			}
@@ -386,11 +442,14 @@ func loadBTSets() {
 					ImageURLRu: "https://imagetmdb.com",
 				}
 			}
+
 			btsetsMu.Lock()
 			BTsets = loaded
 			btsetsMu.Unlock()
+
 			return
 		}
+
 		log.TLogln("Error unmarshal btsets", err)
 	}
 	// initialize defaults on error
@@ -410,10 +469,7 @@ func normalizeCoreProfile(profile string) string {
 }
 
 func applyCoreProfilePreset(sets *BTSets, profile string) {
-	cpus := runtime.GOMAXPROCS(0)
-	if cpus < 1 {
-		cpus = 1
-	}
+	cpus := max(runtime.GOMAXPROCS(0), 1)
 
 	switch profile {
 	case "low-end":
@@ -495,60 +551,79 @@ func applyCoreProfileOverrides(dst, src *BTSets) {
 	if src == nil || dst == nil {
 		return
 	}
+
 	if src.CacheSize > 0 {
 		dst.CacheSize = src.CacheSize
 	}
+
 	if src.ReaderReadAHead > 0 {
 		dst.ReaderReadAHead = src.ReaderReadAHead
 	}
+
 	if src.PreloadCache > 0 {
 		dst.PreloadCache = src.PreloadCache
 	}
+
 	if src.ConnectionsLimit > 0 {
 		dst.ConnectionsLimit = src.ConnectionsLimit
 	}
+
 	if src.TorrentDisconnectTimeout > 0 {
 		dst.TorrentDisconnectTimeout = src.TorrentDisconnectTimeout
 	}
+
 	if src.MaxConcurrentStreams > 0 {
 		dst.MaxConcurrentStreams = src.MaxConcurrentStreams
 	}
+
 	if src.StreamQueueSize > 0 {
 		dst.StreamQueueSize = src.StreamQueueSize
 	}
+
 	if src.StreamQueueWaitSec > 0 {
 		dst.StreamQueueWaitSec = src.StreamQueueWaitSec
 	}
+
 	if src.AdaptiveRAMinMB > 0 {
 		dst.AdaptiveRAMinMB = src.AdaptiveRAMinMB
 	}
+
 	if src.AdaptiveRAMaxMB > 0 {
 		dst.AdaptiveRAMaxMB = src.AdaptiveRAMaxMB
 	}
+
 	if src.WarmDiskCacheSizeMB > 0 {
 		dst.WarmDiskCacheSizeMB = src.WarmDiskCacheSizeMB
 	}
+
 	if src.WarmDiskCacheTTLMin > 0 {
 		dst.WarmDiskCacheTTLMin = src.WarmDiskCacheTTLMin
 	}
+
 	if src.DiskSyncPolicy != "" {
 		dst.DiskSyncPolicy = src.DiskSyncPolicy
 	}
+
 	if src.DiskSyncIntervalMS > 0 {
 		dst.DiskSyncIntervalMS = src.DiskSyncIntervalMS
 	}
+
 	if src.DiskWriteBatchSize > 0 {
 		dst.DiskWriteBatchSize = src.DiskWriteBatchSize
 	}
+
 	if src.MetadataWorkers > 0 {
 		dst.MetadataWorkers = src.MetadataWorkers
 	}
+
 	if src.MetadataQueueSize > 0 {
 		dst.MetadataQueueSize = src.MetadataQueueSize
 	}
+
 	if src.PreloadWorkers > 0 {
 		dst.PreloadWorkers = src.PreloadWorkers
 	}
+
 	if src.PreloadQueueSize > 0 {
 		dst.PreloadQueueSize = src.PreloadQueueSize
 	}
@@ -558,5 +633,6 @@ func maxInt(a, b int) int {
 	if a > b {
 		return a
 	}
+
 	return b
 }

@@ -19,7 +19,7 @@ import (
 	"server/torr/state"
 )
 
-func getRoot() (ret []interface{}) {
+func getRoot() (ret []any) {
 	// Torrents Object (ROOT)
 	tObj := upnpav.Object{
 		ID:         "%2FTR",
@@ -38,7 +38,7 @@ func getRoot() (ret []interface{}) {
 	return
 }
 
-func getTorrents() (ret []interface{}) {
+func getTorrents() (ret []any) {
 	torrs := torr.ListTorrent()
 	// sort by title as in cds SortCaps
 	sort.Slice(torrs, func(i, j int) bool {
@@ -61,6 +61,7 @@ func getTorrents() (ret []interface{}) {
 		cnt := upnpav.Container{Object: obj, ChildCount: 1}
 		ret = append(ret, cnt)
 	}
+
 	if vol == 0 {
 		obj := upnpav.Object{
 			ID:         "%2FNT",
@@ -73,19 +74,24 @@ func getTorrents() (ret []interface{}) {
 		cnt := upnpav.Container{Object: obj, ChildCount: 0}
 		ret = append(ret, cnt)
 	}
+
 	return
 }
 
-func getTorrent(path, host string) (ret []interface{}) {
+func getTorrent(path, host string) (ret []any) {
 	// find torrent without load
 	torrs := torr.ListTorrent()
+
 	var torr *torr.Torrent
+
 	for _, t := range torrs {
 		if strings.Contains(path, t.TorrentSpec.InfoHash.HexString()) {
 			torr = t
+
 			break
 		}
 	}
+
 	if torr == nil {
 		return nil
 	}
@@ -104,14 +110,16 @@ func getTorrent(path, host string) (ret []interface{}) {
 		}
 		cnt := upnpav.Container{Object: obj, ChildCount: 1}
 		ret = append(ret, cnt)
+
 		return
 	}
 
 	ret = loadTorrent(path, host)
+
 	return
 }
 
-func getTorrentMeta(path, host string) (ret interface{}) {
+func getTorrentMeta(path, host string) (ret any) {
 	// Meta object
 	if path == "/" {
 		// root object meta
@@ -125,6 +133,7 @@ func getTorrentMeta(path, host string) (ret interface{}) {
 			Class:      "object.container.storageFolder",
 		}
 		meta := upnpav.Container{Object: rootObj, ChildCount: 1}
+
 		return meta
 	} else if filepath.Base(path) == "TR" {
 		// TR Object Meta
@@ -140,17 +149,22 @@ func getTorrentMeta(path, host string) (ret interface{}) {
 		torrs := torr.ListTorrent()
 		vol := len(torrs)
 		meta := upnpav.Container{Object: trObj, ChildCount: vol}
+
 		return meta
 	} else if isHashPath(path) {
 		// find torrent without load
 		torrs := torr.ListTorrent()
+
 		var torr *torr.Torrent
+
 		for _, t := range torrs {
 			if strings.Contains(path, t.TorrentSpec.InfoHash.HexString()) {
 				torr = t
+
 				break
 			}
 		}
+
 		if torr == nil {
 			return nil
 		}
@@ -163,6 +177,7 @@ func getTorrentMeta(path, host string) (ret interface{}) {
 			Date:       upnpav.Timestamp{Time: time.Unix(torr.Timestamp, 0)}, // time.Now()
 		}
 		meta := upnpav.Container{Object: obj, ChildCount: 1}
+
 		return meta
 	} else if filepath.Base(path) == "LD" {
 		parent := url.PathEscape(filepath.Dir(path))
@@ -176,6 +191,7 @@ func getTorrentMeta(path, host string) (ret interface{}) {
 			Date:       upnpav.Timestamp{Time: time.Now()},
 		}
 		meta := upnpav.Container{Object: obj, ChildCount: 1}
+
 		return meta
 	} else {
 		file := filepath.Base(path)
@@ -191,15 +207,17 @@ func getTorrentMeta(path, host string) (ret interface{}) {
 			Date:       upnpav.Timestamp{Time: time.Now()},
 		}
 		meta := upnpav.Container{Object: obj, ChildCount: 1}
+
 		return meta
 	}
 }
 
-func loadTorrent(path, host string) (ret []interface{}) {
+func loadTorrent(path, host string) (ret []any) {
 	hash := filepath.Base(filepath.Dir(path))
 	if hash == "/" || hash == "\\" {
 		hash = filepath.Base(path)
 	}
+
 	if len(hash) != 40 {
 		return
 	}
@@ -207,35 +225,44 @@ func loadTorrent(path, host string) (ret []interface{}) {
 	tor := torr.GetTorrent(hash)
 	if tor == nil {
 		log.TLogln("Dlna error get info from torrent", hash)
+
 		return
 	}
+
 	if len(tor.Files()) == 0 {
 		backoff := 50 * time.Millisecond
 		maxBackoff := 200 * time.Millisecond
 		timeout := time.Now().Add(time.Second * 60)
+
 		for {
 			tor = torr.GetTorrent(hash)
 			if len(tor.Files()) > 0 {
 				break
 			}
+
 			time.Sleep(backoff)
+
 			backoff *= 2
 			if backoff > maxBackoff {
 				backoff = maxBackoff
 			}
+
 			if time.Now().After(timeout) {
 				return
 			}
 		}
 	}
+
 	parent := "%2F" + tor.TorrentSpec.InfoHash.HexString()
 	files := tor.Status().FileStats
+
 	for _, f := range files {
 		obj := getObjFromTorrent(path, parent, host, tor, f)
 		if obj != nil {
 			ret = append(ret, obj)
 		}
 	}
+
 	return
 }
 
@@ -243,25 +270,29 @@ func getLink(host, path string) string {
 	if !strings.HasPrefix(host, "http") {
 		host = "http://" + host
 	}
+
 	pos := strings.LastIndex(host, ":")
 	if pos > 7 {
 		host = host[:pos]
 	}
+
 	return host + ":" + settings.Port + "/" + path
 }
 
-func getObjFromTorrent(path, parent, host string, torr *torr.Torrent, file *state.TorrentFileStat) (ret interface{}) {
+func getObjFromTorrent(path, parent, host string, torr *torr.Torrent, file *state.TorrentFileStat) (ret any) {
 	mime, err := mt.MimeTypeByPath(file.Path)
 	if err != nil {
 		if settings.BTsets.EnableDebug {
 			log.TLogln("Can't detect mime type", err)
 		}
+
 		return
 	}
 	// TODO: handle subtitles for media
 	if !mime.IsMedia() {
 		return
 	}
+
 	if settings.BTsets.EnableDebug {
 		log.TLogln("mime type", mime.String(), file.Path)
 	}
@@ -289,5 +320,6 @@ func getObjFromTorrent(path, parent, host string, torr *torr.Torrent, file *stat
 		}.String()),
 		Size: uint64(file.Length),
 	})
+
 	return item
 }

@@ -22,11 +22,14 @@ func ParseFromBytes(data []byte) (*torrent.TorrentSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	info, err := minfo.UnmarshalInfo()
 	if err != nil {
 		return nil, err
 	}
+
 	mag := minfo.Magnet(nil, &info)
+
 	return &torrent.TorrentSpec{
 		InfoBytes:   minfo.InfoBytes,
 		Trackers:    [][]string{mag.Trackers},
@@ -40,6 +43,7 @@ func ParseFile(file multipart.File) (*torrent.TorrentSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	info, err := minfo.UnmarshalInfo()
 	if err != nil {
 		return nil, err
@@ -47,6 +51,7 @@ func ParseFile(file multipart.File) (*torrent.TorrentSpec, error) {
 
 	// mag := minfo.Magnet(info.Name, minfo.HashInfoBytes())
 	mag := minfo.Magnet(nil, &info)
+
 	return &torrent.TorrentSpec{
 		InfoBytes:   minfo.InfoBytes,
 		Trackers:    [][]string{mag.Trackers},
@@ -73,6 +78,7 @@ func ParseLink(link string) (*torrent.TorrentSpec, error) {
 	default:
 		err = fmt.Errorf("unknown scheme %q in link %q", urlLink.Scheme, urlLink.String())
 	}
+
 	return nil, err
 }
 
@@ -97,6 +103,7 @@ func fromMagnet(link string) (*torrent.TorrentSpec, error) {
 
 func ParseTorrsHash(token string) (*torrent.TorrentSpec, *torrshash.TorrsHash, error) {
 	token = strings.TrimPrefix(token, "torrs://")
+
 	th, err := torrshash.Unpack(token)
 	if err != nil {
 		return nil, nil, err
@@ -116,13 +123,14 @@ func ParseTorrsHash(token string) (*torrent.TorrentSpec, *torrshash.TorrsHash, e
 }
 
 func fromHttp(link string) (*torrent.TorrentSpec, error) {
-	req, err := http.NewRequest("GET", link, nil)
+	req, err := http.NewRequest(http.MethodGet, link, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	client := new(http.Client)
 	client.Timeout = time.Duration(time.Second * 60)
+
 	req.Header.Set("User-Agent", "DWL/1.1.1 (Torrent)")
 
 	resp, err := client.Do(req)
@@ -131,15 +139,18 @@ func fromHttp(link string) (*torrent.TorrentSpec, error) {
 			return fromMagnet(er.URL)
 		}
 	}
+
 	if err != nil {
 		return nil, err
 	}
+
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
 			log.TLogln("error closing torrent response body:", cerr)
 		}
 	}()
-	if resp.StatusCode != 200 {
+
+	if resp.StatusCode != http.StatusOK {
 		return nil, errors.New(resp.Status)
 	}
 
@@ -147,6 +158,7 @@ func fromHttp(link string) (*torrent.TorrentSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	info, err := minfo.UnmarshalInfo()
 	if err != nil {
 		return nil, err
@@ -166,10 +178,12 @@ func fromFile(path string) (*torrent.TorrentSpec, error) {
 	if runtime.GOOS == "windows" && strings.HasPrefix(path, "/") {
 		path = strings.TrimPrefix(path, "/")
 	}
+
 	minfo, err := metainfo.LoadFromFile(path)
 	if err != nil {
 		return nil, err
 	}
+
 	info, err := minfo.UnmarshalInfo()
 	if err != nil {
 		return nil, err
@@ -177,6 +191,7 @@ func fromFile(path string) (*torrent.TorrentSpec, error) {
 
 	// mag := minfo.Magnet(info.Name, minfo.HashInfoBytes())
 	mag := minfo.Magnet(nil, &info)
+
 	return &torrent.TorrentSpec{
 		InfoBytes:   minfo.InfoBytes,
 		Trackers:    [][]string{mag.Trackers},

@@ -20,6 +20,7 @@ func TestStoragePreferencesConcurrentAccess(t *testing.T) {
 	if err := InitSets(false, false); err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
+
 	t.Cleanup(func() {
 		CloseDB()
 		globalBboltDBMu.Lock()
@@ -28,30 +29,31 @@ func TestStoragePreferencesConcurrentAccess(t *testing.T) {
 		globalJsonDBMu.Lock()
 		globalJsonDB = nil
 		globalJsonDBMu.Unlock()
+
 		BTsets = nil
 	})
 
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 10; i++ {
+	wg.Go(func() {
+
+		for i := range 10 {
 			if err := SwitchViewedStorage(i%2 == 0); err != nil {
 				t.Errorf("switch viewed storage failed: %v", err)
+
 				return
 			}
 		}
-	}()
+	})
 
-	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 200; j++ {
+	for range 4 {
+
+		wg.Go(func() {
+
+			for range 200 {
 				_ = GetStoragePreferences()
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

@@ -20,6 +20,7 @@ func runCacheCleanup(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+
 	cfg := settings.BTsets
 	if cfg == nil || !cfg.UseDisk || cfg.TorrentsSavePath == "/" || cfg.TorrentsSavePath == "" {
 		return
@@ -28,16 +29,19 @@ func runCacheCleanup(ctx context.Context) {
 	dirs, err := cleanupReadDir(cfg.TorrentsSavePath)
 	if err != nil {
 		log.TLogln("Cache cleanup: read dir error:", err)
+
 		return
 	}
 
 	torrs := cleanupListTorrent()
 	active := make(map[string]struct{}, len(torrs))
+
 	for _, t := range torrs {
 		active[t.InfoHash.HexString()] = struct{}{}
 	}
 
 	log.TLogln("Remove unused cache in dir:", cfg.TorrentsSavePath)
+
 	for _, d := range dirs {
 		select {
 		case <-ctx.Done():
@@ -54,15 +58,18 @@ func runCacheCleanup(ctx context.Context) {
 			_, exists := active[d.Name()]
 			shouldDelete = !exists
 		}
+
 		if !shouldDelete {
 			continue
 		}
 
 		log.TLogln("Remove unused cache:", d.Name())
+
 		if err := removeAllFiles(ctx, filepath.Join(cfg.TorrentsSavePath, d.Name())); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				log.TLogln("Cache cleanup: remove dir error:", err)
 			}
+
 			return
 		}
 	}
@@ -74,6 +81,7 @@ func removeAllFiles(ctx context.Context, path string) error {
 		if os.IsNotExist(err) {
 			return nil
 		}
+
 		return err
 	}
 
@@ -83,13 +91,16 @@ func removeAllFiles(ctx context.Context, path string) error {
 			return ctx.Err()
 		default:
 		}
+
 		name := filepath.Join(path, f.Name())
 		if f.IsDir() {
 			if err := removeAllFiles(ctx, name); err != nil {
 				return err
 			}
+
 			continue
 		}
+
 		if err := cleanupRemove(name); err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -98,5 +109,6 @@ func removeAllFiles(ctx context.Context, path string) error {
 	if err := cleanupRemove(path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+
 	return nil
 }

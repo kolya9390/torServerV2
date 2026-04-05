@@ -18,8 +18,10 @@ func cloneBytes(data []byte) []byte {
 	if data == nil {
 		return nil
 	}
+
 	cp := make([]byte, len(data))
 	copy(cp, data)
+
 	return cp
 }
 
@@ -27,8 +29,10 @@ func cloneStrings(items []string) []string {
 	if items == nil {
 		return nil
 	}
+
 	cp := make([]string, len(items))
 	copy(cp, items)
+
 	return cp
 }
 
@@ -38,6 +42,7 @@ func NewDBReadCache(db TorrServerDB) TorrServerDB {
 		listCache: map[string][]string{},
 		dataCache: map[[2]string][]byte{},
 	}
+
 	return cdb
 }
 
@@ -52,14 +57,17 @@ func (v *DBReadCache) Get(xPath, name string) []byte {
 	if v == nil {
 		return nil
 	}
+
 	if v.dataCache == nil {
 		return nil
 	}
+
 	cacheKey := v.makeDataCacheKey(xPath, name)
 
 	v.dataCacheMutex.RLock()
 	if data, ok := v.dataCache[cacheKey]; ok {
 		defer v.dataCacheMutex.RUnlock()
+
 		return cloneBytes(data)
 	}
 	v.dataCacheMutex.RUnlock()
@@ -67,6 +75,7 @@ func (v *DBReadCache) Get(xPath, name string) []byte {
 	if v.db == nil {
 		return nil
 	}
+
 	data := v.db.Get(xPath, name)
 
 	v.dataCacheMutex.Lock()
@@ -82,14 +91,18 @@ func (v *DBReadCache) Set(xPath, name string, value []byte) {
 	if v == nil {
 		return
 	}
+
 	if ReadOnly {
 		if IsDebug() {
 			log.TLogln("DBReadCache.Set: Read-only DB mode!", name)
 		}
+
 		return
 	}
+
 	if v.dataCache == nil || v.db == nil {
 		log.TLogln("DBReadCache.Set: dataCache or db is nil, cannot set", name)
+
 		return
 	}
 
@@ -114,6 +127,7 @@ func (v *DBReadCache) List(xPath string) []string {
 	if v == nil {
 		return nil
 	}
+
 	if v.listCache == nil {
 		return nil
 	}
@@ -121,6 +135,7 @@ func (v *DBReadCache) List(xPath string) []string {
 	v.listCacheMutex.RLock()
 	if names, ok := v.listCache[xPath]; ok {
 		defer v.listCacheMutex.RUnlock()
+
 		return cloneStrings(names)
 	}
 	v.listCacheMutex.RUnlock()
@@ -144,14 +159,18 @@ func (v *DBReadCache) Rem(xPath, name string) {
 	if v == nil {
 		return
 	}
+
 	if ReadOnly {
 		if IsDebug() {
 			log.TLogln("DBReadCache.Rem: Read-only DB mode!", name)
 		}
+
 		return
 	}
+
 	if v.dataCache == nil || v.db == nil {
 		log.TLogln("DBReadCache.Rem: no dataCache or DB is closed, cannot remove", name)
+
 		return
 	}
 
@@ -176,10 +195,12 @@ func (v *DBReadCache) Clear(xPath string) {
 	if v == nil {
 		return
 	}
+
 	if ReadOnly {
 		if IsDebug() {
 			log.TLogln("DBReadCache.Clear: Read-only DB mode!", xPath)
 		}
+
 		return
 	}
 

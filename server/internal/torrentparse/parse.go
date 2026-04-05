@@ -60,6 +60,7 @@ func fromHTTP(link string) (*torrent.TorrentSpec, error) {
 	}
 
 	client := &http.Client{Timeout: 60 * time.Second}
+
 	req.Header.Set("User-Agent", "DWL/1.1.1 (Torrent)")
 
 	resp, err := client.Do(req)
@@ -68,12 +69,15 @@ func fromHTTP(link string) (*torrent.TorrentSpec, error) {
 			return fromMagnet(er.URL)
 		}
 	}
+
 	if err != nil {
 		return nil, err
 	}
+
 	defer func() {
 		_ = resp.Body.Close()
 	}()
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, errors.New(resp.Status)
 	}
@@ -82,10 +86,12 @@ func fromHTTP(link string) (*torrent.TorrentSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	info, err := minfo.UnmarshalInfo()
 	if err != nil {
 		return nil, err
 	}
+
 	mag := minfo.Magnet(nil, &info)
 
 	return &torrent.TorrentSpec{
@@ -100,15 +106,19 @@ func fromFile(path string) (*torrent.TorrentSpec, error) {
 	if runtime.GOOS == "windows" && strings.HasPrefix(path, "/") {
 		path = strings.TrimPrefix(path, "/")
 	}
+
 	minfo, err := metainfo.LoadFromFile(path)
 	if err != nil {
 		return nil, err
 	}
+
 	info, err := minfo.UnmarshalInfo()
 	if err != nil {
 		return nil, err
 	}
+
 	mag := minfo.Magnet(nil, &info)
+
 	return &torrent.TorrentSpec{
 		InfoBytes:   minfo.InfoBytes,
 		Trackers:    [][]string{mag.Trackers},
@@ -123,11 +133,14 @@ func ParseFromBytes(data []byte) (*torrent.TorrentSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	info, err := minfo.UnmarshalInfo()
 	if err != nil {
 		return nil, err
 	}
+
 	mag := minfo.Magnet(nil, &info)
+
 	return &torrent.TorrentSpec{
 		InfoBytes:   minfo.InfoBytes,
 		Trackers:    [][]string{mag.Trackers},

@@ -25,6 +25,7 @@ func TestErrorResponderWrapsAbortWithError(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
+
 	if !strings.Contains(w.Body.String(), `"type":"error"`) {
 		t.Fatalf("expected error envelope, got %s", w.Body.String())
 	}
@@ -45,6 +46,7 @@ func TestErrorResponderWithTypedError(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
+
 	body := w.Body.String()
 	if !strings.Contains(body, `"type":"validation_error"`) || !strings.Contains(body, `"field":"hash"`) {
 		t.Fatalf("expected typed envelope, got %s", body)

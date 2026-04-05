@@ -38,6 +38,7 @@ func NewTorrFile(parent INode, name string, file *torrent.File) *TorrFile {
 			isDir: false,
 		},
 	}
+
 	return f
 }
 
@@ -46,22 +47,25 @@ func (f *TorrFile) Open(name string) (fs.File, error) {
 	if r == nil {
 		return nil, fs.ErrInvalid
 	}
+
 	if sets.BTsets.ResponsiveMode {
 		r.SetResponsive()
 	}
+
 	return &TorrFileHandle{TorrFile: f, r: r}, nil
 }
 
-// INode
+// INode.
 func (f *TorrFile) Parent() INode                 { return f.parent }
 func (f *TorrFile) Torrent() *torr.Torrent        { return f.torr }
 func (f *TorrFile) SetTorrent(torr *torr.Torrent) { f.torr = torr }
 
-// DirEntry
+// DirEntry.
 func (f *TorrFile) Name() string { return f.info.Name() }
 func (f *TorrFile) IsDir() bool  { return false }
 func (f *TorrFile) Type() fs.FileMode {
 	s, _ := f.Stat()
+
 	return s.Mode()
 }
 func (f *TorrFile) Info() (fs.FileInfo, error)           { return f.info, nil }
@@ -80,5 +84,6 @@ func (h *TorrFileHandle) Seek(off int64, whence int) (int64, error) {
 
 func (h *TorrFileHandle) Close() error {
 	h.torr.CloseReader(h.r)
+
 	return nil
 }

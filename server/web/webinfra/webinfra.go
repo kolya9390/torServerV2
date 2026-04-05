@@ -56,6 +56,7 @@ func (c *corsService) BuildConfig() CORSConfig {
 
 	if os.Getenv("TS_CORS_ALLOW_ALL") == "1" {
 		corsCfg.AllowAllOrigins = true
+
 		log.TLogln("CORS mode: allow-all (TS_CORS_ALLOW_ALL=1)")
 	} else {
 		corsCfg.AllowOrigins = c.GetAllowedOrigins()
@@ -64,6 +65,7 @@ func (c *corsService) BuildConfig() CORSConfig {
 
 	if os.Getenv("TS_CORS_ALLOW_PRIVATE_NETWORK") == "1" {
 		corsCfg.AllowPrivateNetwork = true
+
 		log.TLogln("CORS private network allowed (TS_CORS_ALLOW_PRIVATE_NETWORK=1)")
 	}
 
@@ -74,12 +76,14 @@ func (c *corsService) GetAllowedOrigins() []string {
 	if raw := strings.TrimSpace(os.Getenv("TS_CORS_ALLOW_ORIGINS")); raw != "" {
 		parts := strings.Split(raw, ",")
 		origins := make([]string, 0, len(parts))
+
 		for _, part := range parts {
 			origin := strings.TrimSpace(part)
 			if origin != "" {
 				origins = append(origins, origin)
 			}
 		}
+
 		if len(origins) > 0 {
 			return origins
 		}
@@ -92,15 +96,17 @@ func (c *corsService) GetAllowedOrigins() []string {
 		}
 	}
 
-	add(fmt.Sprintf("http://127.0.0.1:%s", settings.Port))
-	add(fmt.Sprintf("http://localhost:%s", settings.Port))
+	add("http://127.0.0.1:" + settings.Port)
+	add("http://localhost:" + settings.Port)
+
 	if settings.Ssl && settings.SslPort != "" {
-		add(fmt.Sprintf("https://127.0.0.1:%s", settings.SslPort))
-		add(fmt.Sprintf("https://localhost:%s", settings.SslPort))
+		add("https://127.0.0.1:" + settings.SslPort)
+		add("https://localhost:" + settings.SslPort)
 	}
 
 	if settings.IP != "" && settings.IP != "0.0.0.0" && settings.IP != "::" {
 		add(fmt.Sprintf("http://%s:%s", settings.IP, settings.Port))
+
 		if settings.Ssl && settings.SslPort != "" {
 			add(fmt.Sprintf("https://%s:%s", settings.IP, settings.SslPort))
 		}
@@ -110,7 +116,9 @@ func (c *corsService) GetAllowedOrigins() []string {
 	for origin := range uniq {
 		origins = append(origins, origin)
 	}
+
 	sort.Strings(origins)
+
 	return origins
 }
 
@@ -151,6 +159,7 @@ func (s *sslService) VerifyOrRegenerateCerts(ips []string) error {
 	}
 
 	log.TLogln("Error checking certificate and private key files:", err)
+
 	cert, key, certErr := sslcerts.MakeCertKeyFiles(ips)
 	if certErr != nil {
 		return fmt.Errorf("unable to re-generate certificate and key: %w", certErr)
@@ -191,9 +200,12 @@ func GetLocalIps() []string {
 	ifaces, err := anet.Interfaces()
 	if err != nil {
 		log.TLogln("Error get local IPs")
+
 		return nil
 	}
+
 	var list []string
+
 	for _, i := range ifaces {
 		addrs, _ := anet.InterfaceAddrsByInterface(&i)
 		if i.Flags&net.FlagUp == net.FlagUp {
@@ -205,30 +217,37 @@ func GetLocalIps() []string {
 				case *net.IPAddr:
 					ip = v.IP
 				}
+
 				if !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast() {
 					list = append(list, ip.String())
 				}
 			}
 		}
 	}
+
 	sort.Strings(list)
+
 	return list
 }
 
 func CheckTrustedProxies() []string {
 	trustedProxies := []string{"127.0.0.1", "::1"}
+
 	if val := strings.TrimSpace(os.Getenv("TS_TRUSTED_PROXIES")); val != "" {
 		var configured []string
-		for _, part := range strings.Split(val, ",") {
+
+		for part := range strings.SplitSeq(val, ",") {
 			part = strings.TrimSpace(part)
 			if part != "" {
 				configured = append(configured, part)
 			}
 		}
+
 		if len(configured) > 0 {
 			trustedProxies = configured
 		}
 	}
+
 	return trustedProxies
 }
 

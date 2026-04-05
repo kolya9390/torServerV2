@@ -30,6 +30,7 @@ func NewTorrDir(parent INode, name string, torrent *torr.Torrent) *TorrDir {
 			isDir: true,
 		},
 	}
+
 	return d
 }
 
@@ -40,15 +41,17 @@ func (d *TorrDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	// соединяемся с торрентом при чтении директории торрента
 	if !d.Torrent().GotInfo() {
 		hash := d.Torrent().Hash().String()
-		for i := 0; i < settings.BTsets.TorrentDisconnectTimeout*2; i++ {
+		for range settings.BTsets.TorrentDisconnectTimeout * 2 {
 			tor := torr.GetTorrent(hash)
 			if tor.GotInfo() {
 				d.SetTorrent(tor)
+
 				break
 			}
 
 			time.Sleep(time.Millisecond * 500)
 		}
+
 		if d.Torrent() == nil {
 			return nil, fs.ErrNotExist
 		}
@@ -70,6 +73,7 @@ func (d *TorrDir) ReadDir(n int) ([]fs.DirEntry, error) {
 			if !strings.HasPrefix(dp, prefix) {
 				continue
 			}
+
 			rel = strings.TrimPrefix(dp, prefix)
 		}
 
@@ -78,6 +82,7 @@ func (d *TorrDir) ReadDir(n int) ([]fs.DirEntry, error) {
 		}
 
 		arr := strings.SplitN(rel, "/", 2)
+
 		name := arr[0]
 		if name == "" {
 			continue
@@ -94,9 +99,11 @@ func (d *TorrDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	for _, c := range nodes {
 		entries = append(entries, c)
 	}
+
 	if n > 0 && len(entries) > n {
 		entries = entries[:n]
 	}
+
 	return entries, nil
 }
 
@@ -107,6 +114,7 @@ func (d *TorrDir) getTorrPath() string {
 		if n.Parent() != nil && n.Parent().Torrent() == nil {
 			continue
 		}
+
 		parts = append([]string{n.Name()}, parts...)
 	}
 
@@ -114,6 +122,7 @@ func (d *TorrDir) getTorrPath() string {
 	if len(parts) > 0 {
 		return path.Join(parts[1:]...)
 	}
+
 	return ""
 }
 
@@ -121,21 +130,22 @@ func (d *TorrDir) Open(name string) (fs.File, error) {
 	return Open(d, name)
 }
 
-// INode
+// INode.
 func (d *TorrDir) Parent() INode                 { return d.parent }
 func (d *TorrDir) Torrent() *torr.Torrent        { return d.torr }
 func (d *TorrDir) SetTorrent(torr *torr.Torrent) { d.torr = torr }
 
-// DirEntry
+// DirEntry.
 func (d *TorrDir) Name() string { return d.info.Name() }
 func (d *TorrDir) IsDir() bool  { return true }
 func (d *TorrDir) Type() fs.FileMode {
 	s, _ := d.Stat()
+
 	return s.Mode()
 }
 func (d *TorrDir) Info() (fs.FileInfo, error) { return d.info, nil }
 func (d *TorrDir) Stat() (fs.FileInfo, error) { return d.info, nil }
 
-// File
+// File.
 func (d *TorrDir) Read(bytes []byte) (int, error) { return 0, fs.ErrInvalid }
 func (d *TorrDir) Close() error                   { return nil }

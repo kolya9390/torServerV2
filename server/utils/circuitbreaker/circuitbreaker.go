@@ -71,6 +71,7 @@ func New(name string, config Config) *CircuitBreaker {
 	if config.ReadyToTrip == nil {
 		cb.config.ReadyToTrip = defaultReadyToTrip
 	}
+
 	return cb
 }
 
@@ -93,19 +94,25 @@ func (cb *CircuitBreaker) Allow() error {
 			cb.state.Store(int32(StateHalfOpen))
 			cb.halfOpenCalls.Store(0)
 			cb.recordStateChange(StateOpen, StateHalfOpen)
+
 			return nil
 		}
+
 		if cb.config.OnRequestBlocked != nil {
 			cb.config.OnRequestBlocked()
 		}
+
 		return ErrCircuitOpen
 	case StateHalfOpen:
 		if cb.halfOpenCalls.Load() >= int32(cb.config.HalfOpenMaxCalls) {
 			return ErrCircuitOpen
 		}
+
 		cb.halfOpenCalls.Add(1)
+
 		return nil
 	}
+
 	return nil
 }
 
@@ -113,7 +120,9 @@ func (cb *CircuitBreaker) shouldAllowHalfOpen() bool {
 	if cb.config.Timeout <= 0 {
 		return true
 	}
+
 	elapsed := time.Since(cb.openTime)
+
 	return elapsed >= cb.config.Timeout
 }
 
@@ -124,6 +133,7 @@ func (cb *CircuitBreaker) recordSuccess() {
 	switch cb.State() {
 	case StateHalfOpen:
 		cb.successes.Add(1)
+
 		if cb.successes.Load() >= int32(cb.config.SuccessThreshold) {
 			cb.state.Store(int32(StateClosed))
 			cb.successes.Store(0)
@@ -178,8 +188,8 @@ func (cb *CircuitBreaker) Execute(fn func() error) error {
 	return err
 }
 
-func (cb *CircuitBreaker) Metrics() map[string]interface{} {
-	return map[string]interface{}{
+func (cb *CircuitBreaker) Metrics() map[string]any {
+	return map[string]any{
 		"name":         cb.name,
 		"state":        cb.State().String(),
 		"failures":     cb.failures.Load(),

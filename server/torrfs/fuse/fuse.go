@@ -1,5 +1,4 @@
 //go:build !windows
-// +build !windows
 
 package fuse
 
@@ -53,12 +52,14 @@ func FuseAutoMount() error {
 		ffs := GetFuseFS()
 		if !ffs.enabled {
 			log.TLogln("FUSE mount")
+
 			err := ffs.Mount(args.FusePath)
 			if err != nil {
 				return err
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -72,15 +73,18 @@ func FuseCleanup() {
 func GetFuseFS() *FuseFS {
 	fuseMutex.Lock()
 	defer fuseMutex.Unlock()
+
 	if globalFuseFS == nil {
 		globalFuseFS = NewFuseFS()
 	}
+
 	return globalFuseFS
 }
 
 func (ffs *FuseFS) GetMountPath() string {
 	ffs.mu.RLock()
 	defer ffs.mu.RUnlock()
+
 	return ffs.mountPath
 }
 
@@ -91,8 +95,10 @@ func (ffs *FuseFS) Mount(mountPath string) error {
 	if ffs.enabled {
 		return errors.New("FUSE filesystem is already mounted")
 	}
+
 	if err := os.MkdirAll(mountPath, 0o755); err != nil {
 		log.TLogln("Error create FUSE mount point dir:", err)
+
 		return err
 	}
 
@@ -119,13 +125,17 @@ func (ffs *FuseFS) Mount(mountPath string) error {
 	srv, err := gofusefs.Mount(mountPath, ffs, opts)
 	if err != nil {
 		log.TLogln("Error mount FUSE filesystem:", err)
+
 		return err
 	}
 
 	ffs.server = srv
 	ffs.enabled = true
+
 	log.TLogln("FUSE filesystem mounted at", mountPath)
+
 	go ffs.server.Wait()
+
 	return nil
 }
 
@@ -136,6 +146,7 @@ func (ffs *FuseFS) Unmount() error {
 	if !ffs.enabled {
 		return errors.New("FUSE filesystem is not mounted")
 	}
+
 	if err := ffs.server.Unmount(); err != nil {
 		return err
 	}
@@ -147,6 +158,7 @@ func (ffs *FuseFS) Unmount() error {
 	ffs.p = ""
 
 	log.TLogln("FUSE filesystem unmounted")
+
 	return nil
 }
 
@@ -175,7 +187,9 @@ func (ffs *FuseFS) Getattr(ctx context.Context, fh gofusefs.FileHandle, out *fus
 	if err != nil {
 		return errno(err)
 	}
+
 	fillAttr(&out.Attr, fi)
+
 	return 0
 }
 
@@ -183,20 +197,24 @@ func (ffs *FuseFS) Readdir(ctx context.Context) (gofusefs.DirStream, syscall.Err
 	des, err := fs.ReadDir(ffs.tfs, ".")
 	if err != nil {
 		log.TLogln("FUSE root Readdir error:", err)
+
 		return nil, errno(err)
 	}
 
 	out := make([]fuse.DirEntry, 0, len(des))
+
 	for _, de := range des {
 		fi, err := de.Info()
 		if err != nil {
 			continue
 		}
+
 		out = append(out, fuse.DirEntry{
 			Name: de.Name(),
 			Mode: fuseModeFromInfo(fi),
 		})
 	}
+
 	return gofusefs.NewListDirStream(out), 0
 }
 
@@ -216,6 +234,7 @@ func (ffs *FuseFS) Lookup(ctx context.Context, name string, out *fuse.EntryOut) 
 
 	mode := fuseModeFromInfo(fi)
 	ch := ffs.NewInode(ctx, &tfsNode{tfs: ffs.tfs, p: childPath}, gofusefs.StableAttr{Mode: mode})
+
 	return ch, 0
 }
 
@@ -241,7 +260,9 @@ func (n *tfsNode) Getattr(ctx context.Context, fh gofusefs.FileHandle, out *fuse
 	if err != nil {
 		return errno(err)
 	}
+
 	fillAttr(&out.Attr, fi)
+
 	return 0
 }
 
@@ -252,16 +273,19 @@ func (n *tfsNode) Readdir(ctx context.Context) (gofusefs.DirStream, syscall.Errn
 	}
 
 	out := make([]fuse.DirEntry, 0, len(des))
+
 	for _, de := range des {
 		fi, err := de.Info()
 		if err != nil {
 			continue
 		}
+
 		out = append(out, fuse.DirEntry{
 			Name: de.Name(),
 			Mode: fuseModeFromInfo(fi),
 		})
 	}
+
 	return gofusefs.NewListDirStream(out), 0
 }
 
@@ -281,6 +305,7 @@ func (n *tfsNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (
 
 	mode := fuseModeFromInfo(fi)
 	ch := n.NewInode(ctx, &tfsNode{tfs: n.tfs, p: childPath}, gofusefs.StableAttr{Mode: mode})
+
 	return ch, 0
 }
 
@@ -293,8 +318,10 @@ func (n *tfsNode) Open(ctx context.Context, flags uint32) (gofusefs.FileHandle, 
 	if err != nil {
 		return nil, 0, errno(err)
 	}
+
 	if _, ok := f.(io.ReadSeeker); !ok {
 		_ = f.Close()
+
 		return nil, 0, syscall.ENOSYS
 	}
 
@@ -318,15 +345,18 @@ func (h *tfsHandle) Read(ctx context.Context, dest []byte, off int64) (fuse.Read
 	if _, err := rs.Seek(off, io.SeekStart); err != nil {
 		return nil, syscall.EIO
 	}
+
 	n, err := rs.Read(dest)
 	if err != nil && err != io.EOF {
 		return nil, syscall.EIO
 	}
+
 	return fuse.ReadResultData(dest[:n]), 0
 }
 
 func (h *tfsHandle) Release(ctx context.Context) syscall.Errno {
 	_ = h.f.Close()
+
 	return 0
 }
 
@@ -336,6 +366,7 @@ func fuseModeFromInfo(fi fs.FileInfo) uint32 {
 	if fi.IsDir() {
 		return fuse.S_IFDIR | uint32(fi.Mode().Perm())
 	}
+
 	return fuse.S_IFREG | uint32(fi.Mode().Perm())
 }
 
@@ -352,6 +383,7 @@ func fillAttr(a *fuse.Attr, fi fs.FileInfo) {
 	if mt.IsZero() {
 		mt = time.Now()
 	}
+
 	a.Mtime = uint64(mt.Unix())
 	a.Mtimensec = uint32(mt.Nanosecond())
 
@@ -368,9 +400,11 @@ func errno(err error) syscall.Errno {
 	if err == nil {
 		return 0
 	}
+
 	if pe, ok := err.(*fs.PathError); ok {
 		return errno(pe.Err)
 	}
+
 	switch err {
 	case fs.ErrNotExist:
 		return syscall.ENOENT

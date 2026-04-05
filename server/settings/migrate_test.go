@@ -78,7 +78,7 @@ func (d *testDB) Clear(xPath string) {
 	delete(d.data, xPath)
 }
 
-func mustJSON(t *testing.T, v interface{}) []byte {
+func mustJSON(t *testing.T, v any) []byte {
 	t.Helper()
 	out, err := json.Marshal(v)
 	if err != nil {
@@ -165,8 +165,8 @@ func TestMigrateAllWithRealBackendsAndDryRun(t *testing.T) {
 		globalJsonDBMu.Unlock()
 	})
 
-	bboltDB.Set("Viewed", "hash-a", mustJSON(t, map[string]interface{}{"0": struct{}{}}))
-	bboltDB.Set("Viewed", "hash-b", mustJSON(t, map[string]interface{}{"10": struct{}{}}))
+	bboltDB.Set("Viewed", "hash-a", mustJSON(t, map[string]any{"0": struct{}{}}))
+	bboltDB.Set("Viewed", "hash-b", mustJSON(t, map[string]any{"10": struct{}{}}))
 
 	pre, err := MigrateAllDryRun(bboltDB, jsonDB, "Viewed")
 	if err != nil {

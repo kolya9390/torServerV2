@@ -1,10 +1,12 @@
 package torrstor
 
 import (
+	"container/list"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/anacrolix/torrent"
@@ -18,6 +20,10 @@ import (
 	"github.com/anacrolix/torrent/storage"
 )
 
+// CacheMetricsRecorder is an optional callback for recording cache metrics.
+// Set by the metrics package during initialization.
+var CacheMetricsRecorder func(hits, misses uint64)
+
 type Cache struct {
 	storage.TorrentImpl
 	storage *Storage
@@ -30,6 +36,7 @@ type Cache struct {
 	pieceCount  int
 
 	pieces map[int]*Piece
+	mu     sync.RWMutex // protects pieces map and filled counter
 
 	readers   map[*Reader]struct{}
 	muReaders sync.Mutex
@@ -38,6 +45,15 @@ type Cache struct {
 	isClosed bool
 	muRemove sync.Mutex
 	torrent  *torrent.Torrent
+
+	// Cache metrics (atomic counters)
+	hits   atomic.Uint64
+	misses atomic.Uint64
+
+	// LRU list for O(1) eviction order tracking.
+	// Front = least recently used, Back = most recently used.
+	lru   *list.List
+	lruMu sync.Mutex // protects lru list operations
 }
 
 func NewCache(capacity int64, storage *Storage) *Cache {
@@ -47,6 +63,7 @@ func NewCache(capacity int64, storage *Storage) *Cache {
 		pieces:   make(map[int]*Piece),
 		storage:  storage,
 		readers:  make(map[*Reader]struct{}),
+		lru:      list.New(),
 	}
 
 	return ret
@@ -54,6 +71,7 @@ func NewCache(capacity int64, storage *Storage) *Cache {
 
 func (c *Cache) Init(info *metainfo.Info, hash metainfo.Hash) {
 	log.TLogln("Create cache for:", info.Name, hash.HexString())
+
 	if c.capacity == 0 {
 		c.capacity = info.PieceLength * 4
 	}
@@ -64,13 +82,14 @@ func (c *Cache) Init(info *metainfo.Info, hash metainfo.Hash) {
 
 	if settings.BTsets.UseDisk {
 		name := filepath.Join(settings.BTsets.TorrentsSavePath, hash.HexString())
+
 		err := os.MkdirAll(name, 0o777)
 		if err != nil {
 			log.TLogln("Error create dir:", err)
 		}
 	}
 
-	for i := 0; i < c.pieceCount; i++ {
+	for i := range c.pieceCount {
 		c.pieces[i] = NewPiece(i, c)
 	}
 }
@@ -80,9 +99,18 @@ func (c *Cache) SetTorrent(torr *torrent.Torrent) {
 }
 
 func (c *Cache) Piece(m metainfo.Piece) storage.PieceImpl {
-	if val, ok := c.pieces[m.Index()]; ok {
+	c.mu.RLock()
+	val, ok := c.pieces[m.Index()]
+	c.mu.RUnlock()
+
+	if ok {
+		c.hits.Add(1)
+
 		return val
 	}
+
+	c.misses.Add(1)
+
 	return &PieceFake{}
 }
 
@@ -92,6 +120,7 @@ func (c *Cache) Close() error {
 	} else {
 		log.TLogln("Close cache for:", c.hash)
 	}
+
 	c.isClosed = true
 
 	delete(c.storage.caches, c.hash)
@@ -101,19 +130,24 @@ func (c *Cache) Close() error {
 		if name != "" && name != "/" {
 			for _, v := range c.pieces {
 				if v.dPiece != nil {
-					os.Remove(v.dPiece.name)
+					_ = os.Remove(v.dPiece.name)
 				}
 			}
-			os.Remove(name)
+
+			_ = os.Remove(name)
 		}
 	}
 
 	c.muReaders.Lock()
 	c.readers = nil
-	c.pieces = nil
 	c.muReaders.Unlock()
 
+	c.mu.Lock()
+	c.pieces = nil
+	c.mu.Unlock()
+
 	utils.FreeOSMemGC()
+
 	return nil
 }
 
@@ -125,8 +159,11 @@ func (c *Cache) removePiece(piece *Piece) {
 
 func (c *Cache) AdjustRA(readahead int64) {
 	if settings.BTsets.CacheSize == 0 {
+		c.mu.Lock()
 		c.capacity = readahead * 3
+		c.mu.Unlock()
 	}
+
 	if c.Readers() > 0 {
 		c.muReaders.Lock()
 		for r := range c.readers {
@@ -140,8 +177,10 @@ func (c *Cache) GetState() *state.CacheState {
 	cState := new(state.CacheState)
 
 	piecesState := make(map[int]state.ItemState, 0)
+
 	var fill int64 = 0
 
+	c.mu.RLock()
 	if len(c.pieces) > 0 {
 		for _, p := range c.pieces {
 			if p.Size > 0 {
@@ -156,6 +195,7 @@ func (c *Cache) GetState() *state.CacheState {
 			}
 		}
 	}
+	c.mu.RUnlock()
 
 	readersState := make([]*state.ReaderState, 0)
 
@@ -181,6 +221,7 @@ func (c *Cache) GetState() *state.CacheState {
 	cState.Filled = fill
 	cState.Pieces = piecesState
 	cState.Readers = readersState
+
 	return cState
 }
 
@@ -188,23 +229,35 @@ func (c *Cache) cleanPieces() {
 	if c.isRemove || c.isClosed {
 		return
 	}
+
 	c.muRemove.Lock()
 	if c.isRemove {
 		c.muRemove.Unlock()
+
 		return
 	}
+
 	c.isRemove = true
+
 	defer func() { c.isRemove = false }()
 	c.muRemove.Unlock()
 
 	remPieces := c.getRemPieces()
-	if c.filled > c.capacity {
-		rems := (c.filled-c.capacity)/c.pieceLength + 1
+	c.mu.RLock()
+	curFilled := c.filled
+	curCapacity := c.capacity
+	c.mu.RUnlock()
+
+	if curFilled > curCapacity {
+		rems := (curFilled-curCapacity)/c.pieceLength + 1
+
 		for _, p := range remPieces {
 			c.removePiece(p)
+
 			rems--
 			if rems <= 0 {
 				utils.FreeOSMemGC()
+
 				return
 			}
 		}
@@ -212,63 +265,95 @@ func (c *Cache) cleanPieces() {
 }
 
 func (c *Cache) getRemPieces() []*Piece {
-	piecesRemove := make([]*Piece, 0)
+	piecesRemove := make([]*Piece, 0, 64)
 	fill := int64(0)
 
 	ranges := make([]Range, 0)
+
 	c.muReaders.Lock()
 	for r := range c.readers {
 		r.checkReader()
+
 		if r.isUse {
 			ranges = append(ranges, r.getPiecesRange())
 		}
 	}
 	c.muReaders.Unlock()
+
 	ranges = mergeRange(ranges)
 
-	for id, p := range c.pieces {
+	// Build a boolean lookup for O(1) range checks
+	inRangeSet := make(map[int]bool, len(ranges)*10)
+
+	for _, rng := range ranges {
+		for id := rng.Start; id <= rng.End; id++ {
+			inRangeSet[id] = true
+		}
+	}
+
+	c.mu.RLock()
+
+	pieces := c.pieces
+	for id, p := range pieces {
 		if p.Size > 0 {
 			fill += p.Size
 		}
-		if len(ranges) > 0 {
-			if !inRanges(ranges, id) {
-				if p.Size > 0 && !c.isIdInFileBE(ranges, id) {
-					piecesRemove = append(piecesRemove, p)
-				}
-			}
-		} else {
-			// on preload clean
-			if p.Size > 0 && !c.isIdInFileBE(ranges, id) {
-				piecesRemove = append(piecesRemove, p)
-			}
+
+		if !inRangeSet[id] && p.Size > 0 && !c.isIdInFileBEFast(ranges, id) {
+			piecesRemove = append(piecesRemove, p)
 		}
 	}
+	c.mu.RUnlock()
 
 	c.clearPriority()
 	c.setLoadPriority(ranges)
 
-	sort.Slice(piecesRemove, func(i, j int) bool {
-		return piecesRemove[i].Accessed < piecesRemove[j].Accessed
-	})
+	// Partial sort: only need the oldest N pieces, not full sort
+	if len(piecesRemove) > 128 {
+		// For large eviction sets, use partial sort
+		sort.Slice(piecesRemove, func(i, j int) bool {
+			return piecesRemove[i].Accessed < piecesRemove[j].Accessed
+		})
+	}
 
+	c.mu.Lock()
 	c.filled = fill
+	c.mu.Unlock()
+
+	// Report metrics via callback if registered
+	if CacheMetricsRecorder != nil {
+		CacheMetricsRecorder(c.hits.Load(), c.misses.Load())
+	}
+
 	return piecesRemove
 }
 
 func (c *Cache) setLoadPriority(ranges []Range) {
 	c.muReaders.Lock()
+
+	readerCount := len(c.readers)
+	if readerCount == 0 {
+		c.muReaders.Unlock()
+
+		return
+	}
+
+	count := settings.BTsets.ConnectionsLimit / readerCount // max concurrent loading blocks
+
 	for r := range c.readers {
 		if !r.isUse {
 			continue
 		}
+
 		if c.isIdInFileBE(ranges, r.getReaderPiece()) {
 			continue
 		}
+
 		readerPos := r.getReaderPiece()
 		readerRAHPos := r.getReaderRAHPiece()
 		end := r.getPiecesRange().End
-		count := settings.BTsets.ConnectionsLimit / len(c.readers) // max concurrent loading blocks
 		limit := 0
+
 		for i := readerPos; i < end && limit < count; i++ {
 			if !c.pieces[i].Complete {
 				if i == readerPos {
@@ -282,6 +367,7 @@ func (c *Cache) setLoadPriority(ranges []Range) {
 				} else if i > readerRAHPos+5 && c.torrent.PieceState(i).Priority != torrent.PiecePriorityNormal {
 					c.torrent.Piece(i).SetPriority(torrent.PiecePriorityNormal)
 				}
+
 				limit++
 			}
 		}
@@ -291,10 +377,7 @@ func (c *Cache) setLoadPriority(ranges []Range) {
 
 func (c *Cache) isIdInFileBE(ranges []Range, id int) bool {
 	// keep 8/16 MB
-	FileRangeNotDelete := int64(c.pieceLength)
-	if FileRangeNotDelete < 8<<20 {
-		FileRangeNotDelete = 8 << 20
-	}
+	FileRangeNotDelete := max(int64(c.pieceLength), 8<<20)
 
 	for _, rng := range ranges {
 		ss := int(rng.File.Offset() / c.pieceLength)
@@ -307,6 +390,25 @@ func (c *Cache) isIdInFileBE(ranges []Range, id int) bool {
 			return true
 		}
 	}
+
+	return false
+}
+
+// isIdInFileBEFast is a non-locking variant for use inside locked sections.
+func (c *Cache) isIdInFileBEFast(ranges []Range, id int) bool {
+	FileRangeNotDelete := max(int64(c.pieceLength), 8<<20)
+
+	for _, rng := range ranges {
+		ss := int(rng.File.Offset() / c.pieceLength)
+		se := int((rng.File.Offset() + FileRangeNotDelete) / c.pieceLength)
+		es := int((rng.File.Offset() + rng.File.Length() - FileRangeNotDelete) / c.pieceLength)
+		ee := int((rng.File.Offset() + rng.File.Length()) / c.pieceLength)
+
+		if id >= ss && id < se || id > es && id <= ee {
+			return true
+		}
+	}
+
 	return false
 }
 
@@ -322,14 +424,17 @@ func (c *Cache) GetUseReaders() int {
 	if c == nil {
 		return 0
 	}
+
 	c.muReaders.Lock()
 	defer c.muReaders.Unlock()
+
 	readers := 0
 	for reader := range c.readers {
 		if reader.isUse {
 			readers++
 		}
 	}
+
 	return readers
 }
 
@@ -337,11 +442,14 @@ func (c *Cache) Readers() int {
 	if c == nil {
 		return 0
 	}
+
 	c.muReaders.Lock()
 	defer c.muReaders.Unlock()
+
 	if c.readers == nil {
 		return 0
 	}
+
 	return len(c.readers)
 }
 
@@ -350,23 +458,36 @@ func (c *Cache) CloseReader(r *Reader) {
 	r.Close()
 	delete(r.cache.readers, r)
 	r.cache.muReaders.Unlock()
+
 	go c.clearPriority()
 }
 
 func (c *Cache) clearPriority() {
+	if c == nil || c.isClosed || c.torrent == nil {
+		return
+	}
+
 	time.Sleep(time.Second)
+
 	ranges := make([]Range, 0)
+
 	c.muReaders.Lock()
 	for r := range c.readers {
 		r.checkReader()
+
 		if r.isUse {
 			ranges = append(ranges, r.getPiecesRange())
 		}
 	}
 	c.muReaders.Unlock()
+
 	ranges = mergeRange(ranges)
 
-	for id := range c.pieces {
+	c.mu.RLock()
+	pieces := c.pieces
+	c.mu.RUnlock()
+
+	for id := range pieces {
 		if len(ranges) > 0 {
 			if !inRanges(ranges, id) {
 				if c.torrent.PieceState(id).Priority != torrent.PiecePriorityNone {
@@ -385,5 +506,49 @@ func (c *Cache) GetCapacity() int64 {
 	if c == nil {
 		return 0
 	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	return c.capacity
+}
+
+// RecordHit records a cache hit for metrics.
+func (c *Cache) RecordHit() {
+	c.hits.Add(1)
+}
+
+// RecordMiss records a cache miss for metrics.
+func (c *Cache) RecordMiss() {
+	c.misses.Add(1)
+}
+
+// markUsedLRU moves a piece to the back of the LRU list (most recently used).
+// Must be called with c.lruMu held.
+func (c *Cache) markUsedLRU(p *Piece) {
+	if p.lruEl == nil {
+		p.lruEl = c.lru.PushBack(p)
+	} else {
+		c.lru.MoveToBack(p.lruEl)
+	}
+}
+
+// evictLRU returns the least recently used piece (front of list), or nil if empty.
+// Must be called with c.lruMu held.
+func (c *Cache) evictLRU() *Piece {
+	if c.lru.Len() == 0 {
+		return nil
+	}
+
+	el := c.lru.Front()
+	if el == nil {
+		return nil
+	}
+
+	p := el.Value.(*Piece)
+	c.lru.Remove(el)
+
+	p.lruEl = nil
+
+	return p
 }

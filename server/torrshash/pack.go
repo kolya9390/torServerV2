@@ -13,6 +13,7 @@ func Pack(hash *TorrsHash) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	return Encode62(data), nil
 }
 
@@ -22,6 +23,7 @@ func PackBytes(hash *TorrsHash) ([]byte, error) {
 
 func Unpack(token string) (*TorrsHash, error) {
 	data := Decode62(strings.TrimSpace(token))
+
 	return UnpackBytes(data)
 }
 
@@ -31,12 +33,14 @@ func UnpackBytes(data []byte) (*TorrsHash, error) {
 
 func pack(t *TorrsHash) ([]byte, error) {
 	buf := new(bytes.Buffer)
+
 	zw, err := zlib.NewWriterLevel(buf, zlib.BestCompression)
 	if err != nil {
 		return nil, err
 	}
 
 	hashBytes, _ := hex.DecodeString(strings.TrimSpace(t.Hash))
+
 	_, err = zw.Write(hashBytes)
 	if err != nil {
 		return nil, err
@@ -50,6 +54,7 @@ func pack(t *TorrsHash) ([]byte, error) {
 	}
 
 	err = zw.Close()
+
 	return buf.Bytes(), err
 }
 
@@ -58,6 +63,7 @@ func unpack(data []byte) (*TorrsHash, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	defer func() {
 		_ = zr.Close()
 	}()
@@ -76,6 +82,7 @@ func unpack(data []byte) (*TorrsHash, error) {
 			//End on read
 			return th, nil
 		}
+
 		if err != nil {
 			return th, err
 		}

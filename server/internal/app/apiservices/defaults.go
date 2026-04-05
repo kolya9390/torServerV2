@@ -106,11 +106,11 @@ func (d settingsService) ReadOnly() bool {
 	return sets.ReadOnly
 }
 
-func (d settingsService) GetStoragePreferences() map[string]interface{} {
+func (d settingsService) GetStoragePreferences() map[string]any {
 	return sets.GetStoragePreferences()
 }
 
-func (d settingsService) SetStoragePreferences(prefs map[string]interface{}) error {
+func (d settingsService) SetStoragePreferences(prefs map[string]any) error {
 	return nil
 }
 

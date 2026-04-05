@@ -25,12 +25,14 @@ func ffp(c *gin.Context) {
 
 	if hash == "" || indexStr == "" {
 		abortAPIError(c, http.StatusNotFound, newValidationError("path", "hash and id are required"))
+
 		return
 	}
 
 	data, err := getServices().Media.ProbePlayURL(hash, indexStr)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, newInternalError("error getting data from ffprobe", err))
+
 		return
 	}
 

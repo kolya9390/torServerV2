@@ -1,6 +1,7 @@
 package torr
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -21,6 +22,7 @@ func (t *Torrent) Preload(index int, size int64) {
 	if size <= 0 {
 		return
 	}
+
 	t.PreloadSize = size
 
 	if t.Stat == state.TorrentGettingInfo {
@@ -34,6 +36,7 @@ func (t *Torrent) Preload(index int, size int64) {
 	t.muTorrent.Lock()
 	if t.Stat != state.TorrentWorking {
 		t.muTorrent.Unlock()
+
 		return
 	}
 
@@ -64,10 +67,7 @@ func (t *Torrent) Preload(index int, size int64) {
 		return
 	}
 
-	timeout := time.Second * time.Duration(settings.BTsets.TorrentDisconnectTimeout)
-	if timeout > time.Minute {
-		timeout = time.Minute
-	}
+	timeout := min(time.Second*time.Duration(settings.BTsets.TorrentDisconnectTimeout), time.Minute)
 
 	// Create a stop channel for the logging goroutine
 	logStopChan := make(chan struct{})
@@ -109,6 +109,7 @@ func (t *Torrent) Preload(index int, size int64) {
 		if settings.Ssl {
 			link = "https://127.0.0.1:" + settings.SslPort + "/play/" + t.Hash().HexString() + "/" + strconv.Itoa(index)
 		}
+
 		if data, err := ffprobe.ProbeUrl(link); err == nil {
 			t.BitRate = data.Format.BitRate
 			t.DurationSeconds = data.Format.DurationSeconds
@@ -122,30 +123,31 @@ func (t *Torrent) Preload(index int, size int64) {
 
 	if isClosed {
 		log.TLogln("End preload: torrent closed")
+
 		return
 	}
 
 	// startend -> 8/16 MB
-	startend := t.Info().PieceLength
-	if startend < 8<<20 {
-		startend = 8 << 20
-	}
+	startend := max(t.Info().PieceLength, 8<<20)
 
 	readerStart := file.NewReader()
 	if readerStart == nil {
 		log.TLogln("End preload: null reader")
+
 		return
 	}
-	defer readerStart.Close()
+	defer func() { _ = readerStart.Close() }()
 
 	readerStart.SetResponsive()
 	readerStart.SetReadahead(0)
+
 	readerStartEnd := size - startend
 
 	if readerStartEnd < 0 {
 		// Если конец начального ридера оказался за началом
 		readerStartEnd = size
 	}
+
 	if readerStartEnd > file.Length() {
 		// Если конец начального ридера оказался после конца файла
 		readerStartEnd = file.Length()
@@ -155,13 +157,13 @@ func (t *Torrent) Preload(index int, size int64) {
 	readerEndEnd := file.Length()
 
 	var wg sync.WaitGroup
+
 	var preloadErr error
 
 	// Start end range preload if needed
 	if readerEndStart > readerStartEnd {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+
+		wg.Go(func() {
 
 			// Check if we should still preload
 			t.muTorrent.Lock()
@@ -175,10 +177,12 @@ func (t *Torrent) Preload(index int, size int64) {
 			readerEnd := file.NewReader()
 			if readerEnd == nil {
 				log.TLogln("Err preload: null reader")
-				preloadErr = fmt.Errorf("null reader for end range")
+
+				preloadErr = errors.New("null reader for end range")
+
 				return
 			}
-			defer readerEnd.Close() // Ensure reader is always closed
+			defer func() { _ = readerEnd.Close() }() // Ensure reader is always closed
 
 			readerEnd.SetResponsive()
 			readerEnd.SetReadahead(0)
@@ -187,11 +191,13 @@ func (t *Torrent) Preload(index int, size int64) {
 			if err != nil {
 				log.TLogln("Err preload seek:", err)
 				preloadErr = err
+
 				return
 			}
 
 			offset := readerEndStart
 			tmp := make([]byte, 32768)
+
 			for offset+int64(len(tmp)) < readerEndEnd {
 				n, err := readerEnd.Read(tmp)
 				if err != nil {
@@ -199,8 +205,10 @@ func (t *Torrent) Preload(index int, size int64) {
 						log.TLogln("Err preload read:", err)
 						preloadErr = err
 					}
+
 					break
 				}
+
 				offset += int64(n)
 
 				// Check if we should continue
@@ -212,19 +220,22 @@ func (t *Torrent) Preload(index int, size int64) {
 					break
 				}
 			}
-		}()
+		})
 	}
 
 	// Main preload section
 	pieceLength := t.Info().PieceLength
+
 	readahead := pieceLength * 4
 	if readerStartEnd < readahead {
 		readahead = 0
 	}
+
 	readerStart.SetReadahead(readahead)
 
 	offset := int64(0)
 	tmp := make([]byte, 32768)
+
 	for offset+int64(len(tmp)) < readerStartEnd {
 		// Check if we should continue
 		t.muTorrent.Lock()
@@ -233,6 +244,7 @@ func (t *Torrent) Preload(index int, size int64) {
 
 		if !shouldContinue {
 			log.TLogln("Preload cancelled")
+
 			break
 		}
 
@@ -241,12 +253,15 @@ func (t *Torrent) Preload(index int, size int64) {
 			if err != io.EOF {
 				log.TLogln("Error preload:", err)
 			}
+
 			break
 		}
+
 		offset += int64(n)
 
 		if readahead > 0 && readerStartEnd-(offset+int64(len(tmp))) < readahead {
 			readahead = 0
+
 			readerStart.SetReadahead(0)
 		}
 	}
@@ -274,20 +289,26 @@ func (t *Torrent) Preload(index int, size int64) {
 
 func (t *Torrent) findFileIndex(index int) *torrent.File {
 	st := t.Status()
+
 	var stFile *state.TorrentFileStat
+
 	for _, f := range st.FileStats {
 		if index == f.Id {
 			stFile = f
+
 			break
 		}
 	}
+
 	if stFile == nil {
 		return nil
 	}
+
 	for _, file := range t.Files() {
 		if file.Path() == stFile.Path {
 			return file
 		}
 	}
+
 	return nil
 }

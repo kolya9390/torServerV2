@@ -21,6 +21,7 @@ func TestPrepareNetworkDefaultHTTPPort(t *testing.T) {
 	listenTCP = func(network, address string) (net.Listener, error) {
 		return fakeListener{}, nil
 	}
+
 	t.Cleanup(func() {
 		settings.BTsets = prevBT
 		listenTCP = prevListen
@@ -30,6 +31,7 @@ func TestPrepareNetworkDefaultHTTPPort(t *testing.T) {
 	if err := PrepareNetwork(args); err != nil {
 		t.Fatalf("PrepareNetwork returned error: %v", err)
 	}
+
 	if args.Port != defaultHTTPPort {
 		t.Fatalf("expected default http port %s, got %s", defaultHTTPPort, args.Port)
 	}
@@ -42,6 +44,7 @@ func TestPrepareNetworkDetectsBusyHTTPPort(t *testing.T) {
 	listenTCP = func(network, address string) (net.Listener, error) {
 		return nil, errors.New("busy")
 	}
+
 	t.Cleanup(func() {
 		settings.BTsets = prevBT
 		listenTCP = prevListen
@@ -60,6 +63,7 @@ func TestPrepareNetworkResolvesSSLPortFromSettings(t *testing.T) {
 	listenTCP = func(network, address string) (net.Listener, error) {
 		return fakeListener{}, nil
 	}
+
 	t.Cleanup(func() {
 		settings.BTsets = prevBT
 		listenTCP = prevListen
@@ -69,6 +73,7 @@ func TestPrepareNetworkResolvesSSLPortFromSettings(t *testing.T) {
 	if err := PrepareNetwork(args); err != nil {
 		t.Fatalf("PrepareNetwork returned error: %v", err)
 	}
+
 	if args.SslPort != "18443" {
 		t.Fatalf("expected ssl port from settings 18443, got %s", args.SslPort)
 	}
@@ -81,6 +86,7 @@ func TestPrepareNetworkUsesDefaultSSLPortWhenSettingsEmpty(t *testing.T) {
 	listenTCP = func(network, address string) (net.Listener, error) {
 		return fakeListener{}, nil
 	}
+
 	t.Cleanup(func() {
 		settings.BTsets = prevBT
 		listenTCP = prevListen
@@ -90,6 +96,7 @@ func TestPrepareNetworkUsesDefaultSSLPortWhenSettingsEmpty(t *testing.T) {
 	if err := PrepareNetwork(args); err != nil {
 		t.Fatalf("PrepareNetwork returned error: %v", err)
 	}
+
 	if args.SslPort != defaultHTTPSPort {
 		t.Fatalf("expected default ssl port %s, got %s", defaultHTTPSPort, args.SslPort)
 	}

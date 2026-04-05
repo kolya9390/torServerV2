@@ -47,6 +47,7 @@ func play(c *gin.Context) {
 		default:
 			abortAPIError(c, http.StatusInternalServerError, newInternalError("failed to prepare playback", err))
 		}
+
 		return
 	}
 

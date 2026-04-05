@@ -10,11 +10,13 @@ type PieceFake struct{}
 
 func (PieceFake) ReadAt(p []byte, off int64) (n int, err error) {
 	err = errors.New("fake")
+
 	return
 }
 
 func (PieceFake) WriteAt(p []byte, off int64) (n int, err error) {
 	err = errors.New("fake")
+
 	return
 }
 

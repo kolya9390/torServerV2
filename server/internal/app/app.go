@@ -27,6 +27,7 @@ func New(runtime Runtime, stopTimeout time.Duration) *App {
 	if stopTimeout <= 0 {
 		stopTimeout = 30 * time.Second
 	}
+
 	return &App{
 		runtime:     runtime,
 		stopTimeout: stopTimeout,
@@ -43,6 +44,7 @@ func (a *App) Start(ctx context.Context) error {
 		return ctx.Err()
 	default:
 	}
+
 	return a.runtime.Start()
 }
 
@@ -51,12 +53,15 @@ func (a *App) Stop(ctx context.Context) error {
 	if a == nil || a.runtime == nil {
 		return errors.New("app runtime is not configured")
 	}
+
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	stopCtx := ctx
+
 	var cancel context.CancelFunc
+
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		stopCtx, cancel = context.WithTimeout(ctx, a.stopTimeout)
 		defer cancel()
@@ -86,5 +91,6 @@ func (a *App) Wait() error {
 	if a == nil || a.runtime == nil {
 		return errors.New("app runtime is not configured")
 	}
+
 	return a.runtime.Wait()
 }

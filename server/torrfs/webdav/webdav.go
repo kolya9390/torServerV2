@@ -23,6 +23,7 @@ var missingMethods = []string{
 
 func MountWebDAV(r *gin.Engine) {
 	log.TLogln("Starting WebDAV")
+
 	tfs := torrfs.AsFS(torrfs.New())
 
 	h := &webdav.Handler{
@@ -38,11 +39,13 @@ func MountWebDAV(r *gin.Engine) {
 	}
 
 	grp.Any("/*webdav", handler)
+
 	for _, m := range missingMethods {
 		grp.Handle(m, "/*webdav", handler)
 	}
 
 	grp.Any("", handler)
+
 	for _, m := range missingMethods {
 		grp.Handle(m, "", handler)
 	}
@@ -68,6 +71,7 @@ func (ro *ReadOnlyFS) Rename(ctx context.Context, oldName, newName string) error
 
 func (ro *ReadOnlyFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	name = cleanWebDAVPath(name)
+
 	return fs.Stat(ro.FS, name)
 }
 
@@ -112,13 +116,16 @@ func (f *roFile) Write(p []byte) (n int, err error) {
 func (f *roFile) Close() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	if f.f == nil {
 		return nil
 	}
+
 	err := f.f.Close()
 	f.f = nil
 	f.dirList = nil
 	f.dirPos = 0
+
 	return err
 }
 
@@ -129,10 +136,12 @@ func (f *roFile) Read(p []byte) (int, error) {
 	if f.f == nil {
 		return 0, fs.ErrClosed
 	}
+
 	r, ok := f.f.(io.Reader)
 	if !ok {
 		return 0, fs.ErrInvalid
 	}
+
 	return r.Read(p)
 }
 
@@ -143,10 +152,12 @@ func (f *roFile) Seek(offset int64, whence int) (int64, error) {
 	if f.f == nil {
 		return 0, fs.ErrClosed
 	}
+
 	rs, ok := f.f.(io.Seeker)
 	if !ok {
 		return 0, errors.New("seek not supported")
 	}
+
 	return rs.Seek(offset, whence)
 }
 
@@ -166,6 +177,7 @@ func (f *roFile) Readdir(count int) ([]os.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if !fi.IsDir() {
 		return nil, fs.ErrInvalid
 	}
@@ -175,21 +187,26 @@ func (f *roFile) Readdir(count int) ([]os.FileInfo, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		f.dirList = des
 		f.dirPos = 0
 	}
 
 	if count <= 0 {
 		out := make([]os.FileInfo, 0, len(f.dirList)-f.dirPos)
+
 		for f.dirPos < len(f.dirList) {
 			de := f.dirList[f.dirPos]
 			f.dirPos++
+
 			info, err := de.Info()
 			if err != nil {
 				continue
 			}
+
 			out = append(out, info)
 		}
+
 		return out, nil
 	}
 
@@ -197,28 +214,34 @@ func (f *roFile) Readdir(count int) ([]os.FileInfo, error) {
 	for f.dirPos < len(f.dirList) && len(out) < count {
 		de := f.dirList[f.dirPos]
 		f.dirPos++
+
 		info, err := de.Info()
 		if err != nil {
 			continue
 		}
+
 		out = append(out, info)
 	}
 
 	if len(out) == 0 {
 		return nil, io.EOF
 	}
+
 	return out, nil
 }
 
-// --- path helpers ---
+// --- path helpers ---.
 func cleanWebDAVPath(name string) string {
 	if name == "" || name == "/" {
 		return "."
 	}
+
 	name = path.Clean("/" + name)
 	name = name[1:]
+
 	if name == "" {
 		return "."
 	}
+
 	return name
 }

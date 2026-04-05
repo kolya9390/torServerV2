@@ -18,9 +18,11 @@ func RestartDLNA(enable bool) error {
 	defer dlnaMu.Unlock()
 
 	dlna.Stop()
+
 	if !enable {
 		return nil
 	}
+
 	return startWithPolicy("dlna", dlna.Start, DefaultPolicy())
 }
 
@@ -33,6 +35,7 @@ func StopDLNA() {
 func StartFUSE() error {
 	fuseMu.Lock()
 	defer fuseMu.Unlock()
+
 	return startWithPolicy("fuse", fuse.FuseAutoMount, DefaultPolicy())
 }
 

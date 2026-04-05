@@ -23,9 +23,11 @@ func Open(d INode, name string) (fs.File, error) {
 	trimPath := strings.TrimPrefix(name, d.Name())
 	trimPath = strings.TrimSuffix(trimPath, "/")
 	trimPath = strings.TrimPrefix(trimPath, "/")
+
 	if trimPath == "" {
 		return d, nil
 	}
+
 	arr := strings.Split(trimPath, "/")
 	if len(arr) == 0 {
 		return nil, fs.ErrNotExist

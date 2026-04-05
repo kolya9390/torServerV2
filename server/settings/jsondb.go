@@ -33,6 +33,7 @@ func NewJsonDB() TorrServerDB {
 	if globalJsonDB != nil {
 		return globalJsonDB
 	}
+
 	globalJsonDB = &JsonDB{
 		Path:              Path,
 		filenameDelimiter: ".",
@@ -40,6 +41,7 @@ func NewJsonDB() TorrServerDB {
 		fileMode:          fs.FileMode(0o666),
 		xPathDelimeter:    "/",
 	}
+
 	return globalJsonDB
 }
 
@@ -49,11 +51,13 @@ func (v *JsonDB) CloseDB() {
 
 func (v *JsonDB) Set(xPath, name string, value []byte) {
 	var err error = nil
-	jsonObj := map[string]interface{}{}
+
+	jsonObj := map[string]any{}
 	if err := json.Unmarshal(value, &jsonObj); err == nil {
 		if filename, err := v.xPathToFilename(xPath); err == nil {
 			v.lock(filename)
 			defer v.unlock(filename)
+
 			if root, err := v.readJsonFileAsMap(filename); err == nil {
 				root[name] = jsonObj
 				if err = v.writeMapAsJsonFile(filename, root); err == nil {
@@ -62,6 +66,7 @@ func (v *JsonDB) Set(xPath, name string, value []byte) {
 			}
 		}
 	}
+
 	v.log(fmt.Sprintf("Set: error writing entry %s->%s", xPath, name), err)
 }
 
@@ -70,12 +75,14 @@ func (v *JsonDB) Get(xPath, name string) []byte {
 	if filename, err := v.xPathToFilename(xPath); err == nil {
 		v.lock(filename)
 		defer v.unlock(filename)
+
 		if root, err := v.readJsonFileAsMap(filename); err == nil {
 			if jsonData, ok := root[name]; ok {
 				if byteData, err := json.Marshal(jsonData); err == nil {
 					// Return a copy to be safe
 					data := make([]byte, len(byteData))
 					copy(data, byteData)
+
 					return data
 				}
 			} else {
@@ -84,7 +91,9 @@ func (v *JsonDB) Get(xPath, name string) []byte {
 			}
 		}
 	}
+
 	v.log(fmt.Sprintf("Get: error reading entry %s->%s", xPath, name), err)
+
 	return nil
 }
 
@@ -93,15 +102,19 @@ func (v *JsonDB) List(xPath string) []string {
 	if filename, err := v.xPathToFilename(xPath); err == nil {
 		v.lock(filename)
 		defer v.unlock(filename)
+
 		if root, err := v.readJsonFileAsMap(filename); err == nil {
 			nameList := make([]string, 0, len(root))
 			for k := range root {
 				nameList = append(nameList, k)
 			}
+
 			return nameList
 		}
 	}
-	v.log(fmt.Sprintf("List: error reading entries in xPath %s", xPath), err)
+
+	v.log("List: error reading entries in xPath "+xPath, err)
+
 	return nil
 }
 
@@ -110,13 +123,16 @@ func (v *JsonDB) Rem(xPath, name string) {
 	if filename, err := v.xPathToFilename(xPath); err == nil {
 		v.lock(filename)
 		defer v.unlock(filename)
+
 		if root, err := v.readJsonFileAsMap(filename); err == nil {
 			delete(root, name)
+
 			if err = v.writeMapAsJsonFile(filename, root); err == nil {
 				return
 			}
 		}
 	}
+
 	v.log(fmt.Sprintf("Rem: error removing entry %s->%s", xPath, name), err)
 }
 
@@ -124,6 +140,7 @@ func (v *JsonDB) Clear(xPath string) {
 	filename, err := v.xPathToFilename(xPath)
 	if err != nil {
 		v.log(fmt.Sprintf("Clear: error converting xPath %s to filename: %v", xPath, err))
+
 		return
 	}
 
@@ -140,6 +157,7 @@ func (v *JsonDB) Clear(xPath string) {
 
 func (v *JsonDB) lock(filename string) {
 	jsonDbLocksMutex.Lock()
+
 	mtx, ok := jsonDbLocks[filename]
 	if !ok {
 		mtx = &sync.Mutex{}
@@ -161,36 +179,42 @@ func (v *JsonDB) xPathToFilename(xPath string) (string, error) {
 	if pathComponents := strings.Split(xPath, v.xPathDelimeter); len(pathComponents) > 0 {
 		return strings.ToLower(strings.Join(pathComponents, v.filenameDelimiter) + v.filenameExtension), nil
 	}
+
 	return "", errors.New("xPath has no components")
 }
 
-func (v *JsonDB) readJsonFileAsMap(filename string) (map[string]interface{}, error) {
+func (v *JsonDB) readJsonFileAsMap(filename string) (map[string]any, error) {
 	var err error = nil
-	jsonData := map[string]interface{}{}
+
+	jsonData := map[string]any{}
 	path := filepath.Join(v.Path, filename)
+
 	if fileData, err := os.ReadFile(path); err == nil {
 		if err = json.Unmarshal(fileData, &jsonData); err != nil {
 			v.log(fmt.Sprintf("readJsonFileAsMap(%s) fileData: %s error", filename, fileData), err)
 		}
 	}
+
 	return jsonData, err
 }
 
-func (v *JsonDB) writeMapAsJsonFile(filename string, o map[string]interface{}) error {
+func (v *JsonDB) writeMapAsJsonFile(filename string, o map[string]any) error {
 	var err error = nil
+
 	path := filepath.Join(v.Path, filename)
 	if fileData, err := json.MarshalIndent(o, "", "  "); err == nil {
 		if err = os.WriteFile(path, fileData, v.fileMode); err != nil {
 			v.log(fmt.Sprintf("writeMapAsJsonFile path: %s, fileMode: %s, fileData: %s error", path, v.fileMode, fileData), err)
 		}
 	}
+
 	return err
 }
 
-func (v *JsonDB) log(s string, params ...interface{}) {
+func (v *JsonDB) log(s string, params ...any) {
 	if len(params) > 0 {
 		log.TLogln(fmt.Sprintf("JsonDB: %s: %s", s, fmt.Sprint(params...)))
 	} else {
-		log.TLogln(fmt.Sprintf("JsonDB: %s", s))
+		log.TLogln("JsonDB: " + s)
 	}
 }

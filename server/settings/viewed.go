@@ -15,12 +15,14 @@ func SetViewed(vv *Viewed) {
 	}
 
 	var indexes map[int]struct{}
+
 	var err error
 
 	buf := tdb.Get("Viewed", vv.Hash)
 	if len(buf) == 0 {
 		indexes = make(map[int]struct{})
 		indexes[vv.FileIndex] = struct{}{}
+
 		buf, err = json.Marshal(indexes)
 		if err == nil {
 			tdb.Set("Viewed", vv.Hash, buf)
@@ -29,6 +31,7 @@ func SetViewed(vv *Viewed) {
 		err = json.Unmarshal(buf, &indexes)
 		if err == nil {
 			indexes[vv.FileIndex] = struct{}{}
+
 			buf, err = json.Marshal(indexes)
 			if err == nil {
 				tdb.Set("Viewed", vv.Hash, buf)
@@ -43,11 +46,14 @@ func RemViewed(vv *Viewed) {
 	}
 
 	buf := tdb.Get("Viewed", vv.Hash)
+
 	var indices map[int]struct{}
+
 	err := json.Unmarshal(buf, &indices)
 	if err == nil {
 		if vv.FileIndex != -1 {
 			delete(indices, vv.FileIndex)
+
 			buf, err = json.Marshal(indices)
 			if err == nil {
 				tdb.Set("Viewed", vv.Hash, buf)
@@ -74,6 +80,7 @@ func ListViewed(hash string) []*Viewed {
 		for i := range indices {
 			ret = append(ret, &Viewed{hash, i})
 		}
+
 		return ret
 	}
 

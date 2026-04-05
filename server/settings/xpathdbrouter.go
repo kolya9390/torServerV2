@@ -25,6 +25,7 @@ func NewXPathDBRouter() *XPathDBRouter {
 		routes:   []string{},
 		route2db: map[string]TorrServerDB{},
 	}
+
 	return router
 }
 
@@ -58,6 +59,7 @@ func (v *XPathDBRouter) RegisterRoute(db TorrServerDB, xPath string) error {
 		return len(v.routes[iLeft]) > len(v.routes[iRight])
 	})
 	v.log(fmt.Sprintf("Registered new route \"%s\" for DB \"%s\", total %d routes", getDefaultRoureName(newRoute), v.getDBName(db), len(v.routes)))
+
 	return nil
 }
 
@@ -65,6 +67,7 @@ func getDefaultRoureName(route string) string {
 	if len(route) > 0 {
 		return route
 	}
+
 	return "default"
 }
 
@@ -76,14 +79,19 @@ func (v *XPathDBRouter) getDBForXPath(xPath string) TorrServerDB {
 	if len(v.dbs) == 0 {
 		return nil
 	}
+
 	lookup_route := v.xPathToRoute(xPath)
+
 	var db TorrServerDB = nil
+
 	for _, route_prefix := range v.routes {
 		if strings.HasPrefix(lookup_route, route_prefix) {
 			db = v.route2db[route_prefix]
+
 			break
 		}
 	}
+
 	return db
 }
 
@@ -91,10 +99,12 @@ func (v *XPathDBRouter) Get(xPath, name string) []byte {
 	if v == nil {
 		return nil
 	}
+
 	db := v.getDBForXPath(xPath)
 	if db == nil {
 		return nil
 	}
+
 	return db.Get(xPath, name)
 }
 
@@ -102,10 +112,12 @@ func (v *XPathDBRouter) Set(xPath, name string, value []byte) {
 	if v == nil {
 		return
 	}
+
 	db := v.getDBForXPath(xPath)
 	if db == nil {
 		return
 	}
+
 	db.Set(xPath, name, value)
 }
 
@@ -113,10 +125,12 @@ func (v *XPathDBRouter) List(xPath string) []string {
 	if v == nil {
 		return nil
 	}
+
 	db := v.getDBForXPath(xPath)
 	if db == nil {
 		return nil
 	}
+
 	return db.List(xPath)
 }
 
@@ -124,10 +138,12 @@ func (v *XPathDBRouter) Rem(xPath, name string) {
 	if v == nil {
 		return
 	}
+
 	db := v.getDBForXPath(xPath)
 	if db == nil {
 		return
 	}
+
 	db.Rem(xPath, name)
 }
 
@@ -135,10 +151,12 @@ func (v *XPathDBRouter) Clear(xPath string) {
 	if v == nil {
 		return
 	}
+
 	db := v.getDBForXPath(xPath)
 	if db == nil {
 		return
 	}
+
 	db.Clear(xPath)
 }
 
@@ -146,6 +164,7 @@ func (v *XPathDBRouter) CloseDB() {
 	for _, db := range v.dbs {
 		db.CloseDB()
 	}
+
 	v.dbs = nil
 	v.routes = nil
 	v.route2db = nil
@@ -156,10 +175,10 @@ func (v *XPathDBRouter) getDBName(db TorrServerDB) string {
 	return v.dbNames[db]
 }
 
-func (v *XPathDBRouter) log(s string, params ...interface{}) {
+func (v *XPathDBRouter) log(s string, params ...any) {
 	if len(params) > 0 {
 		log.TLogln(fmt.Sprintf("XPathDBRouter: %s: %s", s, fmt.Sprint(params...)))
 	} else {
-		log.TLogln(fmt.Sprintf("XPathDBRouter: %s", s))
+		log.TLogln("XPathDBRouter: " + s)
 	}
 }

@@ -13,7 +13,9 @@ func isHashPath(path string) bool {
 				return false
 			}
 		}
+
 		return true
 	}
+
 	return false
 }

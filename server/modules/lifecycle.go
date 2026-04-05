@@ -25,20 +25,25 @@ func startWithPolicy(name string, start func() error, policy RestartPolicy) erro
 	if policy.MaxAttempts <= 0 {
 		policy.MaxAttempts = 1
 	}
+
 	if policy.InitialBackoff <= 0 {
 		policy.InitialBackoff = 100 * time.Millisecond
 	}
+
 	if policy.MaxBackoff <= 0 {
 		policy.MaxBackoff = policy.InitialBackoff
 	}
 
 	backoff := policy.InitialBackoff
+
 	var lastErr error
+
 	for attempt := 1; attempt <= policy.MaxAttempts; attempt++ {
 		if err := start(); err == nil {
 			if attempt > 1 {
 				log.TLogln("module started after retry", name, "attempt", attempt)
 			}
+
 			return nil
 		} else {
 			lastErr = err
@@ -47,6 +52,7 @@ func startWithPolicy(name string, start func() error, policy RestartPolicy) erro
 
 		if attempt < policy.MaxAttempts {
 			time.Sleep(backoff)
+
 			backoff *= 2
 			if backoff > policy.MaxBackoff {
 				backoff = policy.MaxBackoff

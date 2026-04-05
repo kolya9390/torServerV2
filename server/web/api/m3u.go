@@ -49,12 +49,15 @@ func playList(c *gin.Context) {
 	svc := getServices()
 	hash, _ := c.GetQuery("hash")
 	_, fromlast := c.GetQuery("fromlast")
+
 	if hash == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "is required"))
+
 		return
 	}
 
 	host := utils.GetScheme(c) + "://" + utils.GetHost(c)
+
 	res, err := svc.Playback.BuildPlaylistByHash(hash, c.Param("fname"), fromlast, host, svc.Torrents, svc.Viewed)
 	if err != nil {
 		switch {
@@ -67,6 +70,7 @@ func playList(c *gin.Context) {
 		default:
 			abortAPIError(c, http.StatusInternalServerError, newInternalError("failed to build playlist", err))
 		}
+
 		return
 	}
 
@@ -76,13 +80,16 @@ func playList(c *gin.Context) {
 func sendM3U(c *gin.Context, name, hash string, m3u string) {
 	c.Header("Content-Type", "audio/x-mpegurl")
 	c.Header("Connection", "close")
+
 	if hash != "" {
-		etag := hex.EncodeToString([]byte(fmt.Sprintf("%s/%s", hash, name)))
+		etag := hex.EncodeToString(fmt.Appendf(nil, "%s/%s", hash, name))
 		c.Header("ETag", httptoo.EncodeQuotedString(etag))
 	}
+
 	if name == "" {
 		name = "playlist.m3u"
 	}
+
 	c.Header("Content-Disposition", `attachment; filename="`+name+`"`)
 	http.ServeContent(c.Writer, c.Request, name, time.Now(), bytes.NewReader([]byte(m3u)))
 }

@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"fmt"
+	"errors"
 	"net/url"
 )
 
@@ -10,6 +10,7 @@ func TestLink(link string, auth bool) error {
 	if err != nil {
 		return err
 	}
+
 	ur, err := url.Parse(link)
 	if err != nil {
 		return err
@@ -20,7 +21,7 @@ func TestLink(link string, auth bool) error {
 	}
 
 	if !auth {
-		return fmt.Errorf("auth required")
+		return errors.New("auth required")
 	}
 
 	return nil

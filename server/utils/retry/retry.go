@@ -31,6 +31,7 @@ type Result[T any] struct {
 
 func Do[T any](ctx context.Context, cfg Config, fn func() (T, error)) Result[T] {
 	var lastErr error
+
 	delay := cfg.InitialDelay
 
 	for attempt := 1; attempt <= cfg.MaxAttempts; attempt++ {
@@ -61,10 +62,7 @@ func Do[T any](ctx context.Context, cfg Config, fn func() (T, error)) Result[T] 
 		case <-time.After(delay):
 		}
 
-		delay = time.Duration(float64(delay) * cfg.Multiplier)
-		if delay > cfg.MaxDelay {
-			delay = cfg.MaxDelay
-		}
+		delay = min(time.Duration(float64(delay)*cfg.Multiplier), cfg.MaxDelay)
 	}
 
 	return Result[T]{Err: fmt.Errorf("max attempts (%d) exceeded: %w", cfg.MaxAttempts, lastErr)}
@@ -74,5 +72,6 @@ func DoNoResult(ctx context.Context, cfg Config, fn func() error) error {
 	result := Do[any](ctx, cfg, func() (any, error) {
 		return nil, fn()
 	})
+
 	return result.Err
 }

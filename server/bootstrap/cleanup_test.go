@@ -24,10 +24,12 @@ func TestRunCacheCleanupNoopWhenDiskCacheDisabled(t *testing.T) {
 		UseDisk:          false,
 		TorrentsSavePath: tmp,
 	}
+
 	t.Cleanup(func() { settings.BTsets = prevBT })
 
 	cleanupListTorrent = func() []*settings.TorrentDB {
 		t.Fatal("list torrent should not be called")
+
 		return nil
 	}
 
@@ -39,10 +41,12 @@ func TestRunCacheCleanupRemovesStaleHashDir(t *testing.T) {
 	defer reset()
 
 	tmp := t.TempDir()
+
 	staleDir := filepath.Join(tmp, "0123456789abcdef0123456789abcdef01234567")
 	if err := os.Mkdir(staleDir, 0o755); err != nil {
 		t.Fatalf("mkdir stale dir: %v", err)
 	}
+
 	if err := os.WriteFile(filepath.Join(staleDir, "piece.bin"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write stale file: %v", err)
 	}
@@ -53,9 +57,11 @@ func TestRunCacheCleanupRemovesStaleHashDir(t *testing.T) {
 		TorrentsSavePath:  tmp,
 		RemoveCacheOnDrop: false,
 	}
+
 	t.Cleanup(func() { settings.BTsets = prevBT })
 
 	cleanupListTorrent = func() []*settings.TorrentDB { return nil }
+
 	runCacheCleanup(context.Background())
 
 	if _, err := os.Stat(staleDir); !os.IsNotExist(err) {
@@ -69,6 +75,7 @@ func TestRunCacheCleanupKeepsActiveHashDir(t *testing.T) {
 
 	tmp := t.TempDir()
 	activeHash := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
 	activeDir := filepath.Join(tmp, activeHash)
 	if err := os.Mkdir(activeDir, 0o755); err != nil {
 		t.Fatalf("mkdir active dir: %v", err)
@@ -80,6 +87,7 @@ func TestRunCacheCleanupKeepsActiveHashDir(t *testing.T) {
 		TorrentsSavePath:  tmp,
 		RemoveCacheOnDrop: false,
 	}
+
 	t.Cleanup(func() { settings.BTsets = prevBT })
 
 	cleanupListTorrent = func() []*settings.TorrentDB {
@@ -91,6 +99,7 @@ func TestRunCacheCleanupKeepsActiveHashDir(t *testing.T) {
 			},
 		}
 	}
+
 	runCacheCleanup(context.Background())
 
 	if _, err := os.Stat(activeDir); err != nil {
@@ -105,15 +114,19 @@ func TestRunCacheCleanupRespectsContextCancellation(t *testing.T) {
 	tmp := t.TempDir()
 	dirOne := filepath.Join(tmp, "1111111111111111111111111111111111111111")
 	dirTwo := filepath.Join(tmp, "2222222222222222222222222222222222222222")
+
 	if err := os.Mkdir(dirOne, 0o755); err != nil {
 		t.Fatalf("mkdir dirOne: %v", err)
 	}
+
 	if err := os.Mkdir(dirTwo, 0o755); err != nil {
 		t.Fatalf("mkdir dirTwo: %v", err)
 	}
+
 	if err := os.WriteFile(filepath.Join(dirOne, "piece"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write dirOne file: %v", err)
 	}
+
 	if err := os.WriteFile(filepath.Join(dirTwo, "piece"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write dirTwo file: %v", err)
 	}
@@ -124,6 +137,7 @@ func TestRunCacheCleanupRespectsContextCancellation(t *testing.T) {
 		TorrentsSavePath:  tmp,
 		RemoveCacheOnDrop: true,
 	}
+
 	t.Cleanup(func() { settings.BTsets = prevBT })
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -132,6 +146,7 @@ func TestRunCacheCleanupRespectsContextCancellation(t *testing.T) {
 		if path == filepath.Join(dirOne, "piece") {
 			cancel()
 		}
+
 		return os.Remove(path)
 	}
 
@@ -140,6 +155,7 @@ func TestRunCacheCleanupRespectsContextCancellation(t *testing.T) {
 	if _, err := os.Stat(dirOne); !os.IsNotExist(err) {
 		t.Fatalf("expected first dir removed, stat err=%v", err)
 	}
+
 	if _, err := os.Stat(dirTwo); err != nil {
 		t.Fatalf("expected second dir to remain due cancellation, stat err=%v", err)
 	}
@@ -150,10 +166,12 @@ func TestRemoveAllFilesRemovesNestedDirectories(t *testing.T) {
 	defer reset()
 
 	root := filepath.Join(t.TempDir(), "cache")
+
 	nested := filepath.Join(root, "sub", "deep")
 	if err := os.MkdirAll(nested, 0o755); err != nil {
 		t.Fatalf("mkdir nested: %v", err)
 	}
+
 	if err := os.WriteFile(filepath.Join(nested, "piece"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write nested file: %v", err)
 	}
@@ -161,6 +179,7 @@ func TestRemoveAllFilesRemovesNestedDirectories(t *testing.T) {
 	if err := removeAllFiles(context.Background(), root); err != nil {
 		t.Fatalf("removeAllFiles returned error: %v", err)
 	}
+
 	if _, err := os.Stat(root); !os.IsNotExist(err) {
 		t.Fatalf("expected root removed, stat err=%v", err)
 	}
@@ -174,6 +193,7 @@ func TestRemoveAllFilesReturnsContextError(t *testing.T) {
 	if err := os.Mkdir(root, 0o755); err != nil {
 		t.Fatalf("mkdir root: %v", err)
 	}
+
 	if err := os.WriteFile(filepath.Join(root, "piece"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
@@ -189,9 +209,11 @@ func TestRemoveAllFilesReturnsContextError(t *testing.T) {
 
 func stubCleanupDeps(t *testing.T) func() {
 	t.Helper()
+
 	origReadDir := cleanupReadDir
 	origRemove := cleanupRemove
 	origList := cleanupListTorrent
+
 	return func() {
 		cleanupReadDir = origReadDir
 		cleanupRemove = origRemove
@@ -206,12 +228,15 @@ func mustHashFromHex(t *testing.T, s string) metainfo.Hash {
 	if err != nil {
 		t.Fatalf("decode hash %q: %v", s, err)
 	}
+
 	if len(raw) != 20 {
 		t.Fatalf("hash length must be 20, got %d", len(raw))
 	}
 
 	var h metainfo.Hash
+
 	copy(h[:], raw)
+
 	return h
 }
 
@@ -225,9 +250,10 @@ func TestRunCacheCleanupHandlesReadDirError(t *testing.T) {
 		TorrentsSavePath:  "/non-existent-dir",
 		RemoveCacheOnDrop: true,
 	}
+
 	t.Cleanup(func() { settings.BTsets = prevBT })
 
-	cleanupReadDir = func(name string) ([]os.DirEntry, error) {
+	cleanupReadDir = func(_ string) ([]os.DirEntry, error) {
 		return nil, os.ErrPermission
 	}
 	cleanupListTorrent = func() []*settings.TorrentDB { return nil }
@@ -244,6 +270,7 @@ func TestRunCacheCleanupSkipsNonHashEntries(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(tmp, "short"), 0o755); err != nil {
 		t.Fatalf("mkdir short: %v", err)
 	}
+
 	if err := os.WriteFile(filepath.Join(tmp, "file.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
@@ -254,14 +281,17 @@ func TestRunCacheCleanupSkipsNonHashEntries(t *testing.T) {
 		TorrentsSavePath:  tmp,
 		RemoveCacheOnDrop: true,
 	}
+
 	t.Cleanup(func() { settings.BTsets = prevBT })
 
 	cleanupListTorrent = func() []*settings.TorrentDB { return nil }
+
 	runCacheCleanup(context.Background())
 
 	if _, err := os.Stat(filepath.Join(tmp, "short")); err != nil {
 		t.Fatalf("expected short dir untouched, stat err=%v", err)
 	}
+
 	if _, err := os.Stat(filepath.Join(tmp, "file.txt")); err != nil {
 		t.Fatalf("expected file untouched, stat err=%v", err)
 	}

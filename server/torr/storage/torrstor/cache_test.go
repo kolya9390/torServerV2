@@ -11,8 +11,8 @@ import (
 
 func setupStorageTest() {
 	settings.BTsets = &settings.BTSets{
-		CacheSize:    1 * 1024 * 1024,
-		UseDisk:      false,
+		CacheSize:        1 * 1024 * 1024,
+		UseDisk:          false,
 		TorrentsSavePath: "",
 	}
 }
@@ -22,9 +22,11 @@ func TestNewStorage(t *testing.T) {
 	if stor == nil {
 		t.Fatal("NewStorage() returned nil")
 	}
+
 	if stor.capacity != 64*1024*1024 {
 		t.Errorf("capacity = %d, want %d", stor.capacity, 64*1024*1024)
 	}
+
 	if stor.caches == nil {
 		t.Fatal("caches map not initialized")
 	}
@@ -32,11 +34,14 @@ func TestNewStorage(t *testing.T) {
 
 func TestNewCache(t *testing.T) {
 	setupStorageTest()
+
 	stor := NewStorage(32 * 1024 * 1024)
+
 	cache := NewCache(32*1024*1024, stor)
 	if cache == nil {
 		t.Fatal("NewCache() returned nil")
 	}
+
 	if cache.capacity != 32*1024*1024 {
 		t.Errorf("cache capacity = %d, want %d", cache.capacity, 32*1024*1024)
 	}
@@ -44,6 +49,7 @@ func TestNewCache(t *testing.T) {
 
 func TestCacheInit(t *testing.T) {
 	setupStorageTest()
+
 	stor := NewStorage(64 * 1024 * 1024)
 	cache := NewCache(64*1024*1024, stor)
 
@@ -67,9 +73,11 @@ func TestCacheInit(t *testing.T) {
 	if cache.pieceCount != int(numPieces) {
 		t.Errorf("pieceCount = %d, want %d", cache.pieceCount, numPieces)
 	}
+
 	if cache.pieceLength != info.PieceLength {
 		t.Errorf("pieceLength = %d, want %d", cache.pieceLength, info.PieceLength)
 	}
+
 	if len(cache.pieces) != cache.pieceCount {
 		t.Errorf("pieces map size = %d, want %d", len(cache.pieces), cache.pieceCount)
 	}
@@ -77,6 +85,7 @@ func TestCacheInit(t *testing.T) {
 
 func TestMemPieceWriteRead(t *testing.T) {
 	setupStorageTest()
+
 	stor := NewStorage(1 * 1024 * 1024)
 	cache := NewCache(1*1024*1024, stor)
 
@@ -97,23 +106,28 @@ func TestMemPieceWriteRead(t *testing.T) {
 	}
 
 	data := []byte("Hello, Torrent!")
+
 	n, err := piece.WriteAt(data, 0)
 	if err != nil {
 		t.Fatalf("WriteAt error: %v", err)
 	}
+
 	if n != len(data) {
 		t.Errorf("WriteAt returned %d bytes, want %d", n, len(data))
 	}
 
 	// Read from piece
 	buf := make([]byte, len(data))
+
 	n, err = piece.ReadAt(buf, 0)
 	if err != nil {
 		t.Fatalf("ReadAt error: %v", err)
 	}
+
 	if n != len(data) {
 		t.Errorf("ReadAt returned %d bytes, want %d", n, len(data))
 	}
+
 	if !bytes.Equal(buf, data) {
 		t.Errorf("ReadAt data = %q, want %q", buf, data)
 	}
@@ -122,6 +136,7 @@ func TestMemPieceWriteRead(t *testing.T) {
 func TestPieceFake(t *testing.T) {
 	fake := &PieceFake{}
 	buf := make([]byte, 10)
+
 	_, err := fake.ReadAt(buf, 0)
 	if err == nil {
 		t.Error("PieceFake.ReadAt should return error")
@@ -142,9 +157,11 @@ func TestRanges(t *testing.T) {
 	if !inRanges(ranges, 5) {
 		t.Error("5 should be in ranges")
 	}
+
 	if !inRanges(ranges, 25) {
 		t.Error("25 should be in ranges")
 	}
+
 	if inRanges(ranges, 15) {
 		t.Error("15 should not be in ranges")
 	}
@@ -165,6 +182,7 @@ func TestMergeRanges(t *testing.T) {
 
 func TestStorageCloseHash(t *testing.T) {
 	setupStorageTest()
+
 	stor := NewStorage(1 * 1024 * 1024)
 	info := &metainfo.Info{
 		Files:       []metainfo.FileInfo{{Path: []string{"test.bin"}, Length: 100}},

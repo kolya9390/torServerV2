@@ -48,20 +48,24 @@ func ListTorrent() []*TorrentDB {
 	defer mu.Unlock()
 
 	var list []*TorrentDB
+
 	keys := tdb.List("Torrents")
 	for _, key := range keys {
 		buf := tdb.Get("Torrents", key)
 		if len(buf) > 0 {
 			var torr *TorrentDB
+
 			err := json.Unmarshal(buf, &torr)
 			if err == nil {
 				list = append(list, torr)
 			}
 		}
 	}
+
 	sort.Slice(list, func(i, j int) bool {
 		return list[i].Timestamp > list[j].Timestamp
 	})
+
 	return list
 }
 

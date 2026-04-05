@@ -31,7 +31,7 @@ type TorrentDetails struct {
 	Size       string    `json:"size,omitempty"`
 	Seed       int       `json:"seed,omitempty"`
 	Peer       int       `json:"peer,omitempty"`
-	CreateDate time.Time `json:"createDate,omitempty"`
+	CreateDate time.Time `json:"createDate"`
 	Categories []string  `json:"categories,omitempty"`
 	Year       int       `json:"year,omitempty"`
 }
@@ -68,6 +68,7 @@ type TorznabResponse struct {
 func getBreaker() *circuitbreaker.CircuitBreaker {
 	breakerMu.Lock()
 	defer breakerMu.Unlock()
+
 	if breaker == nil {
 		breaker = circuitbreaker.New("torznab", circuitbreaker.Config{
 			FailureThreshold: 5,
@@ -83,6 +84,7 @@ func getBreaker() *circuitbreaker.CircuitBreaker {
 			},
 		})
 	}
+
 	return breaker
 }
 
@@ -92,11 +94,13 @@ func Search(query string, index int) []*TorrentDetails {
 	}
 
 	var allResults []*TorrentDetails
+
 	if index >= 0 && index < len(settings.BTsets.TorznabUrls) {
 		config := settings.BTsets.TorznabUrls[index]
 		if config.Host != "" && config.Key != "" {
 			return searchOne(config.Host, config.Key, query)
 		}
+
 		return nil
 	}
 
@@ -104,11 +108,13 @@ func Search(query string, index int) []*TorrentDetails {
 		if config.Host == "" || config.Key == "" {
 			continue
 		}
+
 		results := searchOne(config.Host, config.Key, query)
 		if results != nil {
 			allResults = append(allResults, results...)
 		}
 	}
+
 	return allResults
 }
 
@@ -116,9 +122,11 @@ func searchOne(host, key, query string) []*TorrentDetails {
 	cb := getBreaker()
 
 	var results []*TorrentDetails
+
 	err := cb.Execute(func() error {
 		var err error
 		results, err = doSearchOne(host, key, query)
+
 		return err
 	})
 
@@ -126,8 +134,10 @@ func searchOne(host, key, query string) []*TorrentDetails {
 		if strings.Contains(err.Error(), "circuit_open") {
 			log.Warn("torznab_search_skipped", "reason", "circuit_open", "host", host)
 		}
+
 		return nil
 	}
+
 	return results
 }
 
@@ -159,7 +169,7 @@ func doSearchOne(host, key, query string) ([]*TorrentDetails, error) {
 		if err != nil {
 			return nil, fmt.Errorf("request error: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("status: %d", resp.StatusCode)
@@ -171,6 +181,7 @@ func doSearchOne(host, key, query string) ([]*TorrentDetails, error) {
 		}
 
 		var results []*TorrentDetails
+
 		for _, item := range torznabResp.Channel.Items {
 			detail := &TorrentDetails{
 				Title:      item.Title,
@@ -191,9 +202,11 @@ func doSearchOne(host, key, query string) ([]*TorrentDetails, error) {
 					detail.Magnet = attr.Value
 					detail.Hash = extractHash(detail.Magnet)
 				}
+
 				if attr.Name == "seeders" {
 					detail.Seed, _ = strconv.Atoi(attr.Value)
 				}
+
 				if attr.Name == "peers" {
 					detail.Peer, _ = strconv.Atoi(attr.Value)
 				}
@@ -212,6 +225,7 @@ func doSearchOne(host, key, query string) ([]*TorrentDetails, error) {
 
 	if result.Err != nil {
 		log.Warn("torznab_search_failed", "error", result.Err, "host", host)
+
 		return nil, result.Err
 	}
 
@@ -241,6 +255,7 @@ func doTest(host, key string) error {
 		if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
 			host = "http://" + host
 		}
+
 		if !strings.HasSuffix(host, "/") {
 			host += "/"
 		}
@@ -259,7 +274,7 @@ func doTest(host, key string) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("status: %s", resp.Status)
@@ -280,6 +295,7 @@ func doTest(host, key string) error {
 			if msg == "" {
 				msg = probe.Code
 			}
+
 			return fmt.Errorf("api error: %s", msg)
 		}
 
@@ -299,6 +315,7 @@ func parseDate(dateStr string) time.Time {
 			return time.Now()
 		}
 	}
+
 	return t
 }
 
@@ -307,11 +324,13 @@ func formatSize(bytes int64) string {
 	if bytes < unit {
 		return fmt.Sprintf("%d B", bytes)
 	}
+
 	div, exp := int64(unit), 0
 	for n := bytes / unit; n >= unit; n /= unit {
 		div *= unit
 		exp++
 	}
+
 	return fmt.Sprintf("%.1f %cCiB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
@@ -320,14 +339,15 @@ func extractHash(magnet string) string {
 		u, err := url.Parse(magnet)
 		if err == nil {
 			xt := u.Query().Get("xt")
-			if strings.HasPrefix(xt, "urn:btih:") {
-				return strings.TrimPrefix(xt, "urn:btih:")
+			if after, ok := strings.CutPrefix(xt, "urn:btih:"); ok {
+				return after
 			}
 		}
 	}
+
 	return ""
 }
 
-func GetCircuitBreakerMetrics() map[string]interface{} {
+func GetCircuitBreakerMetrics() map[string]any {
 	return getBreaker().Metrics()
 }

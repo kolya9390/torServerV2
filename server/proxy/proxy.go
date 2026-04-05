@@ -15,17 +15,20 @@ var (
 func Start() {
 	if settings.BTsets.EnableProxy {
 		cfg := opts.DefOptions()
+
 		var err error
 
 		args := settings.GetArgs()
 		if args != nil {
 			cfg.Server.Port = args.Port
 		}
+
 		cfg.Hosts = settings.BTsets.ProxyHosts
 
 		P2Proxy, err = p2p.NewP2PServer(cfg)
 		if err != nil {
 			log.TLogln("Error starting P2PServer:", err)
+
 			return
 		}
 	}

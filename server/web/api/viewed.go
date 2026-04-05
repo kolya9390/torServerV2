@@ -15,7 +15,7 @@ import (
 file index starts from 1
 */
 
-// Action: set, rem, list
+// Action: set, rem, list.
 type viewedReqJS struct {
 	requestI
 	*sets.Viewed
@@ -36,14 +36,19 @@ type viewedReqJS struct {
 //	@Router			/viewed [post]
 func viewed(c *gin.Context) {
 	svc := getServices()
+
 	var req viewedReqJS
+
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("request", "invalid json body"))
+
 		return
 	}
+
 	if req.Action == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("action", "is required"))
+
 		return
 	}
 
@@ -62,8 +67,10 @@ func viewed(c *gin.Context) {
 func setViewed(svc *APIServices, req viewedReqJS, c *gin.Context) {
 	if svc == nil || svc.Viewed == nil || req.Viewed == nil {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("viewed", "is required for action=set"))
+
 		return
 	}
+
 	svc.Viewed.SetViewed(req.Viewed)
 	c.Status(200)
 }
@@ -71,8 +78,10 @@ func setViewed(svc *APIServices, req viewedReqJS, c *gin.Context) {
 func remViewed(svc *APIServices, req viewedReqJS, c *gin.Context) {
 	if svc == nil || svc.Viewed == nil || req.Viewed == nil {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("viewed", "is required for action=rem"))
+
 		return
 	}
+
 	svc.Viewed.RemoveViewed(req.Viewed)
 	c.Status(200)
 }
@@ -90,11 +99,13 @@ func listViewed(svc *APIServices, req viewedReqJS, c *gin.Context) {
 			log.TLogln("listViewed PANIC RECOVERED:", r)
 			log.TLogln("stack:", string(debug.Stack()))
 			c.JSON(200, []*sets.Viewed{})
+
 			return
 		}
 	}()
 
 	log.TLogln("listViewed: calling sets.ListViewed directly")
+
 	list := sets.ListViewed(req.Hash)
 	log.TLogln("listViewed: got list:", list)
 	c.JSON(200, list)
@@ -109,6 +120,7 @@ func callListViewed(viewed ViewedService, hash string) (result []*sets.Viewed) {
 		if r := recover(); r != nil {
 			log.TLogln("callListViewed panic:", r)
 			log.TLogln("stack:", string(debug.Stack()))
+
 			result = []*sets.Viewed{}
 		}
 	}()
@@ -117,12 +129,15 @@ func callListViewed(viewed ViewedService, hash string) (result []*sets.Viewed) {
 	switch v := viewed.(type) {
 	case interface{ ListViewed(string) []*sets.Viewed }:
 		log.TLogln("callListViewed: matched interface with ListViewed method")
+
 		result = v.ListViewed(hash)
 	default:
 		log.TLogln("callListViewed: type doesn't match, using direct call")
+
 		result = viewed.ListViewed(hash)
 	}
 
 	log.TLogln("callListViewed: got result:", result)
+
 	return result
 }

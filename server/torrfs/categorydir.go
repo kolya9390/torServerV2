@@ -17,6 +17,7 @@ func NewCategoryDir(category string) *CategoryDir {
 	if category == "" {
 		category = "other"
 	}
+
 	d := &CategoryDir{
 		info: info{
 			name:  category,
@@ -26,6 +27,7 @@ func NewCategoryDir(category string) *CategoryDir {
 			isDir: true,
 		},
 	}
+
 	return d
 }
 
@@ -35,15 +37,18 @@ func (d *CategoryDir) Stat() (fs.FileInfo, error) {
 
 func (d *CategoryDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	nodes := []fs.DirEntry{}
+
 	torrs := torr.ListTorrent()
 	for _, t := range torrs {
 		if t.Category == "" {
 			t.Category = "other"
 		}
+
 		if t.Category == d.Name() {
 			if settings.BTsets.ShowFSActiveTorr && !t.GotInfo() {
 				continue
 			}
+
 			td := NewTorrDir(nil, t.Title, t)
 			nodes = append(nodes, td)
 		}
@@ -52,21 +57,22 @@ func (d *CategoryDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	return nodes, nil
 }
 
-// INode
+// INode.
 func (d *CategoryDir) Open(name string) (fs.File, error) { return Open(d, name) }
 func (d *CategoryDir) Parent() INode                     { return nil }
 func (d *CategoryDir) Torrent() *torr.Torrent            { return nil }
-func (d *CategoryDir) SetTorrent(torr *torr.Torrent)     {}
+func (d *CategoryDir) SetTorrent(_ *torr.Torrent)     {}
 
-// DirEntry
+// DirEntry.
 func (d *CategoryDir) Name() string { return d.info.Name() }
 func (d *CategoryDir) IsDir() bool  { return true }
 func (d *CategoryDir) Type() fs.FileMode {
 	s, _ := d.Stat()
+
 	return s.Mode()
 }
 func (d *CategoryDir) Info() (fs.FileInfo, error) { return d.info, nil }
 
-// File
+// File.
 func (d *CategoryDir) Read(bytes []byte) (int, error) { return 0, fs.ErrInvalid }
 func (d *CategoryDir) Close() error                   { return nil }

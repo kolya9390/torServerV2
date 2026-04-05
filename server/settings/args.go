@@ -37,7 +37,9 @@ func SetArgs(args *ExecArgs) {
 	if args == nil {
 		return
 	}
+
 	cp := *args
+
 	argsMu.Lock()
 	Args = &cp
 	argsMu.Unlock()
@@ -47,9 +49,12 @@ func SetArgs(args *ExecArgs) {
 func GetArgs() *ExecArgs {
 	argsMu.RLock()
 	defer argsMu.RUnlock()
+
 	if Args == nil {
 		return nil
 	}
+
 	cp := *Args
+
 	return &cp
 }

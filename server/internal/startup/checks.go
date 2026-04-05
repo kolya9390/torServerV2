@@ -1,6 +1,7 @@
 package startup
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -19,19 +20,23 @@ var listenTCP = net.Listen
 // It mutates args/BT settings with defaults for compatibility with existing flow.
 func PrepareNetwork(args *settings.ExecArgs) error {
 	if args == nil {
-		return fmt.Errorf("exec args are not initialized")
+		return errors.New("exec args are not initialized")
 	}
+
 	if args.Ssl {
 		if err := prepareSSL(args); err != nil {
 			return err
 		}
 	}
+
 	if args.Port == "" {
 		args.Port = defaultHTTPPort
 	}
+
 	if err := ensurePortFree(args.IP, args.Port, "http"); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -49,9 +54,11 @@ func prepareSSL(args *settings.ExecArgs) error {
 			settings.BTsets.SslPort = dbSSLPort
 		}
 	}
+
 	if err := ensurePortFree(args.IP, args.SslPort, "ssl"); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -60,8 +67,10 @@ func ensurePortFree(ip, port, label string) error {
 	if l != nil {
 		_ = l.Close()
 	}
+
 	if err != nil {
 		return fmt.Errorf("%s port %s already in use", label, port)
 	}
+
 	return nil
 }

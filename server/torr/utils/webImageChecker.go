@@ -24,9 +24,10 @@ func CheckImgUrl(link string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", link, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, link, nil)
 	if err != nil {
 		log.TLogln("Error create request for image:", err)
+
 		return false
 	}
 
@@ -37,9 +38,10 @@ func CheckImgUrl(link string) bool {
 	resp, err := client.Do(req)
 	if err != nil {
 		log.TLogln("Error check image:", err)
+
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	limitedReader := io.LimitReader(resp.Body, 2*1024*1024)
 
@@ -48,9 +50,12 @@ func CheckImgUrl(link string) bool {
 	} else {
 		_, _, err = image.Decode(limitedReader)
 	}
+
 	if err != nil {
 		log.TLogln("Error decode image:", err)
+
 		return false
 	}
+
 	return true
 }

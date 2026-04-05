@@ -17,6 +17,7 @@ func (f *fakeRuntime) Start() error {
 	if f.startFn != nil {
 		return f.startFn()
 	}
+
 	return nil
 }
 
@@ -30,6 +31,7 @@ func (f *fakeRuntime) Wait() error {
 	if f.waitFn != nil {
 		return f.waitFn()
 	}
+
 	return nil
 }
 
@@ -66,6 +68,7 @@ func TestStopUsesProvidedDeadline(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
+
 	if err := a.Stop(ctx); err != nil {
 		t.Fatalf("unexpected stop error: %v", err)
 	}

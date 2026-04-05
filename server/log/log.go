@@ -23,7 +23,7 @@ var (
 	globalLevel zapcore.Level = zapcore.InfoLevel
 )
 
-// Init инициализирует логгер с указанными путями
+// Init инициализирует логгер с указанными путями.
 func Init(logPath, webLogPath string) {
 	once.Do(func() {
 		config := zap.NewProductionConfig()
@@ -66,15 +66,15 @@ func Init(logPath, webLogPath string) {
 	})
 }
 
-// Close закрывает логгер
+// Close закрывает логгер.
 func Close() {
 	if logger != nil {
 		_ = logger.Sync()
 	}
 }
 
-// TLogln логирует информационное сообщение (совместимость со старым API)
-func TLogln(args ...interface{}) {
+// TLogln логирует информационное сообщение (совместимость со старым API).
+func TLogln(args ...any) {
 	if logger != nil {
 		logger.Info(args...)
 	} else {
@@ -83,8 +83,8 @@ func TLogln(args ...interface{}) {
 	}
 }
 
-// TLoglnF логирует форматированное информационное сообщение
-func TLoglnF(format string, args ...interface{}) {
+// TLoglnF логирует форматированное информационное сообщение.
+func TLoglnF(format string, args ...any) {
 	if logger != nil {
 		logger.Infof(format, args...)
 	} else {
@@ -92,42 +92,43 @@ func TLoglnF(format string, args ...interface{}) {
 	}
 }
 
-// WebLogln логирует сообщения веб-сервера (совместимость)
-func WebLogln(args ...interface{}) {
+// WebLogln логирует сообщения веб-сервера (совместимость).
+func WebLogln(args ...any) {
 	TLogln(args...)
 }
 
-// Info логирует информационное сообщение
-func Info(msg string, keysAndValues ...interface{}) {
+// Info логирует информационное сообщение.
+func Info(msg string, keysAndValues ...any) {
 	if logger != nil {
 		logger.Infow(msg, keysAndValues...)
 	}
 }
 
-// Warn логирует предупреждение
-func Warn(msg string, keysAndValues ...interface{}) {
+// Warn логирует предупреждение.
+func Warn(msg string, keysAndValues ...any) {
 	if logger != nil {
 		logger.Warnw(msg, keysAndValues...)
 	}
 }
 
-// Error логирует ошибку
-func Error(msg string, keysAndValues ...interface{}) {
+// Error логирует ошибку.
+func Error(msg string, keysAndValues ...any) {
 	if logger != nil {
 		logger.Errorw(msg, keysAndValues...)
 	}
 }
 
-// Debug логирует отладочное сообщение (только если включен debug уровень)
-func Debug(msg string, keysAndValues ...interface{}) {
+// Debug логирует отладочное сообщение (только если включен debug уровень).
+func Debug(msg string, keysAndValues ...any) {
 	if logger != nil {
 		logger.Debugw(msg, keysAndValues...)
 	}
 }
 
-// SetLevel устанавливает уровень логирования
+// SetLevel устанавливает уровень логирования.
 func SetLevel(level string) error {
 	var l zapcore.Level
+
 	switch level {
 	case "debug":
 		l = zapcore.DebugLevel
@@ -140,17 +141,20 @@ func SetLevel(level string) error {
 	default:
 		return fmt.Errorf("unknown log level: %s", level)
 	}
+
 	globalLevel = l
+
 	return nil
 }
 
-// RequestIDMiddleware добавляет correlation ID в каждый запрос
+// RequestIDMiddleware добавляет correlation ID в каждый запрос.
 func RequestIDMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		requestID := c.GetHeader(RequestIDHeader)
 		if requestID == "" {
 			requestID = generateRequestID()
 		}
+
 		c.Set(ContextKeyRequestID, requestID)
 		c.Header(RequestIDHeader, requestID)
 		c.Next()
@@ -163,10 +167,12 @@ func generateRequestID() string {
 
 func randomString(n int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
 	b := make([]byte, n)
 	for i := range b {
 		b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
 	}
+
 	return string(b)
 }
 
@@ -174,10 +180,11 @@ func GetRequestID(c *gin.Context) string {
 	if id, exists := c.Get(ContextKeyRequestID); exists {
 		return id.(string)
 	}
+
 	return ""
 }
 
-// WebLogger возвращает Gin middleware для логирования HTTP запросов
+// WebLogger возвращает Gin middleware для логирования HTTP запросов.
 func WebLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -192,7 +199,7 @@ func WebLogger() gin.HandlerFunc {
 		clientIP := c.ClientIP()
 		method := c.Request.Method
 
-		fields := []interface{}{
+		fields := []any{
 			"request_id", requestID,
 			"status", statusCode,
 			"method", method,
@@ -206,6 +213,7 @@ func WebLogger() gin.HandlerFunc {
 			Error("HTTP request",
 				fields...,
 			)
+
 			if errorLogger != nil {
 				errorLogger.Errorw("HTTP request error",
 					fields...,
