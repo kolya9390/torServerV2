@@ -2,6 +2,7 @@ package torrstor
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"server/settings"
@@ -191,7 +192,7 @@ func TestStorageCloseHash(t *testing.T) {
 	info.Pieces = make([]byte, 20)
 	hash := metainfo.NewHashFromHex("abcdef1234567890abcdef1234567890abcdef12")
 
-	_, _ = stor.OpenTorrent(info, hash)
+	_, _ = stor.OpenTorrent(context.Background(), info, hash)
 
 	if len(stor.caches) != 1 {
 		t.Errorf("caches count after Open = %d, want 1", len(stor.caches))

@@ -1,6 +1,7 @@
 package torrstor
 
 import (
+	"context"
 	"sync"
 
 	"server/torr/storage"
@@ -25,14 +26,17 @@ func NewStorage(capacity int64) *Storage {
 	return stor
 }
 
-func (s *Storage) OpenTorrent(info *metainfo.Info, infoHash metainfo.Hash) (ts.TorrentImpl, error) {
+func (s *Storage) OpenTorrent(ctx context.Context, info *metainfo.Info, infoHash metainfo.Hash) (ts.TorrentImpl, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch := NewCache(s.capacity, s)
 	ch.Init(info, infoHash)
 	s.caches[infoHash] = ch
 
-	return ch, nil
+	return ts.TorrentImpl{
+		Piece: ch.Piece,
+		Close: ch.Close,
+	}, nil
 }
 
 func (s *Storage) CloseHash(hash metainfo.Hash) {

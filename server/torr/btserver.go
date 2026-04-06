@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"net"
-	"net/http"
-	"net/url"
 	"sync"
 
 	"github.com/anacrolix/publicip"
@@ -15,6 +13,7 @@ import (
 	"github.com/wlynxg/anet"
 
 	"server/log"
+	"server/proxy"
 	"server/settings"
 	"server/torr/storage/torrstor"
 	"server/torr/utils"
@@ -118,9 +117,12 @@ func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
 	config.HTTPUserAgent = userAgent
 	config.ExtendedHandshakeClientVersion = cliVers
 	config.EstablishedConnsPerTorrent = settings.BTsets.ConnectionsLimit
-	config.TotalHalfOpenConns = 500
-	config.EncryptionPolicy = torrent.EncryptionPolicy{
-		ForceEncryption: settings.BTsets.ForceEncrypt,
+
+	if settings.BTsets.ForceEncrypt {
+		config.HeaderObfuscationPolicy = torrent.HeaderObfuscationPolicy{
+			RequirePreferred: true,
+			Preferred:        true,
+		}
 	}
 
 	if settings.BTsets.DownloadRateLimit > 0 {
@@ -223,62 +225,33 @@ func (bt *BTServer) configureProxy() error {
 		return nil
 	}
 
-	proxyURL := args.ProxyURL
+	proxyCfg, err := proxy.NewConfig(args.ProxyURL, args.ProxyMode)
+	if err != nil {
+		return err
+	}
 
-	if proxyURL == "" {
+	if proxyCfg == nil {
 		return nil // No proxy configured
 	}
 
-	proxyMode := args.ProxyMode
-	if proxyMode == "" {
-		proxyMode = "tracker" // default
-	}
+	d := proxy.NewDialer(proxyCfg)
 
-	// Parse and validate proxy URL
-	parsedURL, err := url.Parse(proxyURL)
-	if err != nil {
-		return fmt.Errorf("invalid proxy URL: %w", err)
-	}
-
-	scheme := parsedURL.Scheme
-	// Validate proxy protocol
-	switch scheme {
-	case "socks5", "socks5h", "socks4", "socks4a", "http", "https":
-		// Supported protocols
-	default:
-		return fmt.Errorf("unsupported proxy protocol: %s (supported: http, https, socks4, socks4a, socks5, socks5h)", scheme)
-	}
-
-	switch proxyMode {
-	case "full":
-		log.TLogln("Configuring proxy for all BitTorrent traffic:", scheme+"://"+parsedURL.Host)
-
-		// Set ProxyURL - this will be used by anacrolix/torrent for all BitTorrent traffic
-		bt.config.ProxyURL = proxyURL
-
-		// Also set HTTPProxy explicitly for HTTP tracker requests
-		bt.config.HTTPProxy = func(_ *http.Request) (*url.URL, error) {
-			return parsedURL, nil
-		}
-
-		log.TLogln("Proxy configured successfully for all BitTorrent connections (tracker, DHT, peers)")
-	case "peers":
-		log.TLogln("Configuring proxy for peer connections only:", scheme+"://"+parsedURL.Host)
-
-		// Set ProxyURL for peer connections, but don't set HTTPProxy
-		// This routes DHT and peer connections through proxy, but not HTTP tracker requests
-		bt.config.ProxyURL = proxyURL
-
-		log.TLogln("Proxy configured successfully for peer and DHT connections only")
-	default:
-		log.TLogln("Configuring proxy for HTTP tracker requests only:", scheme+"://"+parsedURL.Host)
-
-		// Only set HTTPProxy for tracker requests, don't set ProxyURL
-		bt.config.HTTPProxy = func(_ *http.Request) (*url.URL, error) {
-			return parsedURL, nil
-		}
-
+	switch proxyCfg.Mode {
+	case proxy.ModeTracker:
+		log.TLogln("Configuring HTTP proxy for tracker requests:", proxyCfg.URL.String())
+		bt.config.HTTPProxy = d.HTTPProxy()
 		log.TLogln("Proxy configured successfully for HTTP tracker connections only")
+
+	case proxy.ModePeers, proxy.ModeFull:
+		log.TLogln("Configuring proxy for all connections:", proxyCfg.URL.String())
+		bt.config.HTTPDialContext = d.DialContext
+		bt.config.HTTPProxy = d.HTTPProxy()
+		log.TLogln("Proxy configured successfully for all BitTorrent connections")
+
+	default:
+		// Fallback to tracker mode for unknown modes
+		log.TLogln("Configuring HTTP proxy for tracker requests (default):", proxyCfg.URL.String())
+		bt.config.HTTPProxy = d.HTTPProxy()
 	}
 
 	return nil

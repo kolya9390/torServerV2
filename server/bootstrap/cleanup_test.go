@@ -94,7 +94,9 @@ func TestRunCacheCleanupKeepsActiveHashDir(t *testing.T) {
 		return []*settings.TorrentDB{
 			{
 				TorrentSpec: &torrent.TorrentSpec{
-					InfoHash: mustHashFromHex(t, activeHash),
+					AddTorrentOpts: torrent.AddTorrentOpts{
+						InfoHash: mustHashFromHex(t, activeHash),
+					},
 				},
 			},
 		}

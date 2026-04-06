@@ -147,7 +147,9 @@ func TestTorrentStateTransitions(t *testing.T) {
 	defer bts.Disconnect()
 
 	spec := &torrent.TorrentSpec{
-		InfoHash:    [20]byte{0xAA, 0xBB, 0xCC},
+		AddTorrentOpts: torrent.AddTorrentOpts{
+			InfoHash: [20]byte{0xAA, 0xBB, 0xCC},
+		},
 		DisplayName: "Test Torrent",
 		Trackers:    [][]string{{"udp://tracker.example.com:1337"}},
 	}
