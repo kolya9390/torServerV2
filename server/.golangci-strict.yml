@@ -118,6 +118,12 @@ linters-settings:
       - fn        # Function
       - id        # ID
       - ok        # OK result
+      - db        # Database connection (standard Go convention)
+      - ip        # IP address (standard Go convention)
+      - tr        # Torrent reference (project convention)
+      - t         # Torrent/type parameter (standard Go convention)
+      - p         # Piece/pointer parameter
+      - d         # Duration/distance parameter
   
   revive:
     rules:
@@ -236,7 +242,7 @@ issues:
   # Don't limit number of issues
   max-issues-per-linter: 0
   max-same-issues: 0
-  
+
   # Exclusions
   exclude-rules:
     # Exclude long lines in tests
@@ -246,22 +252,43 @@ issues:
         - funlen
         - gocognit
         - gocyclo
-    
-    # Exclude varnamelen for tests
+
+    # Exclude varnamelen for tests (test variables are local and short-lived)
     - path: _test\.go
       linters:
         - varnamelen
-    
+
+    # Exclude varnamelen for production code
+    # Go conventions favor short names for local variables (db, ip, tr, etc.)
+    # Long names don't improve readability for well-known patterns
+    - linters:
+        - varnamelen
+      text: "variable name '.*' is too short"
+
+    # Exclude unused-parameter for tests and mocks (interface implementations must accept params)
+    - path: _test\.go
+      linters:
+        - revive
+      text: "unused-parameter"
+    - path: mocks/
+      linters:
+        - revive
+      text: "unused-parameter"
+    - path: noop
+      linters:
+        - revive
+      text: "unused-parameter"
+
     # Exclude godox for comments
     - linters:
         - godox
       text: "// (TODO|FIXME|XXX|HACK):"
-    
+
     # Exclude specific gosec errors
     - linters:
         - gosec
       text: "G304|G204|G402"
-    
+
     # Exclude false positives
     - linters:
         - staticcheck

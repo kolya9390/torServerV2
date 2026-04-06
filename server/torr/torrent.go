@@ -55,6 +55,10 @@ type Torrent struct {
 	closed <-chan struct{}
 
 	progressTicker *time.Ticker
+
+	// fileIndex maps file ID (1-based) to *torrent.File for O(1) lookup.
+	// Built lazily on first access, protected by muTorrent.
+	fileIndex map[int]*torrent.File
 }
 
 func NewTorrent(spec *torrent.TorrentSpec, bt *BTServer) (*Torrent, error) {
@@ -414,4 +418,28 @@ func (t *Torrent) CacheState() *cacheSt.CacheState {
 	}
 
 	return nil
+}
+
+// buildFileIndex constructs the file ID to *torrent.File map for O(1) lookup.
+// Must be called with t.muTorrent held.
+func (t *Torrent) buildFileIndex() {
+	t.fileIndex = make(map[int]*torrent.File)
+	files := t.Files()
+
+	for i, f := range files {
+		t.fileIndex[i+1] = f
+	}
+}
+
+// getFileByID returns the torrent file by its 1-based ID.
+// Uses cached fileIndex for O(1) lookup, building it lazily on first access.
+func (t *Torrent) getFileByID(fileID int) *torrent.File {
+	t.muTorrent.Lock()
+	defer t.muTorrent.Unlock()
+
+	if t.fileIndex == nil {
+		t.buildFileIndex()
+	}
+
+	return t.fileIndex[fileID]
 }

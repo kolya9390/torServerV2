@@ -45,8 +45,8 @@ func TestEchoEndpoint(t *testing.T) {
 		t.Fatalf("Failed to read response: %v", err)
 	}
 
-	if string(body) != "3.0.0" {
-		t.Errorf("Expected '3.0.0', got %q", string(body))
+	if string(body) != "2.0.0" {
+		t.Errorf("Expected '2.0.0', got %q", string(body))
 	}
 }
 

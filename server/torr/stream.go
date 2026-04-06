@@ -1,48 +1,103 @@
 package torr
 
 import (
-	// "context".
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
+	"runtime"
 	"strconv"
 	"sync/atomic"
 	"time"
 
 	"github.com/anacrolix/dms/dlna"
 	"github.com/anacrolix/missinggo/v2/httptoo"
-	"github.com/anacrolix/torrent"
 
+	"server/log"
 	mt "server/mimetype"
 	sets "server/settings"
 	"server/torr/state"
 )
 
-// Add atomic counter for concurrent streams.
+// activeStreams counts currently active streaming connections.
 var activeStreams int32
 
-// type contextResponseWriter struct {
-// 	http.ResponseWriter
-// 	ctx context.Context
-// }
+// streamAdmission controls concurrent stream limiting.
+type streamAdmission struct {
+	maxStreams   int32
+	waitDuration time.Duration
+}
 
-// func (w *contextResponseWriter) Write(p []byte) (n int, err error) {
-// 	// Check context before each write
-// 	select {
-// 	case <-w.ctx.Done():
-// 		return 0, w.ctx.Err()
-// 	default:
-// 		return w.ResponseWriter.Write(p)
-// 	}
-// }
+var admission = &streamAdmission{
+	maxStreams:   int32(maxInt(1, runtime.GOMAXPROCS(0))),
+	waitDuration: 3 * time.Second,
+}
 
+// tryAcquireStream attempts to acquire a streaming slot.
+// It returns a release function and an error if the limit is exceeded.
+func tryAcquireStream(ctx context.Context) (func(), error) {
+	if atomic.LoadInt32(&activeStreams) >= admission.maxStreams {
+		// Try to wait for a slot with timeout
+		deadline := time.After(admission.waitDuration)
+
+		ticker := time.NewTicker(250 * time.Millisecond)
+
+		defer ticker.Stop()
+
+	waitLoop:
+		for {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-deadline:
+				return nil, errors.New("stream limit exceeded, try again later")
+			case <-ticker.C:
+				if atomic.LoadInt32(&activeStreams) < admission.maxStreams {
+					break waitLoop
+				}
+			}
+		}
+	}
+
+	atomic.AddInt32(&activeStreams, 1)
+
+	release := func() {
+		atomic.AddInt32(&activeStreams, -1)
+	}
+
+	return release, nil
+}
+
+// maxInt returns the maximum of two integers.
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+
+	return b
+}
+
+// Stream serves a torrent file over HTTP with DLNA support and range requests.
+// It handles concurrent streaming with admission control and proper resource cleanup.
 func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter) error {
-	// Increment active streams counter
-	streamID := atomic.AddInt32(&activeStreams, 1)
-	defer atomic.AddInt32(&activeStreams, -1)
+	// Check if torrent is closed before streaming
+	if t.Stat == state.TorrentClosed {
+		return errors.New("torrent is closed")
+	}
+
+	// Admission control — limit concurrent streams
+	release, err := tryAcquireStream(req.Context())
+	if err != nil {
+		retrySec := int(admission.waitDuration.Seconds())
+		resp.Header().Set("Retry-After", strconv.Itoa(retrySec))
+		http.Error(resp, "Too many active streams", http.StatusServiceUnavailable)
+
+		return err
+	}
+	defer release()
+
 	// Stream disconnect timeout (same as torrent)
 	streamTimeout := sets.BTsets.TorrentDisconnectTimeout
 
@@ -51,66 +106,60 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 
 		return errors.New("torrent doesn't have info yet")
 	}
-	// Get file information
-	st := t.Status()
 
-	var stFile *state.TorrentFileStat
-
-	for _, fileStat := range st.FileStats {
-		if fileStat.Id == fileID {
-			stFile = fileStat
-
-			break
-		}
-	}
-
-	if stFile == nil {
-		return fmt.Errorf("file with id %v not found", fileID)
-	}
-	// Find the actual torrent file
-	files := t.Files()
-
-	var file *torrent.File
-
-	for _, tfile := range files {
-		if tfile.Path() == stFile.Path {
-			file = tfile
-
-			break
-		}
-	}
-
+	// Find file by ID using cached fileIndex for O(1) lookup
+	file := t.getFileByID(fileID)
 	if file == nil {
 		return fmt.Errorf("file with id %v not found", fileID)
 	}
+
 	// Check file size limit
 	if sets.MaxSize > 0 && file.Length() > sets.MaxSize {
 		err := fmt.Errorf("file size exceeded max allowed %d bytes", sets.MaxSize)
-		log.Printf("File %s size (%d) exceeded max allowed %d bytes", file.DisplayPath(), file.Length(), sets.MaxSize)
+		log.TLogln("File size exceeded:", file.DisplayPath(), file.Length(), "max:", sets.MaxSize)
 		http.Error(resp, err.Error(), http.StatusForbidden)
 
 		return err
 	}
+
 	// Create reader with context for timeout
 	reader := t.NewReader(file)
 	if reader == nil {
 		return errors.New("cannot create torrent reader")
 	}
+
 	// Ensure reader is always closed
 	defer t.CloseReader(reader)
 
 	if sets.BTsets.ResponsiveMode {
 		reader.SetResponsive()
 	}
+
+	// Monitor client disconnect
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			// Client disconnected, close reader to free resources
+			t.CloseReader(reader)
+		case <-time.After(time.Duration(streamTimeout) * time.Second):
+			// Timeout reached, close reader
+			t.CloseReader(reader)
+		}
+	}()
+
 	// Log connection
+	streamID := atomic.LoadInt32(&activeStreams)
 	host, port, clerr := net.SplitHostPort(req.RemoteAddr)
 
 	if sets.BTsets.EnableDebug {
 		if clerr != nil {
-			log.Printf("[Stream:%d] Connect client (Active streams: %d)", streamID, atomic.LoadInt32(&activeStreams))
+			log.TLogln("[Stream:", streamID, "] Connect client")
 		} else {
-			log.Printf("[Stream:%d] Connect client %s:%s (Active streams: %d)",
-				streamID, host, port, atomic.LoadInt32(&activeStreams))
+			addr := host + ":" + port
+			log.TLogln("[Stream:", streamID, "] Connect", addr)
 		}
 	}
 
@@ -122,10 +171,12 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 
 	// Set response headers
 	resp.Header().Set("Connection", "close")
+
 	// Add timeout header if configured
 	if streamTimeout > 0 {
 		resp.Header().Set("X-Stream-Timeout", strconv.Itoa(streamTimeout))
 	}
+
 	// Add ETag — use byte slice append to avoid fmt.Sprintf alloc
 	etagBuf := make([]byte, 0, 40+1+len(file.Path()))
 	etagBuf = append(etagBuf, t.Hash().HexString()...)
@@ -133,13 +184,16 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 	etagBuf = append(etagBuf, file.Path()...)
 	etag := hex.EncodeToString(etagBuf)
 	resp.Header().Set("ETag", httptoo.EncodeQuotedString(etag))
+
 	// DLNA headers
 	resp.Header().Set("transferMode.dlna.org", "Streaming")
+
 	// add MimeType
 	mime, err := mt.MimeTypeByPath(file.Path())
 	if err == nil && mime.IsMedia() {
 		resp.Header().Set("content-type", mime.String())
 	}
+
 	// DLNA Seek
 	if req.Header.Get("getContentFeatures.dlna.org") != "" {
 		resp.Header().Set("contentFeatures.dlna.org", dlna.ContentFeatures{
@@ -147,33 +201,19 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 			SupportTimeSeek: true,
 		}.String())
 	}
+
 	// Add support for range requests
 	if req.Header.Get("Range") != "" {
 		resp.Header().Set("Accept-Ranges", "bytes")
 	}
-	// // Create a context with timeout if configured
-	// ctx := req.Context()
-	// if streamTimeout > 0 {
-	// 	var cancel context.CancelFunc
-	// 	ctx, cancel = context.WithTimeout(ctx, time.Duration(streamTimeout)*time.Second)
-	// 	defer cancel()
-	// }
-	// // Update request with new context
-	// req = req.WithContext(ctx)
-	// // Handle client disconnections better
-	// wrappedResp := &contextResponseWriter{
-	// 	ResponseWriter: resp,
-	// 	ctx:            ctx,
-	// }
-	// http.ServeContent(wrappedResp, req, file.Path(), time.Unix(t.Timestamp, 0), reader)
 
 	http.ServeContent(resp, req, file.Path(), time.Unix(t.Timestamp, 0), reader)
 
 	if sets.BTsets.EnableDebug {
 		if clerr != nil {
-			log.Printf("[Stream:%d] Disconnect client", streamID)
+			log.TLogln("[Stream:", streamID, "] Disconnect client")
 		} else {
-			log.Printf("[Stream:%d] Disconnect client %s:%s", streamID, host, port)
+			log.TLogln("[Stream:", streamID, "] Disconnect client", host+":"+port)
 		}
 	}
 

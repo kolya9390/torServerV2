@@ -3,7 +3,6 @@ package torr
 import (
 	"context"
 	"fmt"
-	"log"
 	"maps"
 	"net"
 	"net/http"
@@ -16,6 +15,7 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/wlynxg/anet"
 
+	"server/log"
 	"server/settings"
 	"server/torr/storage/torrstor"
 	"server/torr/utils"
@@ -141,14 +141,14 @@ func (bt *BTServer) configure(ctx context.Context) {
 	}
 
 	if settings.TorAddr != "" {
-		log.Println("Set listen addr", settings.TorAddr)
+		log.TLogln("Set listen addr", settings.TorAddr)
 		bt.config.SetListenAddr(settings.TorAddr)
 	} else {
 		if settings.BTsets.PeersListenPort > 0 {
-			log.Println("Set listen port", settings.BTsets.PeersListenPort)
+			log.TLogln("Set listen port", settings.BTsets.PeersListenPort)
 			bt.config.ListenPort = settings.BTsets.PeersListenPort
 		} else {
-			log.Println("Set listen port to random autoselect (0)")
+			log.TLogln("Set listen port to random autoselect (0)")
 
 			bt.config.ListenPort = 0
 		}
@@ -156,10 +156,10 @@ func (bt *BTServer) configure(ctx context.Context) {
 
 	// Configure proxy if enabled
 	if err := bt.configureProxy(); err != nil {
-		log.Println("Proxy configuration error:", err)
+		log.TLogln("Proxy configuration error:", err)
 	}
 
-	log.Println("Client config:", settings.BTsets)
+	log.TLogln("Client config:", settings.BTsets)
 
 	var err error
 
@@ -173,7 +173,7 @@ func (bt *BTServer) configure(ctx context.Context) {
 	if bt.config.PublicIp4 == nil {
 		bt.config.PublicIp4, err = publicip.Get4(ctx)
 		if err != nil {
-			log.Printf("error getting public ipv4 address: %v", err)
+			log.TLogln("Error getting public ipv4 address:", err)
 		}
 	}
 
@@ -182,7 +182,7 @@ func (bt *BTServer) configure(ctx context.Context) {
 	}
 
 	if bt.config.PublicIp4 != nil {
-		log.Println("PublicIp4:", bt.config.PublicIp4)
+		log.TLogln("PublicIp4:", bt.config.PublicIp4)
 	}
 
 	// set public IPv6
@@ -195,7 +195,7 @@ func (bt *BTServer) configure(ctx context.Context) {
 	if bt.config.PublicIp6 == nil && settings.BTsets.EnableIPv6 {
 		bt.config.PublicIp6, err = publicip.Get6(ctx)
 		if err != nil {
-			log.Printf("error getting public ipv6 address: %v", err)
+			log.TLogln("Error getting public ipv6 address:", err)
 		}
 	}
 
@@ -204,18 +204,23 @@ func (bt *BTServer) configure(ctx context.Context) {
 	}
 
 	if bt.config.PublicIp6 != nil {
-		log.Println("PublicIp6:", bt.config.PublicIp6)
+		log.TLogln("PublicIp6:", bt.config.PublicIp6)
 	}
 }
 
 func (bt *BTServer) configureProxy() error {
-	proxyURL := settings.Args.ProxyURL
+	args := settings.GetArgs()
+	if args == nil {
+		return nil
+	}
+
+	proxyURL := args.ProxyURL
 
 	if proxyURL == "" {
 		return nil // No proxy configured
 	}
 
-	proxyMode := settings.Args.ProxyMode
+	proxyMode := args.ProxyMode
 	if proxyMode == "" {
 		proxyMode = "tracker" // default
 	}
@@ -237,7 +242,7 @@ func (bt *BTServer) configureProxy() error {
 
 	switch proxyMode {
 	case "full":
-		log.Printf("Configuring proxy for all BitTorrent traffic: %s://%s", scheme, parsedURL.Host)
+		log.TLogln("Configuring proxy for all BitTorrent traffic:", scheme+"://"+parsedURL.Host)
 
 		// Set ProxyURL - this will be used by anacrolix/torrent for all BitTorrent traffic
 		bt.config.ProxyURL = proxyURL
@@ -247,24 +252,24 @@ func (bt *BTServer) configureProxy() error {
 			return parsedURL, nil
 		}
 
-		log.Println("Proxy configured successfully for all BitTorrent connections (tracker, DHT, peers)")
+		log.TLogln("Proxy configured successfully for all BitTorrent connections (tracker, DHT, peers)")
 	case "peers":
-		log.Printf("Configuring proxy for peer connections only: %s://%s", scheme, parsedURL.Host)
+		log.TLogln("Configuring proxy for peer connections only:", scheme+"://"+parsedURL.Host)
 
 		// Set ProxyURL for peer connections, but don't set HTTPProxy
 		// This routes DHT and peer connections through proxy, but not HTTP tracker requests
 		bt.config.ProxyURL = proxyURL
 
-		log.Println("Proxy configured successfully for peer and DHT connections only")
+		log.TLogln("Proxy configured successfully for peer and DHT connections only")
 	default:
-		log.Printf("Configuring proxy for HTTP tracker requests only: %s://%s", scheme, parsedURL.Host)
+		log.TLogln("Configuring proxy for HTTP tracker requests only:", scheme+"://"+parsedURL.Host)
 
 		// Only set HTTPProxy for tracker requests, don't set ProxyURL
 		bt.config.HTTPProxy = func(_ *http.Request) (*url.URL, error) {
 			return parsedURL, nil
 		}
 
-		log.Println("Proxy configured successfully for HTTP tracker connections only")
+		log.TLogln("Proxy configured successfully for HTTP tracker connections only")
 	}
 
 	return nil
@@ -310,7 +315,7 @@ func isPrivateIP(ip net.IP) bool {
 func getPublicIp4() net.IP {
 	ifaces, err := anet.Interfaces()
 	if err != nil {
-		log.Println("Error get public IPv4")
+		log.TLogln("Error get public IPv4:", err)
 
 		return nil
 	}
@@ -340,7 +345,7 @@ func getPublicIp4() net.IP {
 func getPublicIp6() net.IP {
 	ifaces, err := anet.Interfaces()
 	if err != nil {
-		log.Println("Error get public IPv6")
+		log.TLogln("Error get public IPv6:", err)
 
 		return nil
 	}

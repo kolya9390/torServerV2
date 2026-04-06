@@ -66,7 +66,7 @@ func Start() error {
 }
 
 func (s *Server) Start() error {
-	log.TLogln("Start TorrServer 3.0.0")
+	log.TLogln("Start TorrServer 2.0.0")
 
 	ips := webinfra.GetLocalIps()
 	if len(ips) > 0 {
@@ -241,7 +241,7 @@ func (s *Server) Stop() {
 }
 
 func echo(c *gin.Context) {
-	c.String(200, "3.0.0")
+	c.String(200, "2.0.0")
 }
 
 func healthz(c *gin.Context) {

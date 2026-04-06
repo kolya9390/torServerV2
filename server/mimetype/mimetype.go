@@ -1,19 +1,20 @@
 package mimetype
 
 import (
-	"log"
 	"mime"
 	"net/http"
 	"os"
 	"path"
 	"strings"
+
+	"server/log"
 )
 
 func init() {
 	// Add a minimal number of mime types to augment go's built in types
 	// for environments which don't have access to a mime.types file (e.g.
 	// Termux on android)
-	for _, t := range []struct {
+	for _, mimeEntry := range []struct {
 		mimeType   string
 		extensions string
 	}{
@@ -63,16 +64,16 @@ func init() {
 		{"text/smi", ".smi"},
 		{"text/ssa", ".ssa"},
 	} {
-		for ext := range strings.SplitSeq(t.extensions, ",") {
-			err := mime.AddExtensionType(ext, t.mimeType)
+		for ext := range strings.SplitSeq(mimeEntry.extensions, ",") {
+			err := mime.AddExtensionType(ext, mimeEntry.mimeType)
 			if err != nil {
-				log.Printf("Could not register %s for %s: %v", ext, t.mimeType, err)
+				log.TLogln("Could not register", ext, "for", mimeEntry.mimeType, ":", err)
 			}
 		}
 	}
 
 	if err := mime.AddExtensionType(".rmvb", "application/vnd.rn-realmedia-vbr"); err != nil {
-		log.Printf("Could not register application/vnd.rn-realmedia-vbr MIME type: %s", err)
+		log.TLogln("Could not register application/vnd.rn-realmedia-vbr MIME type:", err)
 	}
 }
 
