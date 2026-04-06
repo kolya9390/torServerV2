@@ -1,5 +1,6 @@
 # golangci-lint strict configuration for TorrServer
 # Purpose: Maximum code quality and readability
+# Version: 2.x compatible
 
 version: "2"
 
@@ -11,99 +12,68 @@ run:
 
 linters:
   default: standard
-  
+
   enable:
-    # =============================================================================
-    # BUG DETECTION
-    # =============================================================================
-    - errcheck          # Unhandled errors check
-    - gosec             # Security issues
-    - staticcheck       # Advanced static analysis
-    - govet             # Standard Go linter
-    - ineffassign       # Ineffective assignments
-    - unconvert         # Unnecessary type conversions
-    
-    # =============================================================================
-    # CODE COMPLEXITY
-    # =============================================================================
-    - gocognit          # Cognitive complexity of functions
-    - gocyclo           # Cyclomatic complexity
-    - funlen            # Function length
-    - nestif            # If statement nesting depth
-    
-    # =============================================================================
-    # CODE STYLE & READABILITY
-    # =============================================================================
-    - misspell          # Spelling mistakes
-    - whitespace        # Unnecessary whitespace
-    - wsl               # Whitespace linter (indentation, empty lines)
-    - nlreturn          # Newline before return
-    - gomoddirectives   # go.mod directives
-    
-    # =============================================================================
-    # DOCUMENTATION
-    # =============================================================================
-    - godox             # TODO/FIXME comments
-    - godot             # Period at end of godoc
-    
-    # =============================================================================
-    # PERFORMANCE
-    # =============================================================================
-    - prealloc          # Pre-allocation suggestions
-    - perfsprint        # Sprint performance
-    
-    # =============================================================================
-    # NAMING
-    # =============================================================================
-    - revive            # Style checker
-    - varnamelen        # Variable name length
-    - recvcheck         # Receiver names
-    
-    # =============================================================================
-    # MISC
-    # =============================================================================
-    - copyloopvar       # Loop variable copying
-    - usestdlibvars     # Standard library constants
-    - intrange          # Integer range
-    - lll               # Line length
+    - errcheck
+    - gosec
+    - staticcheck
+    - govet
+    - ineffassign
+    - unconvert
+    - gocognit
+    - gocyclo
+    - funlen
+    - nestif
+    - misspell
+    - whitespace
+    - wsl
+    - nlreturn
+    - gomoddirectives
+    - godox
+    - godot
+    - prealloc
+    - perfsprint
+    - revive
+    - varnamelen
+    - recvcheck
+    - copyloopvar
+    - usestdlibvars
+    - intrange
+    - lll
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
   settings:
-    # =============================================================================
-    # LINE LENGTH
-    # =============================================================================
     lll:
-      line-length: 180    # Maximum line length (realistic limit for Go code)
+      line-length: 180
       tab-width: 4
-    
-    # =============================================================================
-    # NAMING CONVENTIONS
-    # =============================================================================
+
     varnamelen:
-      max-distance: 20              # Maximum usage distance
-      min-name-length: 2            # Minimum name length
-      ignore-type-names:
-        - T
-        - "*"
+      max-distance: 20
+      min-name-length: 2
       ignore-names:
-        - i         # Loop index
-        - j         # Loop index
-        - k         # Loop index
-        - n         # Count
-        - wg        # WaitGroup
-        - mu        # Mutex
-        - err       # Error
-        - ctx       # Context
-        - ch        # Channel
-        - fn        # Function
-        - id        # ID
-        - ok        # OK result
-        - db        # Database connection (standard Go convention)
-        - ip        # IP address (standard Go convention)
-        - tr        # Torrent reference (project convention)
-        - t         # Torrent/type parameter (standard Go convention)
-        - p         # Piece/pointer parameter
-        - d         # Duration/distance parameter
-    
+        - i
+        - j
+        - k
+        - n
+        - wg
+        - mu
+        - err
+        - ctx
+        - ch
+        - fn
+        - id
+        - ok
+        - db
+        - ip
+        - tr
+        - t
+        - p
+        - d
+
     revive:
       rules:
         - name: var-naming
@@ -131,41 +101,31 @@ linters:
         - name: struct-tag
         - name: constant-logical-expr
         - name: early-return
-        - name: unnecessary-export
-    
-    # =============================================================================
-    # COMPLEXITY LIMITS
-    # =============================================================================
+
     gocognit:
-      min-complexity: 30  # Maximum cognitive complexity
-    
+      min-complexity: 30
+
     gocyclo:
-      min-complexity: 30  # Maximum cyclomatic complexity
-    
+      min-complexity: 30
+
     funlen:
-      lines: 100          # Maximum lines in function
-      statements: 50      # Maximum statements
-    
+      lines: 100
+      statements: 50
+
     nestif:
-      min-complexity: 15  # Maximum if nesting depth
-    
-    # =============================================================================
-    # GODOT
-    # =============================================================================
+      min-complexity: 15
+
     godot:
-      scope: declarations  # Check only exported
-      capital: true        # Require capital letter
-      period: true         # Require period at end
+      scope: declarations
+      capital: true
+      period: true
       exclude:
         - "^fixme:"
         - "^todo:"
-    
-    # =============================================================================
-    # ERROR CHECK
-    # =============================================================================
+
     errcheck:
-      check-type-assertions: true   # Check type assertions
-      check-blank: true             # Check _ = func()
+      check-type-assertions: true
+      check-blank: true
       exclude-functions:
         - fmt:.*
         - io/ioutil:^Read.*
@@ -179,104 +139,82 @@ linters:
         - (*strings.Builder).WriteRune
         - (*strings.Builder).WriteString
         - (*strings.Builder).Copy
-    
-    # =============================================================================
-    # Gosec (Security)
-    # =============================================================================
+
     gosec:
       excludes:
-        - G104  # Errors unhandled (covered by errcheck)
-        - G107  # HTTP request with variable URL (false positives)
-        - G115  # Integer overflow (false positives)
-        - G204  # Subprocess with variable command (acceptable for our use case)
-        - G304  # File path from variable (acceptable for our use case)
-        - G402  # TLS InsecureSkipVerify (acceptable for self-signed certs)
-        - G501  # Blacklisted import (md5/sha1 for non-crypto use)
-        - G505  # Blacklisted import (crypto/sha1 for non-crypto use)
-    
-    # =============================================================================
-    # STATICCHECK
-    # =============================================================================
+        - G104
+        - G107
+        - G115
+        - G204
+        - G304
+        - G402
+        - G501
+        - G505
+
     staticcheck:
       checks:
         - "all"
-        - "-SA1019"  # Allow deprecated functions (for backward compatibility)
-        - "-SA4000"  # Allow duplicate imports (sometimes necessary)
-    
-    # =============================================================================
-    # PREALLOC
-    # =============================================================================
+        - "-SA1019"
+        - "-SA4000"
+
     prealloc:
-      simple: true      # Check simple cases
-      range-loops: true # Check range loops
-      for-loops: true   # Check for loops
+      simple: true
+      range-loops: true
+      for-loops: true
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+
+    rules:
+      - path: _test\.go
+        linters:
+          - lll
+          - funlen
+          - gocognit
+          - gocyclo
+
+      - path: _test\.go
+        linters:
+          - varnamelen
+
+      - linters:
+          - varnamelen
+        text: "variable name '.*' is too short"
+
+      - path: _test\.go
+        linters:
+          - revive
+        text: "unused-parameter"
+      - path: mocks/
+        linters:
+          - revive
+        text: "unused-parameter"
+      - path: noop
+        linters:
+          - revive
+        text: "unused-parameter"
+
+      - linters:
+          - godox
+        text: "Line contains TODO/BUG/FIXME"
+
+      - linters:
+          - gomoddirectives
+        text: "replacement are not allowed"
+
+      - linters:
+          - gosec
+        text: "G304|G204|G402"
+
+      - linters:
+          - staticcheck
+        text: "SA4000"
 
 issues:
-  # Don't limit number of issues
   max-issues-per-linter: 0
   max-same-issues: 0
-
-  # Exclusions
-  exclude-rules:
-    # Exclude long lines in tests
-    - path: _test\.go
-      linters:
-        - lll
-        - funlen
-        - gocognit
-        - gocyclo
-
-    # Exclude varnamelen for tests (test variables are local and short-lived)
-    - path: _test\.go
-      linters:
-        - varnamelen
-
-    # Exclude varnamelen for production code
-    # Go conventions favor short names for local variables (db, ip, tr, etc.)
-    # Long names don't improve readability for well-known patterns
-    - linters:
-        - varnamelen
-      text: "variable name '.*' is too short"
-
-    # Exclude unused-parameter for tests and mocks (interface implementations must accept params)
-    - path: _test\.go
-      linters:
-        - revive
-      text: "unused-parameter"
-    - path: mocks/
-      linters:
-        - revive
-      text: "unused-parameter"
-    - path: noop
-      linters:
-        - revive
-      text: "unused-parameter"
-
-    # Exclude godox for TODO/FIXME comments (these are planning notes, not bugs)
-    - linters:
-        - godox
-      text: "Line contains TODO/BUG/FIXME"
-
-    # Exclude gomoddirectives for replace directives (needed for fork dependencies)
-    - linters:
-        - gomoddirectives
-      text: "replacement are not allowed"
-
-    # Exclude specific gosec errors
-    - linters:
-        - gosec
-      text: "G304|G204|G402"
-
-    # Exclude false positives
-    - linters:
-        - staticcheck
-      text: "SA4000"
-
-# Output format
-output:
-  format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
-  uniq-by-line: true
-  sort-results: true
-  show-stats: true
