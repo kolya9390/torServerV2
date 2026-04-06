@@ -141,6 +141,87 @@ func searchOne(host, key, query string) []*TorrentDetails {
 	return results
 }
 
+// buildSearchRequest constructs an HTTP GET request for the Torznab search API.
+// It ensures the host URL has a trailing slash and appends the required query parameters.
+func buildSearchRequest(host, key, query string) (*http.Request, error) {
+	if !strings.HasSuffix(host, "/") {
+		host += "/"
+	}
+
+	u, err := url.Parse(host + "api")
+	if err != nil {
+		return nil, fmt.Errorf("parse error: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("apikey", key)
+	q.Set("t", "search")
+	q.Set("q", query)
+	q.Set("cat", "5000,2000")
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request error: %w", err)
+	}
+
+	return req, nil
+}
+
+// parseSearchResponse decodes the XML response from the Torznab API and extracts torrent details.
+// It handles enclosure URLs, custom attributes (magneturl, seeders, peers), and magnet link extraction.
+func parseSearchResponse(resp *http.Response) ([]*TorrentDetails, error) {
+	var torznabResp TorznabResponse
+	if err := xml.NewDecoder(resp.Body).Decode(&torznabResp); err != nil {
+		return nil, fmt.Errorf("decode error: %w", err)
+	}
+
+	var results []*TorrentDetails
+
+	for _, item := range torznabResp.Channel.Items {
+		detail := parseItem(item)
+		results = append(results, detail)
+	}
+
+	return results, nil
+}
+
+// parseItem extracts TorrentDetails from a single TorznabItem.
+func parseItem(item TorznabItem) *TorrentDetails {
+	detail := &TorrentDetails{
+		Title:      item.Title,
+		Name:       item.Title,
+		Link:       item.Link,
+		CreateDate: parseDate(item.PubDate),
+	}
+
+	if len(item.Enclosure) > 0 {
+		detail.Link = item.Enclosure[0].URL
+		detail.Size = formatSize(item.Enclosure[0].Length)
+	} else {
+		detail.Size = formatSize(item.Size)
+	}
+
+	for _, attr := range item.Attributes {
+		switch attr.Name {
+		case "magneturl":
+			detail.Magnet = attr.Value
+			detail.Hash = extractHash(detail.Magnet)
+		case "seeders":
+			detail.Seed, _ = strconv.Atoi(attr.Value)
+		case "peers":
+			detail.Peer, _ = strconv.Atoi(attr.Value)
+		}
+	}
+
+	if detail.Magnet == "" && strings.HasPrefix(detail.Link, "magnet:") {
+		detail.Magnet = detail.Link
+		detail.Hash = extractHash(detail.Magnet)
+	}
+
+	return detail
+}
+
 func doSearchOne(host, key, query string) ([]*TorrentDetails, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -149,79 +230,22 @@ func doSearchOne(host, key, query string) ([]*TorrentDetails, error) {
 	cfg.MaxAttempts = 3
 
 	result := retry.Do[[]*TorrentDetails](ctx, cfg, func() ([]*TorrentDetails, error) {
-		if !strings.HasSuffix(host, "/") {
-			host += "/"
-		}
-
-		u, err := url.Parse(host + "api")
+		req, err := buildSearchRequest(host, key, query)
 		if err != nil {
-			return nil, fmt.Errorf("parse error: %w", err)
+			return nil, err
 		}
 
-		q := u.Query()
-		q.Set("apikey", key)
-		q.Set("t", "search")
-		q.Set("q", query)
-		q.Set("cat", "5000,2000")
-		u.RawQuery = q.Encode()
-
-		resp, err := http.Get(u.String())
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("request error: %w", err)
 		}
-
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("status: %d", resp.StatusCode)
 		}
 
-		var torznabResp TorznabResponse
-		if err := xml.NewDecoder(resp.Body).Decode(&torznabResp); err != nil {
-			return nil, fmt.Errorf("decode error: %w", err)
-		}
-
-		var results []*TorrentDetails
-
-		for _, item := range torznabResp.Channel.Items {
-			detail := &TorrentDetails{
-				Title:      item.Title,
-				Name:       item.Title,
-				Link:       item.Link,
-				CreateDate: parseDate(item.PubDate),
-			}
-
-			if len(item.Enclosure) > 0 {
-				detail.Link = item.Enclosure[0].URL
-				detail.Size = formatSize(item.Enclosure[0].Length)
-			} else {
-				detail.Size = formatSize(item.Size)
-			}
-
-			for _, attr := range item.Attributes {
-				if attr.Name == "magneturl" {
-					detail.Magnet = attr.Value
-					detail.Hash = extractHash(detail.Magnet)
-				}
-
-				if attr.Name == "seeders" {
-					detail.Seed, _ = strconv.Atoi(attr.Value)
-				}
-
-				if attr.Name == "peers" {
-					detail.Peer, _ = strconv.Atoi(attr.Value)
-				}
-			}
-
-			if detail.Magnet == "" && strings.HasPrefix(detail.Link, "magnet:") {
-				detail.Magnet = detail.Link
-				detail.Hash = extractHash(detail.Magnet)
-			}
-
-			results = append(results, detail)
-		}
-
-		return results, nil
+		return parseSearchResponse(resp)
 	})
 
 	if result.Err != nil {

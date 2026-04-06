@@ -12,6 +12,238 @@ import (
 	"server/log"
 )
 
+// maxInt returns the maximum of two integers.
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+
+	return b
+}
+
+// lowEndProfile defines a preset optimized for resource-constrained devices.
+var lowEndProfile = BTSets{
+	CacheSize:          32 * 1024 * 1024,
+	PreloadCache:       25,
+	ConnectionsLimit:   12,
+	MaxConcurrentStreams: 1,
+	StreamQueueSize:    2,
+	StreamQueueWaitSec: 2,
+	AdaptiveRAMinMB:    2,
+	AdaptiveRAMaxMB:    16,
+	WarmDiskCacheSizeMB: 256,
+	WarmDiskCacheTTLMin: 60,
+	MetadataWorkers:    1,
+	MetadataQueueSize:  64,
+	PreloadWorkers:     1,
+	PreloadQueueSize:   8,
+	DiskSyncPolicy:     "periodic",
+	DiskSyncIntervalMS: 800,
+	DiskWriteBatchSize: 8,
+}
+
+// balancedProfile defines the default balanced preset.
+var balancedProfile = BTSets{
+	CacheSize:          64 * 1024 * 1024,
+	PreloadCache:       50,
+	ConnectionsLimit:   25,
+	MaxConcurrentStreams: 0,
+	StreamQueueSize:    0,
+	StreamQueueWaitSec: 3,
+	AdaptiveRAMinMB:    4,
+	AdaptiveRAMaxMB:    64,
+	WarmDiskCacheSizeMB: 0,
+	WarmDiskCacheTTLMin: 180,
+	MetadataWorkers:    0,
+	MetadataQueueSize:  0,
+	PreloadWorkers:     0,
+	PreloadQueueSize:   0,
+	DiskSyncPolicy:     "periodic",
+	DiskSyncIntervalMS: 1000,
+	DiskWriteBatchSize: 16,
+}
+
+// highThroughputProfile defines a preset optimized for high-performance systems.
+var highThroughputProfile = BTSets{
+	CacheSize:          256 * 1024 * 1024,
+	PreloadCache:       70,
+	ConnectionsLimit:   0, // computed at apply time
+	MaxConcurrentStreams: 0, // computed at apply time
+	StreamQueueSize:    0, // computed at apply time
+	StreamQueueWaitSec: 4,
+	AdaptiveRAMinMB:    8,
+	AdaptiveRAMaxMB:    128,
+	WarmDiskCacheSizeMB: 4096,
+	WarmDiskCacheTTLMin: 360,
+	MetadataWorkers:    0, // computed at apply time
+	MetadataQueueSize:  512,
+	PreloadWorkers:     0, // computed at apply time
+	PreloadQueueSize:   64,
+	DiskSyncPolicy:     "periodic",
+	DiskSyncIntervalMS: 1500,
+	DiskWriteBatchSize: 32,
+}
+
+// nasProfile defines a preset optimized for NAS devices.
+var nasProfile = BTSets{
+	CacheSize:          128 * 1024 * 1024,
+	PreloadCache:       55,
+	ConnectionsLimit:   0, // computed at apply time
+	MaxConcurrentStreams: 0, // computed at apply time
+	StreamQueueSize:    0, // computed at apply time
+	StreamQueueWaitSec: 4,
+	AdaptiveRAMinMB:    4,
+	AdaptiveRAMaxMB:    64,
+	WarmDiskCacheSizeMB: 8192,
+	WarmDiskCacheTTLMin: 720,
+	MetadataWorkers:    0, // computed at apply time
+	MetadataQueueSize:  256,
+	PreloadWorkers:     1,
+	PreloadQueueSize:   32,
+	DiskSyncPolicy:     "periodic",
+	DiskSyncIntervalMS: 2500,
+	DiskWriteBatchSize: 24,
+}
+
+// profilePresets maps profile names to their preset configurations.
+var profilePresets = map[string]BTSets{
+	"low-end":          lowEndProfile,
+	"balanced":         balancedProfile,
+	"high-throughput":  highThroughputProfile,
+	"nas":              nasProfile,
+}
+
+// computeCPUFields applies runtime-computed CPU-dependent values to preset.
+// It returns a modified copy with fields calculated based on GOMAXPROCS.
+func computeCPUFields(preset BTSets) BTSets {
+	cpus := max(runtime.GOMAXPROCS(0), 1)
+
+	// High-throughput profile: CacheSize == 256MB signals CPU-dependent fields
+	if preset.ConnectionsLimit == 0 && preset.CacheSize == 256*1024*1024 {
+		preset.ConnectionsLimit = maxInt(cpus*20, 80)
+		preset.MaxConcurrentStreams = maxInt(cpus*2, 4)
+		preset.StreamQueueSize = maxInt(cpus*4, 12)
+		preset.MetadataWorkers = maxInt(cpus, 4)
+		preset.PreloadWorkers = maxInt(cpus/2, 2)
+		return preset
+	}
+
+	// NAS profile: CacheSize == 128MB signals CPU-dependent fields
+	if preset.ConnectionsLimit == 0 && preset.CacheSize == 128*1024*1024 {
+		preset.ConnectionsLimit = maxInt(cpus*12, 40)
+		preset.MaxConcurrentStreams = maxInt(cpus, 2)
+		preset.StreamQueueSize = maxInt(cpus*3, 8)
+		preset.MetadataWorkers = maxInt(cpus/2, 2)
+	}
+
+	return preset
+}
+
+// fieldCopyRule defines when a field should be copied from preset to dst.
+type fieldCopyRule struct {
+	shouldCopy func(preset BTSets, cacheSize int64) bool
+	apply      func(dst *BTSets, preset BTSets)
+}
+
+// balancedZero indicates a field with value 0 from the balanced profile should be applied.
+func balancedZero(preset BTSets, cacheSize int64) bool {
+	return preset.CacheSize == cacheSize
+}
+
+// copyRules defines the table-driven field copying logic for applyProfileFields.
+var copyRules = []fieldCopyRule{
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.CacheSize > 0 },
+		apply:      func(dst *BTSets, p BTSets) { dst.CacheSize = p.CacheSize },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.PreloadCache > 0 },
+		apply:      func(dst *BTSets, p BTSets) { dst.PreloadCache = p.PreloadCache },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.ConnectionsLimit > 0 },
+		apply:      func(dst *BTSets, p BTSets) { dst.ConnectionsLimit = p.ConnectionsLimit },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.MaxConcurrentStreams > 0 || p.MaxConcurrentStreams == 0 && balancedZero(p, 64*1024*1024) },
+		apply:      func(dst *BTSets, p BTSets) { dst.MaxConcurrentStreams = p.MaxConcurrentStreams },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.StreamQueueSize > 0 || p.StreamQueueSize == 0 && balancedZero(p, 64*1024*1024) },
+		apply:      func(dst *BTSets, p BTSets) { dst.StreamQueueSize = p.StreamQueueSize },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.StreamQueueWaitSec > 0 },
+		apply:      func(dst *BTSets, p BTSets) { dst.StreamQueueWaitSec = p.StreamQueueWaitSec },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.AdaptiveRAMinMB > 0 },
+		apply:      func(dst *BTSets, p BTSets) { dst.AdaptiveRAMinMB = p.AdaptiveRAMinMB },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.AdaptiveRAMaxMB > 0 },
+		apply:      func(dst *BTSets, p BTSets) { dst.AdaptiveRAMaxMB = p.AdaptiveRAMaxMB },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.WarmDiskCacheSizeMB > 0 || p.WarmDiskCacheSizeMB == 0 && balancedZero(p, 64*1024*1024) },
+		apply:      func(dst *BTSets, p BTSets) { dst.WarmDiskCacheSizeMB = p.WarmDiskCacheSizeMB },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.WarmDiskCacheTTLMin > 0 },
+		apply:      func(dst *BTSets, p BTSets) { dst.WarmDiskCacheTTLMin = p.WarmDiskCacheTTLMin },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.MetadataWorkers > 0 || p.MetadataWorkers == 0 && balancedZero(p, 64*1024*1024) },
+		apply:      func(dst *BTSets, p BTSets) { dst.MetadataWorkers = p.MetadataWorkers },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.MetadataQueueSize > 0 || p.MetadataQueueSize == 0 && balancedZero(p, 64*1024*1024) },
+		apply:      func(dst *BTSets, p BTSets) { dst.MetadataQueueSize = p.MetadataQueueSize },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.PreloadWorkers > 0 || p.PreloadWorkers == 0 && balancedZero(p, 64*1024*1024) },
+		apply:      func(dst *BTSets, p BTSets) { dst.PreloadWorkers = p.PreloadWorkers },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.PreloadQueueSize > 0 || p.PreloadQueueSize == 0 && balancedZero(p, 64*1024*1024) },
+		apply:      func(dst *BTSets, p BTSets) { dst.PreloadQueueSize = p.PreloadQueueSize },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.DiskSyncPolicy != "" },
+		apply:      func(dst *BTSets, p BTSets) { dst.DiskSyncPolicy = p.DiskSyncPolicy },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.DiskSyncIntervalMS > 0 },
+		apply:      func(dst *BTSets, p BTSets) { dst.DiskSyncIntervalMS = p.DiskSyncIntervalMS },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.DiskWriteBatchSize > 0 },
+		apply:      func(dst *BTSets, p BTSets) { dst.DiskWriteBatchSize = p.DiskWriteBatchSize },
+	},
+}
+
+// applyProfileFields copies non-zero fields from preset to dst, applying
+// runtime-computed values for CPU-dependent fields where needed.
+func applyProfileFields(dst *BTSets, preset BTSets) {
+	preset = computeCPUFields(preset)
+	cacheSize := preset.CacheSize
+
+	for _, rule := range copyRules {
+		if rule.shouldCopy(preset, cacheSize) {
+			rule.apply(dst, preset)
+		}
+	}
+}
+
+func applyCoreProfilePreset(sets *BTSets, profile string) {
+	preset, ok := profilePresets[profile]
+	if !ok {
+		preset = balancedProfile
+	}
+
+	applyProfileFields(sets, preset)
+}
+
 type TorznabConfig struct {
 	Host string
 	Key  string
@@ -145,123 +377,13 @@ func SetBTSets(sets *BTSets) {
 		applyCoreProfilePreset(sets, sets.CoreProfile)
 		applyCoreProfileOverrides(sets, &input)
 	}
-	// failsafe checks (use defaults)
-	if sets.CacheSize == 0 {
-		sets.CacheSize = 64 * 1024 * 1024
-	}
 
-	if sets.ConnectionsLimit == 0 {
-		sets.ConnectionsLimit = 25
-	}
+	sets.validateAndNormalize()
 
-	if sets.TorrentDisconnectTimeout == 0 {
-		sets.TorrentDisconnectTimeout = 30
-	}
-
-	if sets.StreamQueueWaitSec <= 0 {
-		sets.StreamQueueWaitSec = 3
-	}
-
-	if sets.MaxConcurrentStreams < 0 {
-		sets.MaxConcurrentStreams = 0
-	}
-
-	if sets.StreamQueueSize < 0 {
-		sets.StreamQueueSize = 0
-	}
-
-	if sets.AdaptiveRAMinMB < 0 {
-		sets.AdaptiveRAMinMB = 0
-	}
-
-	if sets.AdaptiveRAMaxMB < 0 {
-		sets.AdaptiveRAMaxMB = 0
-	}
-
-	if sets.AdaptiveRAMaxMB > 0 && sets.AdaptiveRAMinMB > sets.AdaptiveRAMaxMB {
-		sets.AdaptiveRAMinMB = sets.AdaptiveRAMaxMB
-	}
-
-	if sets.WarmDiskCacheSizeMB < 0 {
-		sets.WarmDiskCacheSizeMB = 0
-	}
-
-	if sets.WarmDiskCacheTTLMin < 0 {
-		sets.WarmDiskCacheTTLMin = 0
-	}
-
-	if sets.DiskSyncPolicy == "" {
-		sets.DiskSyncPolicy = "periodic"
-	}
-
-	switch strings.ToLower(sets.DiskSyncPolicy) {
-	case "none", "periodic", "always":
-		sets.DiskSyncPolicy = strings.ToLower(sets.DiskSyncPolicy)
-	default:
-		sets.DiskSyncPolicy = "periodic"
-	}
-
-	if sets.DiskSyncIntervalMS <= 0 {
-		sets.DiskSyncIntervalMS = 1000
-	}
-
-	if sets.DiskWriteBatchSize <= 0 {
-		sets.DiskWriteBatchSize = 16
-	}
-
-	if sets.MetadataWorkers < 0 {
-		sets.MetadataWorkers = 0
-	}
-
-	if sets.MetadataQueueSize < 0 {
-		sets.MetadataQueueSize = 0
-	}
-
-	if sets.PreloadWorkers < 0 {
-		sets.PreloadWorkers = 0
-	}
-
-	if sets.PreloadQueueSize < 0 {
-		sets.PreloadQueueSize = 0
-	}
-
-	if sets.ReaderReadAHead < 5 {
-		sets.ReaderReadAHead = 5
-	}
-
-	if sets.ReaderReadAHead > 100 {
-		sets.ReaderReadAHead = 100
-	}
-
-	if sets.PreloadCache < 0 {
-		sets.PreloadCache = 0
-	}
-
-	if sets.PreloadCache > 100 {
-		sets.PreloadCache = 100
-	}
-
-	if sets.TorrentsSavePath == "" {
+	if sets.UseDisk && sets.TorrentsSavePath != "" {
+		resolveTorrentsSavePath(sets)
+	} else if sets.TorrentsSavePath == "" {
 		sets.UseDisk = false
-	} else if sets.UseDisk {
-		_ = filepath.WalkDir(sets.TorrentsSavePath, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-
-			if d.IsDir() && strings.ToLower(d.Name()) == ".tsc" {
-				sets.TorrentsSavePath = path
-				log.TLogln("Find directory \"" + sets.TorrentsSavePath + "\", use as cache dir")
-
-				return io.EOF
-			}
-
-			if d.IsDir() && strings.HasPrefix(d.Name(), ".") {
-				return filepath.SkipDir
-			}
-
-			return nil
-		})
 	}
 
 	btsetsMu.Lock()
@@ -276,6 +398,114 @@ func SetBTSets(sets *BTSets) {
 	}
 
 	tdb.Set("Settings", "BitTorr", buf)
+}
+
+// resolveTorrentsSavePath searches for a .tsc directory within the configured
+// TorrentsSavePath and updates the path if found. It returns true when a valid
+// path was provided (regardless of whether .tsc was found).
+func resolveTorrentsSavePath(sets *BTSets) bool {
+	if sets.TorrentsSavePath == "" {
+		return false
+	}
+
+	_ = filepath.WalkDir(sets.TorrentsSavePath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() && strings.ToLower(d.Name()) == ".tsc" {
+			sets.TorrentsSavePath = path
+			log.TLogln("Find directory \"" + sets.TorrentsSavePath + "\", use as cache dir")
+
+			return io.EOF
+		}
+
+		if d.IsDir() && strings.HasPrefix(d.Name(), ".") {
+			return filepath.SkipDir
+		}
+
+		return nil
+	})
+
+	return true
+}
+
+// validateAndNormalize applies defaults and normalization rules to BTSets fields.
+// This mirrors ensureDefaults() but is tailored for incoming configuration updates.
+func (s *BTSets) validateAndNormalize() {
+	// Failsafe defaults
+	if s.CacheSize == 0 {
+		s.CacheSize = 64 * 1024 * 1024
+	}
+
+	if s.ConnectionsLimit == 0 {
+		s.ConnectionsLimit = 25
+	}
+
+	if s.TorrentDisconnectTimeout == 0 {
+		s.TorrentDisconnectTimeout = 30
+	}
+
+	if s.StreamQueueWaitSec <= 0 {
+		s.StreamQueueWaitSec = 3
+	}
+
+	// Non-negative integer constraints
+	s.ensureNonNegative("MaxConcurrentStreams", &s.MaxConcurrentStreams)
+	s.ensureNonNegative("StreamQueueSize", &s.StreamQueueSize)
+	s.ensureNonNegative("MetadataWorkers", &s.MetadataWorkers)
+	s.ensureNonNegative("MetadataQueueSize", &s.MetadataQueueSize)
+	s.ensureNonNegative("PreloadWorkers", &s.PreloadWorkers)
+	s.ensureNonNegative("PreloadQueueSize", &s.PreloadQueueSize)
+
+	// Adaptive RAM constraints
+	s.ensureAdaptiveRAMDefaults()
+
+	// Disk cache constraints
+	if s.WarmDiskCacheSizeMB < 0 {
+		s.WarmDiskCacheSizeMB = 0
+	}
+
+	if s.WarmDiskCacheTTLMin < 0 {
+		s.WarmDiskCacheTTLMin = 0
+	}
+
+	// Disk sync policy
+	s.normalizeDiskSyncPolicy()
+
+	if s.DiskSyncIntervalMS <= 0 {
+		s.DiskSyncIntervalMS = 1000
+	}
+
+	if s.DiskWriteBatchSize <= 0 {
+		s.DiskWriteBatchSize = 16
+	}
+
+	// Reader and cache percentage bounds
+	s.clampReaderReadAHead()
+	s.clampPreloadCache()
+}
+
+// clampReaderReadAHead ensures ReaderReadAHead is within 5-100%.
+func (s *BTSets) clampReaderReadAHead() {
+	if s.ReaderReadAHead < 5 {
+		s.ReaderReadAHead = 5
+	}
+
+	if s.ReaderReadAHead > 100 {
+		s.ReaderReadAHead = 100
+	}
+}
+
+// clampPreloadCache ensures PreloadCache is within 0-100%.
+func (s *BTSets) clampPreloadCache() {
+	if s.PreloadCache < 0 {
+		s.PreloadCache = 0
+	}
+
+	if s.PreloadCache > 100 {
+		s.PreloadCache = 100
+	}
 }
 
 func SetDefaultConfig() {
@@ -333,127 +563,143 @@ func SetDefaultConfig() {
 
 func loadBTSets() {
 	buf := tdb.Get("Settings", "BitTorr")
-	if len(buf) > 0 {
-		loaded := new(BTSets)
-		err := json.Unmarshal(buf, loaded)
+	if len(buf) == 0 {
+		log.TLogln("No settings found, using defaults")
+		SetDefaultConfig()
 
-		if err == nil {
-			if loaded.ReaderReadAHead < 5 {
-				loaded.ReaderReadAHead = 5
-			}
-
-			if loaded.CacheSize == 0 {
-				loaded.CacheSize = 64 * 1024 * 1024
-			}
-
-			if loaded.ConnectionsLimit == 0 {
-				loaded.ConnectionsLimit = 25
-			}
-
-			if loaded.TorrentDisconnectTimeout == 0 {
-				loaded.TorrentDisconnectTimeout = 30
-			}
-			// ResponsiveMode is critical for streaming — default to true.
-			if !loaded.ResponsiveMode {
-				loaded.ResponsiveMode = true
-			}
-
-			loaded.CoreProfile = normalizeCoreProfile(loaded.CoreProfile)
-			if loaded.StreamQueueWaitSec <= 0 {
-				loaded.StreamQueueWaitSec = 3
-			}
-
-			if loaded.MaxConcurrentStreams < 0 {
-				loaded.MaxConcurrentStreams = 0
-			}
-
-			if loaded.StreamQueueSize < 0 {
-				loaded.StreamQueueSize = 0
-			}
-
-			if loaded.AdaptiveRAMinMB < 0 {
-				loaded.AdaptiveRAMinMB = 0
-			}
-
-			if loaded.AdaptiveRAMaxMB < 0 {
-				loaded.AdaptiveRAMaxMB = 0
-			}
-
-			if loaded.AdaptiveRAMinMB == 0 {
-				loaded.AdaptiveRAMinMB = 4
-			}
-
-			if loaded.AdaptiveRAMaxMB == 0 {
-				loaded.AdaptiveRAMaxMB = 64
-			}
-
-			if loaded.AdaptiveRAMinMB > loaded.AdaptiveRAMaxMB {
-				loaded.AdaptiveRAMinMB = loaded.AdaptiveRAMaxMB
-			}
-
-			if loaded.WarmDiskCacheSizeMB < 0 {
-				loaded.WarmDiskCacheSizeMB = 0
-			}
-
-			if loaded.WarmDiskCacheTTLMin <= 0 {
-				loaded.WarmDiskCacheTTLMin = 180
-			}
-
-			if loaded.DiskSyncPolicy == "" {
-				loaded.DiskSyncPolicy = "periodic"
-			}
-
-			switch strings.ToLower(loaded.DiskSyncPolicy) {
-			case "none", "periodic", "always":
-				loaded.DiskSyncPolicy = strings.ToLower(loaded.DiskSyncPolicy)
-			default:
-				loaded.DiskSyncPolicy = "periodic"
-			}
-
-			if loaded.DiskSyncIntervalMS <= 0 {
-				loaded.DiskSyncIntervalMS = 1000
-			}
-
-			if loaded.DiskWriteBatchSize <= 0 {
-				loaded.DiskWriteBatchSize = 16
-			}
-
-			if loaded.MetadataWorkers < 0 {
-				loaded.MetadataWorkers = 0
-			}
-
-			if loaded.MetadataQueueSize < 0 {
-				loaded.MetadataQueueSize = 0
-			}
-
-			if loaded.PreloadWorkers < 0 {
-				loaded.PreloadWorkers = 0
-			}
-
-			if loaded.PreloadQueueSize < 0 {
-				loaded.PreloadQueueSize = 0
-			}
-			// Set default TMDB settings if missing (for existing configs)
-			if loaded.TMDBSettings.APIURL == "" {
-				loaded.TMDBSettings = TMDBConfig{
-					APIKey:     "",
-					APIURL:     "https://api.themoviedb.org",
-					ImageURL:   "https://image.tmdb.org",
-					ImageURLRu: "https://imagetmdb.com",
-				}
-			}
-
-			btsetsMu.Lock()
-			BTsets = loaded
-			btsetsMu.Unlock()
-
-			return
-		}
-
-		log.TLogln("Error unmarshal btsets", err)
+		return
 	}
-	// initialize defaults on error
-	SetDefaultConfig()
+
+	loaded := new(BTSets)
+	if err := json.Unmarshal(buf, loaded); err != nil {
+		log.TLogln("Error unmarshal btsets:", err)
+		SetDefaultConfig()
+
+		return
+	}
+
+	loaded.ensureDefaults()
+
+	btsetsMu.Lock()
+	BTsets = loaded
+	btsetsMu.Unlock()
+}
+
+// ensureDefaults applies default values and validation rules to BTSets fields.
+func (s *BTSets) ensureDefaults() {
+	// Core streaming settings
+	if s.ReaderReadAHead < 5 {
+		s.ReaderReadAHead = 5
+	}
+
+	if s.CacheSize == 0 {
+		s.CacheSize = 64 * 1024 * 1024
+	}
+
+	if s.ConnectionsLimit == 0 {
+		s.ConnectionsLimit = 25
+	}
+
+	if s.TorrentDisconnectTimeout == 0 {
+		s.TorrentDisconnectTimeout = 30
+	}
+
+	// ResponsiveMode is critical for streaming
+	s.ResponsiveMode = true
+
+	s.CoreProfile = normalizeCoreProfile(s.CoreProfile)
+	if s.StreamQueueWaitSec <= 0 {
+		s.StreamQueueWaitSec = 3
+	}
+
+	s.ensureNonNegative("MaxConcurrentStreams", &s.MaxConcurrentStreams)
+	s.ensureNonNegative("StreamQueueSize", &s.StreamQueueSize)
+	s.ensureNonNegative("MetadataWorkers", &s.MetadataWorkers)
+	s.ensureNonNegative("MetadataQueueSize", &s.MetadataQueueSize)
+	s.ensureNonNegative("PreloadWorkers", &s.PreloadWorkers)
+	s.ensureNonNegative("PreloadQueueSize", &s.PreloadQueueSize)
+
+	if s.WarmDiskCacheSizeMB < 0 {
+		s.WarmDiskCacheSizeMB = 0
+	}
+
+	// Adaptive RAM settings
+	s.ensureAdaptiveRAMDefaults()
+
+	// Disk cache settings
+	if s.WarmDiskCacheTTLMin <= 0 {
+		s.WarmDiskCacheTTLMin = 180
+	}
+
+	s.normalizeDiskSyncPolicy()
+	if s.DiskSyncIntervalMS <= 0 {
+		s.DiskSyncIntervalMS = 1000
+	}
+
+	if s.DiskWriteBatchSize <= 0 {
+		s.DiskWriteBatchSize = 16
+	}
+
+	// TMDB defaults
+	s.ensureTMDBDefaults()
+}
+
+// ensureNonNegative sets value to 0 if negative, with logging for debug.
+func (s *BTSets) ensureNonNegative(name string, val *int) {
+	if *val < 0 {
+		*val = 0
+	}
+}
+
+// ensureAdaptiveRAMDefaults sets sane defaults for adaptive RAM limits.
+func (s *BTSets) ensureAdaptiveRAMDefaults() {
+	if s.AdaptiveRAMinMB < 0 {
+		s.AdaptiveRAMinMB = 0
+	}
+
+	if s.AdaptiveRAMaxMB < 0 {
+		s.AdaptiveRAMaxMB = 0
+	}
+
+	if s.AdaptiveRAMinMB == 0 {
+		s.AdaptiveRAMinMB = 4
+	}
+
+	if s.AdaptiveRAMaxMB == 0 {
+		s.AdaptiveRAMaxMB = 64
+	}
+
+	if s.AdaptiveRAMinMB > s.AdaptiveRAMaxMB {
+		s.AdaptiveRAMinMB = s.AdaptiveRAMaxMB
+	}
+}
+
+// normalizeDiskSyncPolicy ensures DiskSyncPolicy is valid.
+func (s *BTSets) normalizeDiskSyncPolicy() {
+	if s.DiskSyncPolicy == "" {
+		s.DiskSyncPolicy = "periodic"
+	}
+
+	policy := strings.ToLower(s.DiskSyncPolicy)
+
+	switch policy {
+	case "none", "periodic", "always":
+		s.DiskSyncPolicy = policy
+	default:
+		s.DiskSyncPolicy = "periodic"
+	}
+}
+
+// ensureTMDBDefaults sets default TMDB configuration if missing.
+func (s *BTSets) ensureTMDBDefaults() {
+	if s.TMDBSettings.APIURL == "" {
+		s.TMDBSettings = TMDBConfig{
+			APIKey:     "",
+			APIURL:     "https://api.themoviedb.org",
+			ImageURL:   "https://image.tmdb.org",
+			ImageURLRu: "https://imagetmdb.com",
+		}
+	}
 }
 
 func normalizeCoreProfile(profile string) string {
@@ -465,85 +711,6 @@ func normalizeCoreProfile(profile string) string {
 		return p
 	default:
 		return "custom"
-	}
-}
-
-func applyCoreProfilePreset(sets *BTSets, profile string) {
-	cpus := max(runtime.GOMAXPROCS(0), 1)
-
-	switch profile {
-	case "low-end":
-		sets.CacheSize = 32 * 1024 * 1024
-		sets.PreloadCache = 25
-		sets.ConnectionsLimit = 12
-		sets.MaxConcurrentStreams = 1
-		sets.StreamQueueSize = 2
-		sets.StreamQueueWaitSec = 2
-		sets.AdaptiveRAMinMB = 2
-		sets.AdaptiveRAMaxMB = 16
-		sets.WarmDiskCacheSizeMB = 256
-		sets.WarmDiskCacheTTLMin = 60
-		sets.MetadataWorkers = 1
-		sets.MetadataQueueSize = 64
-		sets.PreloadWorkers = 1
-		sets.PreloadQueueSize = 8
-		sets.DiskSyncPolicy = "periodic"
-		sets.DiskSyncIntervalMS = 800
-		sets.DiskWriteBatchSize = 8
-	case "high-throughput":
-		sets.CacheSize = 256 * 1024 * 1024
-		sets.PreloadCache = 70
-		sets.ConnectionsLimit = maxInt(cpus*20, 80)
-		sets.MaxConcurrentStreams = maxInt(cpus*2, 4)
-		sets.StreamQueueSize = maxInt(cpus*4, 12)
-		sets.StreamQueueWaitSec = 4
-		sets.AdaptiveRAMinMB = 8
-		sets.AdaptiveRAMaxMB = 128
-		sets.WarmDiskCacheSizeMB = 4096
-		sets.WarmDiskCacheTTLMin = 360
-		sets.MetadataWorkers = maxInt(cpus, 4)
-		sets.MetadataQueueSize = 512
-		sets.PreloadWorkers = maxInt(cpus/2, 2)
-		sets.PreloadQueueSize = 64
-		sets.DiskSyncPolicy = "periodic"
-		sets.DiskSyncIntervalMS = 1500
-		sets.DiskWriteBatchSize = 32
-	case "nas":
-		sets.CacheSize = 128 * 1024 * 1024
-		sets.PreloadCache = 55
-		sets.ConnectionsLimit = maxInt(cpus*12, 40)
-		sets.MaxConcurrentStreams = maxInt(cpus, 2)
-		sets.StreamQueueSize = maxInt(cpus*3, 8)
-		sets.StreamQueueWaitSec = 4
-		sets.AdaptiveRAMinMB = 4
-		sets.AdaptiveRAMaxMB = 64
-		sets.WarmDiskCacheSizeMB = 8192
-		sets.WarmDiskCacheTTLMin = 720
-		sets.MetadataWorkers = maxInt(cpus/2, 2)
-		sets.MetadataQueueSize = 256
-		sets.PreloadWorkers = 1
-		sets.PreloadQueueSize = 32
-		sets.DiskSyncPolicy = "periodic"
-		sets.DiskSyncIntervalMS = 2500
-		sets.DiskWriteBatchSize = 24
-	default: // balanced
-		sets.CacheSize = 64 * 1024 * 1024
-		sets.PreloadCache = 50
-		sets.ConnectionsLimit = 25
-		sets.MaxConcurrentStreams = 0
-		sets.StreamQueueSize = 0
-		sets.StreamQueueWaitSec = 3
-		sets.AdaptiveRAMinMB = 4
-		sets.AdaptiveRAMaxMB = 64
-		sets.WarmDiskCacheSizeMB = 0
-		sets.WarmDiskCacheTTLMin = 180
-		sets.MetadataWorkers = 0
-		sets.MetadataQueueSize = 0
-		sets.PreloadWorkers = 0
-		sets.PreloadQueueSize = 0
-		sets.DiskSyncPolicy = "periodic"
-		sets.DiskSyncIntervalMS = 1000
-		sets.DiskWriteBatchSize = 16
 	}
 }
 
@@ -627,12 +794,4 @@ func applyCoreProfileOverrides(dst, src *BTSets) {
 	if src.PreloadQueueSize > 0 {
 		dst.PreloadQueueSize = src.PreloadQueueSize
 	}
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-
-	return b
 }

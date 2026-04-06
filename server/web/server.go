@@ -73,22 +73,34 @@ func (s *Server) Start() error {
 		log.TLogln("Local IPs:", ips)
 	}
 
-	err := s.bts.Connect()
-	if err != nil {
+	if err := s.bts.Connect(); err != nil {
 		return fmt.Errorf("BTS.Connect() error: %w", err)
 	}
 
 	// Initialize runtime metrics
 	metrics.Init()
 
+	route := setupMiddleware(s)
+	registerDebugRoutes(route)
+	registerAppRoutes(route)
+
+	if err := s.startHTTPSServer(route, ips); err != nil {
+		return err
+	}
+
+	s.startHTTPServer(route)
+
+	return nil
+}
+
+// setupMiddleware configures CORS, logging, recovery, security headers, and auth middleware.
+func setupMiddleware(s *Server) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 
 	corsCfg := s.corsSvc.BuildConfig()
-
 	route := gin.New()
-	trustedProxies := webinfra.CheckTrustedProxies()
 
-	if err := route.SetTrustedProxies(trustedProxies); err != nil {
+	if err := route.SetTrustedProxies(webinfra.CheckTrustedProxies()); err != nil {
 		log.TLogln("Invalid trusted proxies config:", err)
 	}
 
@@ -104,11 +116,15 @@ func (s *Server) Start() error {
 	)
 	auth.SetupAuth(route)
 
+	return route
+}
+
+// registerDebugRoutes registers health check, echo, and pprof/debug endpoints.
+func registerDebugRoutes(route *gin.Engine) {
 	route.GET("/echo", echo)
 	route.GET("/healthz", healthz)
 	route.GET("/readyz", readyz)
 	route.GET("/debug/vars", expvarHandler())
-	// Debug/profiling endpoints (localhost only by default)
 	route.GET("/debug/pprof/", pprofIndex())
 	route.GET("/debug/pprof/profile", pprofProfile())
 	route.GET("/debug/pprof/trace", pprofTrace())
@@ -120,7 +136,10 @@ func (s *Server) Start() error {
 	route.GET("/debug/pprof/threadcreate", pprofThreadcreate())
 	route.GET("/debug/heap", heapHandler())
 	route.GET("/debug/goroutines", goroutinesHandler())
+}
 
+// registerAppRoutes registers API routes and optional WebDAV/DLNA/FUSE modules.
+func registerAppRoutes(route *gin.Engine) {
 	api.SetupRoute(route)
 
 	args := settings.GetArgs()
@@ -133,40 +152,50 @@ func (s *Server) Start() error {
 	}
 
 	modules.LogPeripheralFailure("fuse", modules.StartFUSE())
+}
 
-	if settings.Ssl {
-		if err := s.sslSvc.PrepareCertificates(ips); err != nil {
-			return fmt.Errorf("SSL prepare error: %w", err)
-		}
-
-		if err := s.sslSvc.VerifyOrRegenerateCerts(ips); err != nil {
-			return fmt.Errorf("SSL verify error: %w", err)
-		}
-
-		httpsAddr := settings.IP + ":" + settings.SslPort
-		httpsSrv := s.sslSvc.Server(httpsAddr, route)
-		s.mu.Lock()
-		s.httpsSrv = httpsSrv
-		s.mu.Unlock()
-
-		go func() {
-			defer func() {
-				if rec := recover(); rec != nil {
-					s.waitChan <- fmt.Errorf("panic in https server loop: %v", rec)
-				}
-			}()
-			log.TLogln("Start https server at", httpsAddr)
-
-			err := httpsSrv.ListenAndServeTLS(settings.BTsets.SslCert, settings.BTsets.SslKey)
-			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				s.waitChan <- err
-
-				return
-			}
-			s.waitChan <- nil
-		}()
+// startHTTPSServer starts the HTTPS server if SSL is enabled.
+func (s *Server) startHTTPSServer(route *gin.Engine, ips []string) error {
+	if !settings.Ssl {
+		return nil
 	}
 
+	if err := s.sslSvc.PrepareCertificates(ips); err != nil {
+		return fmt.Errorf("SSL prepare error: %w", err)
+	}
+
+	if err := s.sslSvc.VerifyOrRegenerateCerts(ips); err != nil {
+		return fmt.Errorf("SSL verify error: %w", err)
+	}
+
+	httpsAddr := settings.IP + ":" + settings.SslPort
+	httpsSrv := s.sslSvc.Server(httpsAddr, route)
+
+	s.mu.Lock()
+	s.httpsSrv = httpsSrv
+	s.mu.Unlock()
+
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				s.waitChan <- fmt.Errorf("panic in https server loop: %v", rec)
+			}
+		}()
+		log.TLogln("Start https server at", httpsAddr)
+
+		err := httpsSrv.ListenAndServeTLS(settings.BTsets.SslCert, settings.BTsets.SslKey)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			s.waitChan <- err
+			return
+		}
+		s.waitChan <- nil
+	}()
+
+	return nil
+}
+
+// startHTTPServer starts the HTTP server on the configured address.
+func (s *Server) startHTTPServer(route *gin.Engine) {
 	httpAddr := settings.IP + ":" + settings.Port
 	httpSrv := &http.Server{
 		Addr:         httpAddr,
@@ -191,13 +220,10 @@ func (s *Server) Start() error {
 		err := httpSrv.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.waitChan <- err
-
 			return
 		}
 		s.waitChan <- nil
 	}()
-
-	return nil
 }
 
 func Wait() error {
@@ -250,7 +276,7 @@ func (s *Server) Stop() {
 }
 
 func echo(c *gin.Context) {
-	c.String(200, "2.0.01")
+	c.String(200, "2.0.0")
 }
 
 func healthz(c *gin.Context) {

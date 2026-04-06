@@ -284,21 +284,46 @@ func (c *Config) GetConfigPath() string {
 	return filepath.Join(filepath.Dir(execPath), "config.yml")
 }
 
+// ApplyToBTSets maps YAML configuration fields onto the runtime BTSets structure.
+// Nil receiver or nil sets are silently ignored.
 func (c *Config) ApplyToBTSets(sets *settings.BTSets) {
 	if c == nil || sets == nil {
 		return
 	}
 
+	applyCacheSettings(c, sets)
+	applyTorrentSettings(c, sets)
+	applyNetworkSettings(c, sets)
+	applyDLNASettings(c, sets)
+	applySearchSettings(c, sets)
+	applyTMDBSettings(c, sets)
+	applyStreamSettings(c, sets)
+	applyDiskCacheSettings(c, sets)
+	applyWorkerSettings(c, sets)
+	applyDebugSettings(c, sets)
+	applyProxySettings(c, sets)
+	applyStorageSettings(c, sets)
+	applySSLSettings(c, sets)
+}
+
+// applyCacheSettings maps cache-related config fields to BTSets.
+func applyCacheSettings(c *Config, sets *settings.BTSets) {
 	sets.CacheSize = c.Cache.SizeMB * 1024 * 1024
 	sets.PreloadCache = c.Cache.PreloadPercent
 	sets.UseDisk = c.Cache.UseDisk
 	sets.TorrentsSavePath = c.Cache.TorrentsSavePath
+}
 
+// applyTorrentSettings maps torrent-related config fields to BTSets.
+func applyTorrentSettings(c *Config, sets *settings.BTSets) {
 	sets.ForceEncrypt = c.Torrent.ForceEncrypt
 	sets.RetrackersMode = c.Torrent.RetrackersMode
 	sets.TorrentDisconnectTimeout = c.Torrent.DisconnectTimeoutSec
 	sets.ConnectionsLimit = c.Torrent.ConnectionsLimit
+}
 
+// applyNetworkSettings maps network-related config fields to BTSets.
+func applyNetworkSettings(c *Config, sets *settings.BTSets) {
 	sets.EnableIPv6 = c.Network.EnableIPv6
 	sets.DisableTCP = c.Network.DisableTCP
 	sets.DisableUTP = c.Network.DisableUTP
@@ -309,10 +334,16 @@ func (c *Config) ApplyToBTSets(sets *settings.BTSets) {
 	sets.DownloadRateLimit = c.Network.DownloadRateLimitKB
 	sets.UploadRateLimit = c.Network.UploadRateLimitKB
 	sets.PeersListenPort = c.Network.PeersListenPort
+}
 
+// applyDLNASettings maps DLNA config fields to BTSets.
+func applyDLNASettings(c *Config, sets *settings.BTSets) {
 	sets.EnableDLNA = c.DLNA.Enabled
 	sets.FriendlyName = c.DLNA.FriendlyName
+}
 
+// applySearchSettings maps search config fields to BTSets.
+func applySearchSettings(c *Config, sets *settings.BTSets) {
 	sets.EnableRutorSearch = c.Search.EnableRutor
 	sets.EnableTorznabSearch = c.Search.EnableTorznab
 	sets.TorznabUrls = make([]settings.TorznabConfig, len(c.Search.TorznabURLs))
@@ -324,17 +355,23 @@ func (c *Config) ApplyToBTSets(sets *settings.BTSets) {
 			Name: url.Name,
 		}
 	}
+}
 
+// applyTMDBSettings maps TMDB config fields to BTSets.
+func applyTMDBSettings(c *Config, sets *settings.BTSets) {
 	sets.TMDBSettings = settings.TMDBConfig{
 		APIKey:     c.TMDB.APIKey,
 		APIURL:     c.TMDB.APIURL,
 		ImageURL:   c.TMDB.ImageURL,
 		ImageURLRu: c.TMDB.ImageURLRu,
 	}
+}
 
-	// ResponsiveMode is critical for streaming — never disable it via config defaults.
+// applyStreamSettings maps streaming config fields to BTSets.
+// ResponsiveMode is only enabled when explicitly set to true in config.
+func applyStreamSettings(c *Config, sets *settings.BTSets) {
 	if c.Stream.ResponsiveMode {
-		sets.ResponsiveMode = c.Stream.ResponsiveMode
+		sets.ResponsiveMode = true
 	}
 
 	sets.CoreProfile = c.Stream.CoreProfile
@@ -344,27 +381,46 @@ func (c *Config) ApplyToBTSets(sets *settings.BTSets) {
 	sets.AdaptiveRAMinMB = c.Stream.AdaptiveRAMinMB
 	sets.AdaptiveRAMaxMB = c.Stream.AdaptiveRAMaxMB
 	sets.ReaderReadAHead = c.Stream.ReadAheadPercent
+}
 
+// applyDiskCacheSettings maps disk cache config fields to BTSets.
+func applyDiskCacheSettings(c *Config, sets *settings.BTSets) {
 	sets.WarmDiskCacheSizeMB = c.DiskCache.WarmSizeMB
 	sets.WarmDiskCacheTTLMin = c.DiskCache.WarmTTLMin
 	sets.DiskSyncPolicy = c.DiskCache.SyncPolicy
 	sets.DiskSyncIntervalMS = c.DiskCache.SyncIntervalMS
 	sets.DiskWriteBatchSize = c.DiskCache.WriteBatchSize
+}
 
+// applyWorkerSettings maps worker pool config fields to BTSets.
+func applyWorkerSettings(c *Config, sets *settings.BTSets) {
 	sets.MetadataWorkers = c.Workers.MetadataWorkers
 	sets.MetadataQueueSize = c.Workers.MetadataQueueSize
 	sets.PreloadWorkers = c.Workers.PreloadWorkers
 	sets.PreloadQueueSize = c.Workers.PreloadQueueSize
+}
 
+// applyDebugSettings maps debug config fields to BTSets.
+func applyDebugSettings(c *Config, sets *settings.BTSets) {
 	sets.EnableDebug = c.Debug.Enabled
 	sets.ShowFSActiveTorr = c.Debug.ShowFSActiveTorr
+}
 
+// applyProxySettings maps proxy config fields to BTSets.
+func applyProxySettings(c *Config, sets *settings.BTSets) {
 	sets.EnableProxy = c.Proxy.Enabled
 	sets.ProxyHosts = c.Proxy.Hosts
+}
 
+// applyStorageSettings maps storage config fields to BTSets.
+func applyStorageSettings(c *Config, sets *settings.BTSets) {
 	sets.StoreSettingsInJson = c.Storage.SettingsInJSON
 	sets.StoreViewedInJson = c.Storage.ViewedInJSON
+}
 
+// applySSLSettings maps SSL/TLS config fields to BTSets.
+// SSL port is parsed and only set if valid.
+func applySSLSettings(c *Config, sets *settings.BTSets) {
 	if c.Server.SSLPort != "" {
 		if port, err := parsePort(c.Server.SSLPort); err == nil {
 			sets.SslPort = port

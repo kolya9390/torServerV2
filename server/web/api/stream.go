@@ -10,18 +10,47 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// get stat
-// http://127.0.0.1:8090/stream/fname?link=...&stat
-// get m3u
-// http://127.0.0.1:8090/stream/fname?link=...&index=1&m3u
-// http://127.0.0.1:8090/stream/fname?link=...&index=1&m3u&fromlast
-// stream torrent
-// http://127.0.0.1:8090/stream/fname?link=...&index=1&play
-// http://127.0.0.1:8090/stream/fname?link=...&index=1&play&preload
-// http://127.0.0.1:8090/stream/fname?link=...&index=1&play&save
-// http://127.0.0.1:8090/stream/fname?link=...&index=1&play&save&title=...&poster=...
-// only save
-// http://127.0.0.1:8090/stream/fname?link=...&save&title=...&poster=...
+// streamFlags holds the boolean query flags parsed from a stream request.
+type streamFlags struct {
+	preload, stat, save, m3u, fromlast, play bool
+}
+
+// validateStreamRequest extracts boolean query flags from the stream request.
+func validateStreamRequest(c *gin.Context) streamFlags {
+	_, preload := c.GetQuery("preload")
+	_, stat := c.GetQuery("stat")
+	_, save := c.GetQuery("save")
+	_, m3u := c.GetQuery("m3u")
+	_, fromlast := c.GetQuery("fromlast")
+	_, play := c.GetQuery("play")
+
+	return streamFlags{preload, stat, save, m3u, fromlast, play}
+}
+
+// handleStreamAuth validates authentication for stream requests.
+// Returns true if the handler should return early (response already written).
+func handleStreamAuth(c *gin.Context, link string, notAuth, play, m3u bool) bool {
+	if !notAuth {
+		return false
+	}
+
+	if err := utils.TestLink(link, !notAuth); err != nil {
+		abortAPIError(c, http.StatusBadRequest, newValidationError("link", "wrong link"))
+
+		return true
+	}
+
+	if play || m3u {
+		streamNoAuth(c)
+
+		return true
+	}
+
+	c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
+	abortAPIError(c, http.StatusUnauthorized, newUnauthorizedError("authorization required"))
+
+	return true
+}
 
 // stream godoc
 //
@@ -48,68 +77,42 @@ import (
 func stream(c *gin.Context) {
 	svc := getServices()
 	link := c.Query("link")
-	_, preload := c.GetQuery("preload")
-	_, stat := c.GetQuery("stat")
-	_, save := c.GetQuery("save")
-	_, m3u := c.GetQuery("m3u")
-	_, fromlast := c.GetQuery("fromlast")
-	_, play := c.GetQuery("play")
+	f := validateStreamRequest(c)
 
-	// Backward-compatibility layer:
-	// route simple/explicit legacy intents to new separated endpoints.
-	if stat && !play && !save && !m3u {
+	// Backward-compatibility layer: route simple/explicit legacy intents.
+	if f.stat && !f.play && !f.save && !f.m3u {
 		streamStat(c)
 
 		return
 	}
 
-	if m3u && !play && !save && !stat {
+	if f.m3u && !f.play && !f.save && !f.stat {
 		streamM3U(c)
 
 		return
 	}
 
-	if save && !play && !stat && !m3u {
+	if f.save && !f.play && !f.stat && !f.m3u {
 		streamSave(c)
 
 		return
 	}
 
-	if play && !stat && !m3u && !save {
+	if f.play && !f.stat && !f.m3u && !f.save {
 		streamPlay(c)
 
 		return
 	}
 
-	// Legacy compat: if preload is present without explicit play,
-	// treat it as play+preload (original TorrServer behavior).
-	if preload && !stat && !m3u && !save {
+	// Legacy compat: preload without explicit play means play+preload.
+	if f.preload && !f.stat && !f.m3u && !f.save {
 		streamPlay(c)
 
 		return
 	}
 
 	notAuth := c.GetBool("auth_required") && c.GetString(gin.AuthUserKey) == ""
-
-	if notAuth {
-		err := utils.TestLink(link, !notAuth)
-		if err != nil {
-			abortAPIError(c, http.StatusBadRequest, newValidationError("link", "wrong link"))
-
-			return
-		}
-	}
-
-	if notAuth && (play || m3u) {
-		streamNoAuth(c)
-
-		return
-	}
-
-	if notAuth {
-		c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
-		abortAPIError(c, http.StatusUnauthorized, newUnauthorizedError("authorization required"))
-
+	if handleStreamAuth(c, link, notAuth, f.play, f.m3u) {
 		return
 	}
 
@@ -139,40 +142,40 @@ func stream(c *gin.Context) {
 		return
 	}
 
-	// legacy behavior: save can be combined with play/m3u.
-	if save {
+	// Legacy: save can be combined with play/m3u.
+	if f.save {
 		svc.Torrents.SaveToDB(tor)
 	}
 
 	index, err := parseStreamFileIndex(c, len(tor.Files()))
-	if err != nil && play {
+	if err != nil && f.play {
 		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
 
-	if preload {
+	if f.preload {
 		if queued := svc.Torrents.EnqueuePreload(tor, index); !queued {
 			log.TLogln("preload queue is full, skipping preload")
 		}
 	}
 
-	if stat {
+	if f.stat {
 		c.JSON(200, tor.Status())
 
 		return
 	}
 
-	if m3u {
+	if f.m3u {
 		name := svc.Streams.NormalizePlaylistName(c.Param("fname"), tor.Name())
 		host := utils2.GetScheme(c) + "://" + utils2.GetHost(c)
-		m3ulist := svc.Playback.BuildM3UFromStatus(tor.Status(), host, fromlast, svc.Viewed)
+		m3ulist := svc.Playback.BuildM3UFromStatus(tor.Status(), host, f.fromlast, svc.Viewed)
 		sendM3U(c, name, tor.Hash().HexString(), m3ulist)
 
 		return
 	}
 
-	if play {
+	if f.play {
 		if err := c.Request.Context().Err(); err != nil {
 			abortAPIError(c, http.StatusRequestTimeout, newValidationError("request", "request canceled"))
 
@@ -186,7 +189,7 @@ func stream(c *gin.Context) {
 		return
 	}
 
-	if save {
+	if f.save {
 		c.Status(200)
 
 		return

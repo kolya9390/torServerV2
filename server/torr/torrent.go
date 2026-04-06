@@ -325,7 +325,26 @@ func (t *Torrent) Status() *state.TorrentStatus {
 	defer t.muTorrent.Unlock()
 
 	st := new(state.TorrentStatus)
+	t.fillBasicStatus(st)
 
+	if t.TorrentSpec != nil {
+		st.Hash = t.TorrentSpec.InfoHash.HexString()
+	}
+
+	if t.Torrent == nil {
+		return st
+	}
+
+	t.fillTorrentStatus(st)
+	t.collectPeerStats(st)
+	t.collectFileStats(st)
+	buildTorrentHash(st, t)
+
+	return st
+}
+
+// fillBasicStatus populates status fields that don't require torrent info.
+func (t *Torrent) fillBasicStatus(st *state.TorrentStatus) {
 	st.Stat = t.Stat
 	st.StatString = t.Stat.String()
 	st.Title = t.Title
@@ -336,77 +355,91 @@ func (t *Torrent) Status() *state.TorrentStatus {
 	st.TorrentSize = t.Size
 	st.BitRate = t.BitRate
 	st.DurationSeconds = t.DurationSeconds
+}
 
-	if t.TorrentSpec != nil {
-		st.Hash = t.TorrentSpec.InfoHash.HexString()
+// fillTorrentStatus populates status fields that require a live torrent object.
+func (t *Torrent) fillTorrentStatus(st *state.TorrentStatus) {
+	st.Name = t.Name()
+	st.Hash = t.Torrent.InfoHash().HexString()
+	st.LoadedSize = t.BytesCompleted()
+
+	st.PreloadedBytes = t.PreloadedBytes
+	st.PreloadSize = t.PreloadSize
+	st.DownloadSpeed = t.DownloadSpeed
+	st.UploadSpeed = t.UploadSpeed
+
+	tst := t.Stats()
+	st.BytesWritten = tst.BytesWritten.Int64()
+	st.BytesWrittenData = tst.BytesWrittenData.Int64()
+	st.BytesRead = tst.BytesRead.Int64()
+	st.BytesReadData = tst.BytesReadData.Int64()
+	st.BytesReadUsefulData = tst.BytesReadUsefulData.Int64()
+	st.ChunksWritten = tst.ChunksWritten.Int64()
+	st.ChunksRead = tst.ChunksRead.Int64()
+	st.ChunksReadUseful = tst.ChunksReadUseful.Int64()
+	st.ChunksReadWasted = tst.ChunksReadWasted.Int64()
+	st.PiecesDirtiedGood = tst.PiecesDirtiedGood.Int64()
+	st.PiecesDirtiedBad = tst.PiecesDirtiedBad.Int64()
+}
+
+// collectPeerStats gathers peer-related statistics from the torrent.
+func (t *Torrent) collectPeerStats(st *state.TorrentStatus) {
+	tst := t.Stats()
+	st.TotalPeers = tst.TotalPeers
+	st.PendingPeers = tst.PendingPeers
+	st.ActivePeers = tst.ActivePeers
+	st.ConnectedSeeders = tst.ConnectedSeeders
+	st.HalfOpenPeers = tst.HalfOpenPeers
+}
+
+// collectFileStats builds the file statistics list from torrent files.
+func (t *Torrent) collectFileStats(st *state.TorrentStatus) {
+	if t.Info() == nil {
+		return
 	}
 
-	if t.Torrent != nil {
-		st.Name = t.Name()
-		st.Hash = t.Torrent.InfoHash().HexString()
-		st.LoadedSize = t.BytesCompleted()
+	st.TorrentSize = t.Torrent.Length()
 
-		st.PreloadedBytes = t.PreloadedBytes
-		st.PreloadSize = t.PreloadSize
-		st.DownloadSpeed = t.DownloadSpeed
-		st.UploadSpeed = t.UploadSpeed
+	files := t.Files()
+	sort.Slice(files, func(i, j int) bool {
+		return utils2.CompareStrings(files[i].Path(), files[j].Path())
+	})
 
-		tst := t.Stats()
-		st.BytesWritten = tst.BytesWritten.Int64()
-		st.BytesWrittenData = tst.BytesWrittenData.Int64()
-		st.BytesRead = tst.BytesRead.Int64()
-		st.BytesReadData = tst.BytesReadData.Int64()
-		st.BytesReadUsefulData = tst.BytesReadUsefulData.Int64()
-		st.ChunksWritten = tst.ChunksWritten.Int64()
-		st.ChunksRead = tst.ChunksRead.Int64()
-		st.ChunksReadUseful = tst.ChunksReadUseful.Int64()
-		st.ChunksReadWasted = tst.ChunksReadWasted.Int64()
-		st.PiecesDirtiedGood = tst.PiecesDirtiedGood.Int64()
-		st.PiecesDirtiedBad = tst.PiecesDirtiedBad.Int64()
-		st.TotalPeers = tst.TotalPeers
-		st.PendingPeers = tst.PendingPeers
-		st.ActivePeers = tst.ActivePeers
-		st.ConnectedSeeders = tst.ConnectedSeeders
-		st.HalfOpenPeers = tst.HalfOpenPeers
+	for i, f := range files {
+		st.FileStats = append(st.FileStats, &state.TorrentFileStat{
+			Id:     i + 1, // in web id 0 is undefined
+			Path:   f.Path(),
+			Length: f.Length(),
+		})
+	}
+}
 
-		if t.Info() != nil {
-			st.TorrentSize = t.Torrent.Length()
+// buildTorrentHash constructs the TorrsHash token from torrent metadata.
+func buildTorrentHash(st *state.TorrentStatus, t *Torrent) {
+	if t.Info() == nil {
+		return
+	}
 
-			files := t.Files()
-			sort.Slice(files, func(i, j int) bool {
-				return utils2.CompareStrings(files[i].Path(), files[j].Path())
-			})
+	th := torrshash.New(st.Hash)
+	th.AddField(torrshash.TagTitle, st.Title)
+	th.AddField(torrshash.TagPoster, st.Poster)
+	th.AddField(torrshash.TagCategory, st.Category)
+	th.AddField(torrshash.TagSize, strconv.FormatInt(st.TorrentSize, 10))
 
-			for i, f := range files {
-				st.FileStats = append(st.FileStats, &state.TorrentFileStat{
-					Id:     i + 1, // in web id 0 is undefined
-					Path:   f.Path(),
-					Length: f.Length(),
-				})
-			}
+	if t.TorrentSpec == nil {
+		return
+	}
 
-			th := torrshash.New(st.Hash)
-			th.AddField(torrshash.TagTitle, st.Title)
-			th.AddField(torrshash.TagPoster, st.Poster)
-			th.AddField(torrshash.TagCategory, st.Category)
-			th.AddField(torrshash.TagSize, strconv.FormatInt(st.TorrentSize, 10))
-
-			if t.TorrentSpec != nil {
-				if len(t.Trackers) > 0 && len(t.Trackers[0]) > 0 {
-					for _, tr := range t.Trackers[0] {
-						th.AddField(torrshash.TagTracker, tr)
-					}
-				}
-			}
-
-			token, err := torrshash.Pack(th)
-			if err == nil {
-				st.TorrsHash = token
-			}
+	if len(t.Trackers) > 0 && len(t.Trackers[0]) > 0 {
+		for _, tr := range t.Trackers[0] {
+			th.AddField(torrshash.TagTracker, tr)
 		}
 	}
 
-	return st
+	token, err := torrshash.Pack(th)
+	if err == nil {
+		st.TorrsHash = token
+	}
 }
 
 func (t *Torrent) CacheState() *cacheSt.CacheState {

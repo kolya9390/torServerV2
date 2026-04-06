@@ -149,6 +149,87 @@ func onBrowseMeta(path string, rootObjectPath string, host, userAgent string) (r
 	return
 }
 
+// findBestInterfaceForName returns the first suitable network interface
+// for constructing a friendly DLNA name. It skips loopback, down,
+// and non-multicast interfaces on non-Windows platforms.
+func findBestInterfaceForName(ifaces []net.Interface) *net.Interface {
+	for _, i := range ifaces {
+		// interface flags seem to always be 0 on Windows
+		if runtime.GOOS != "windows" && (i.Flags&net.FlagLoopback != 0 || i.Flags&net.FlagUp == 0 || i.Flags&net.FlagMulticast == 0) {
+			continue
+		}
+
+		return &i
+	}
+
+	return nil
+}
+
+// findInterfaceIP returns the first non-loopback IPv4 address of the given
+// network interface. It returns an error if no suitable address is found.
+func findInterfaceIP(iface *net.Interface) (string, error) {
+	if iface == nil {
+		return "", errors.New("interface is nil")
+	}
+
+	addrs, err := anet.InterfaceAddrsByInterface(iface)
+	if err != nil {
+		return "", fmt.Errorf("failed to get interface addresses: %w", err)
+	}
+
+	for _, addr := range addrs {
+		var ip net.IP
+
+		switch v := addr.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		default:
+			continue
+		}
+
+		if !ip.IsLoopback() && ip.To4() != nil {
+			return ip.String(), nil
+		}
+	}
+
+	return "", errors.New("no suitable IP address found")
+}
+
+// collectNonLoopbackIPs gathers all non-loopback IPv4 addresses from the
+// provided network interfaces, returning them as a sorted slice.
+func collectNonLoopbackIPs(ifaces []net.Interface) []string {
+	var ips []string
+
+	for _, i := range ifaces {
+		// interface flags seem to always be 0 on Windows
+		if runtime.GOOS != "windows" && (i.Flags&net.FlagLoopback != 0 || i.Flags&net.FlagUp == 0 || i.Flags&net.FlagMulticast == 0) {
+			continue
+		}
+
+		addrs, _ := anet.InterfaceAddrsByInterface(&i)
+		for _, addr := range addrs {
+			var ip net.IP
+
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+
+			if !ip.IsLoopback() && ip.To4() != nil {
+				ips = append(ips, ip.String())
+			}
+		}
+	}
+
+	sort.Strings(ips)
+
+	return ips
+}
+
 func getDefaultFriendlyName() string {
 	logger := log.Default.WithNames("dlna")
 
@@ -156,9 +237,7 @@ func getDefaultFriendlyName() string {
 		return settings.BTsets.FriendlyName
 	}
 
-	ret := "TorrServer"
 	userName := ""
-
 	user, err := user.Current()
 	if err != nil {
 		logger.Printf("getDefaultFriendlyName could not get username: %s", err)
@@ -166,59 +245,38 @@ func getDefaultFriendlyName() string {
 		userName = user.Name
 	}
 
-	host, err := os.Hostname()
+	host := ""
+	host, err = os.Hostname()
 	if err != nil {
 		logger.Printf("getDefaultFriendlyName could not get hostname: %s", err)
 	}
 
 	if userName == "" && host == "" {
-		return ret
+		return "TorrServer"
 	}
 
 	if userName != "" && host != "" {
 		if userName == host {
-			return ret + ": " + userName
+			return "TorrServer: " + userName
 		}
 
-		return ret + ": " + userName + " on " + host
+		return "TorrServer: " + userName + " on " + host
 	}
 
-	if host == "localhost" { // useless host, use 1st IP
-		ifaces, err := anet.Interfaces()
-		if err != nil {
-			return ret + ": " + userName + "@" + host
-		}
-
-		var list []string
-
-		for _, i := range ifaces {
-			// interface flags seem to always be 0 on Windows
-			if runtime.GOOS != "windows" && (i.Flags&net.FlagLoopback != 0 || i.Flags&net.FlagUp == 0 || i.Flags&net.FlagMulticast == 0) {
-				continue
-			}
-
-			addrs, _ := anet.InterfaceAddrsByInterface(&i)
-			for _, addr := range addrs {
-				var ip net.IP
-				switch v := addr.(type) {
-				case *net.IPNet:
-					ip = v.IP
-				case *net.IPAddr:
-					ip = v.IP
-				}
-
-				if !ip.IsLoopback() && ip.To4() != nil {
-					list = append(list, ip.String())
-				}
-			}
-		}
-
-		if len(list) > 0 {
-			sort.Strings(list)
-
-			return ret + " " + list[0]
-		}
+	if host != "localhost" {
+		return "TorrServer: " + userName + "@" + host
 	}
 
-	return ret + ": " + userName + "@" + host
+	// Useless host, use 1st IP
+	ifaces, err := anet.Interfaces()
+	if err != nil {
+		return "TorrServer: " + userName + "@" + host
+	}
+
+	ips := collectNonLoopbackIPs(ifaces)
+	if len(ips) > 0 {
+		return "TorrServer " + ips[0]
+	}
+
+	return "TorrServer: " + userName + "@" + host
 }

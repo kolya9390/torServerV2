@@ -92,67 +92,122 @@ func (bt *BTServer) Disconnect() {
 	proxy.Stop()
 }
 
-func (bt *BTServer) configure(ctx context.Context) {
+// buildClientConfig creates and configures the torrent client configuration
+// based on current application settings.
+func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
 	blocklist, _ := utils.ReadBlockedIP()
-	bt.config = torrent.NewDefaultClientConfig()
+	config := torrent.NewDefaultClientConfig()
 
-	bt.storage = torrstor.NewStorage(settings.BTsets.CacheSize)
-	bt.config.DefaultStorage = bt.storage
+	storage := torrstor.NewStorage(settings.BTsets.CacheSize)
+	bt.storage = storage
+	config.DefaultStorage = storage
 
 	userAgent := "qBittorrent/4.3.9"
 	peerID := "-qB4390-"
 	upnpID := "TorrServer/" + version.Version
 	cliVers := userAgent
 
-	bt.config.Debug = settings.BTsets.EnableDebug
-	bt.config.DisableIPv6 = !settings.BTsets.EnableIPv6
-	bt.config.DisableTCP = settings.BTsets.DisableTCP
-	bt.config.DisableUTP = settings.BTsets.DisableUTP
-	//	https://github.com/anacrolix/torrent/issues/703
-	// bt.config.DisableWebtorrent = true //	NE
-	// bt.config.DisableWebseeds = false  //	NE
-	bt.config.NoDefaultPortForwarding = settings.BTsets.DisableUPNP
-	bt.config.NoDHT = settings.BTsets.DisableDHT
-	bt.config.DisablePEX = settings.BTsets.DisablePEX
-	bt.config.NoUpload = settings.BTsets.DisableUpload
-	bt.config.IPBlocklist = blocklist
-	bt.config.Bep20 = peerID
-	bt.config.PeerID = utils.PeerIDRandom(peerID)
-	bt.config.UpnpID = upnpID
-	bt.config.HTTPUserAgent = userAgent
-	bt.config.ExtendedHandshakeClientVersion = cliVers
-	bt.config.EstablishedConnsPerTorrent = settings.BTsets.ConnectionsLimit
-	bt.config.TotalHalfOpenConns = 500
-	// Encryption/Obfuscation
-	bt.config.EncryptionPolicy = torrent.EncryptionPolicy{ //	OE
-		ForceEncryption: settings.BTsets.ForceEncrypt, //	OE
-	} //	OE
-	// bt.config.HeaderObfuscationPolicy = torrent.HeaderObfuscationPolicy{ //	NE
-	// 	RequirePreferred: settings.BTsets.ForceEncrypt, //	NE
-	// 	Preferred:        true,                         //	NE
-	// } //	NE
+	config.Debug = settings.BTsets.EnableDebug
+	config.DisableIPv6 = !settings.BTsets.EnableIPv6
+	config.DisableTCP = settings.BTsets.DisableTCP
+	config.DisableUTP = settings.BTsets.DisableUTP
+	config.NoDefaultPortForwarding = settings.BTsets.DisableUPNP
+	config.NoDHT = settings.BTsets.DisableDHT
+	config.DisablePEX = settings.BTsets.DisablePEX
+	config.NoUpload = settings.BTsets.DisableUpload
+	config.IPBlocklist = blocklist
+	config.Bep20 = peerID
+	config.PeerID = utils.PeerIDRandom(peerID)
+	config.UpnpID = upnpID
+	config.HTTPUserAgent = userAgent
+	config.ExtendedHandshakeClientVersion = cliVers
+	config.EstablishedConnsPerTorrent = settings.BTsets.ConnectionsLimit
+	config.TotalHalfOpenConns = 500
+	config.EncryptionPolicy = torrent.EncryptionPolicy{
+		ForceEncryption: settings.BTsets.ForceEncrypt,
+	}
+
 	if settings.BTsets.DownloadRateLimit > 0 {
-		bt.config.DownloadRateLimiter = utils.Limit(settings.BTsets.DownloadRateLimit * 1024)
+		config.DownloadRateLimiter = utils.Limit(settings.BTsets.DownloadRateLimit * 1024)
 	}
 
 	if settings.BTsets.UploadRateLimit > 0 {
-		bt.config.Seed = true
-		bt.config.UploadRateLimiter = utils.Limit(settings.BTsets.UploadRateLimit * 1024)
+		config.Seed = true
+		config.UploadRateLimiter = utils.Limit(settings.BTsets.UploadRateLimit * 1024)
 	}
 
 	if settings.TorAddr != "" {
 		log.TLogln("Set listen addr", settings.TorAddr)
-		bt.config.SetListenAddr(settings.TorAddr)
+		config.SetListenAddr(settings.TorAddr)
+	} else if settings.BTsets.PeersListenPort > 0 {
+		log.TLogln("Set listen port", settings.BTsets.PeersListenPort)
+		config.ListenPort = settings.BTsets.PeersListenPort
 	} else {
-		if settings.BTsets.PeersListenPort > 0 {
-			log.TLogln("Set listen port", settings.BTsets.PeersListenPort)
-			bt.config.ListenPort = settings.BTsets.PeersListenPort
-		} else {
-			log.TLogln("Set listen port to random autoselect (0)")
+		log.TLogln("Set listen port to random autoselect (0)")
+		config.ListenPort = 0
+	}
 
-			bt.config.ListenPort = 0
+	return config
+}
+
+// detectPublicIPv4 detects the public IPv4 address for the torrent client.
+// It first checks the configured setting, then falls back to external discovery.
+func detectPublicIPv4(ctx context.Context, config *torrent.ClientConfig) {
+	if settings.PubIPv4 != "" {
+		if ip4 := net.ParseIP(settings.PubIPv4); ip4.To4() != nil && !isPrivateIP(ip4) {
+			config.PublicIp4 = ip4
+			return
 		}
 	}
+
+	if config.PublicIp4 == nil {
+		ip, err := publicip.Get4(ctx)
+		if err != nil {
+			log.TLogln("Error getting public ipv4 address:", err)
+			return
+		}
+		// publicip.Get4 can return IPv6 in some cases, validate
+		if ip.To4() == nil {
+			return
+		}
+		config.PublicIp4 = ip
+	}
+
+	if config.PublicIp4 != nil {
+		log.TLogln("PublicIp4:", config.PublicIp4)
+	}
+}
+
+// detectPublicIPv6 detects the public IPv6 address for the torrent client.
+// It first checks the configured setting, then falls back to external discovery.
+func detectPublicIPv6(ctx context.Context, config *torrent.ClientConfig, enableIPv6 bool) {
+	if settings.PubIPv6 != "" {
+		if ip6 := net.ParseIP(settings.PubIPv6); ip6.To16() != nil && ip6.To4() == nil && !isPrivateIP(ip6) {
+			config.PublicIp6 = ip6
+			return
+		}
+	}
+
+	if config.PublicIp6 == nil && enableIPv6 {
+		ip, err := publicip.Get6(ctx)
+		if err != nil {
+			log.TLogln("Error getting public ipv6 address:", err)
+			return
+		}
+		// Ensure it's valid IPv6
+		if ip.To16() == nil {
+			return
+		}
+		config.PublicIp6 = ip
+	}
+
+	if config.PublicIp6 != nil {
+		log.TLogln("PublicIp6:", config.PublicIp6)
+	}
+}
+
+func (bt *BTServer) configure(ctx context.Context) {
+	bt.config = bt.buildClientConfig()
 
 	// Configure proxy if enabled
 	if err := bt.configureProxy(); err != nil {
@@ -161,51 +216,9 @@ func (bt *BTServer) configure(ctx context.Context) {
 
 	log.TLogln("Client config:", settings.BTsets)
 
-	var err error
-
-	// set public IPv4
-	if settings.PubIPv4 != "" {
-		if ip4 := net.ParseIP(settings.PubIPv4); ip4.To4() != nil && !isPrivateIP(ip4) {
-			bt.config.PublicIp4 = ip4
-		}
-	}
-
-	if bt.config.PublicIp4 == nil {
-		bt.config.PublicIp4, err = publicip.Get4(ctx)
-		if err != nil {
-			log.TLogln("Error getting public ipv4 address:", err)
-		}
-	}
-
-	if bt.config.PublicIp4.To4() == nil { // possible IPv6 from publicip.Get4(ctx)
-		bt.config.PublicIp4 = nil
-	}
-
-	if bt.config.PublicIp4 != nil {
-		log.TLogln("PublicIp4:", bt.config.PublicIp4)
-	}
-
-	// set public IPv6
-	if settings.PubIPv6 != "" {
-		if ip6 := net.ParseIP(settings.PubIPv6); ip6.To16() != nil && ip6.To4() == nil && !isPrivateIP(ip6) {
-			bt.config.PublicIp6 = ip6
-		}
-	}
-
-	if bt.config.PublicIp6 == nil && settings.BTsets.EnableIPv6 {
-		bt.config.PublicIp6, err = publicip.Get6(ctx)
-		if err != nil {
-			log.TLogln("Error getting public ipv6 address:", err)
-		}
-	}
-
-	if bt.config.PublicIp6.To16() == nil { // just 4 sure it's valid IPv6
-		bt.config.PublicIp6 = nil
-	}
-
-	if bt.config.PublicIp6 != nil {
-		log.TLogln("PublicIp6:", bt.config.PublicIp6)
-	}
+	// Detect public IP addresses
+	detectPublicIPv4(ctx, bt.config)
+	detectPublicIPv6(ctx, bt.config, settings.BTsets.EnableIPv6)
 }
 
 func (bt *BTServer) configureProxy() error {
