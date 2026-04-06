@@ -84,7 +84,7 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 		return fmt.Errorf("file with id %v not found", fileID)
 	}
 	// Check file size limit
-	if int64(sets.MaxSize) > 0 && file.Length() > int64(sets.MaxSize) {
+	if sets.MaxSize > 0 && file.Length() > sets.MaxSize {
 		err := fmt.Errorf("file size exceeded max allowed %d bytes", sets.MaxSize)
 		log.Printf("File %s size (%d) exceeded max allowed %d bytes", file.DisplayPath(), file.Length(), sets.MaxSize)
 		http.Error(resp, err.Error(), http.StatusForbidden)

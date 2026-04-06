@@ -76,6 +76,7 @@ func (d torrentService) Drop(hash string) {
 
 func (d torrentService) EnqueuePreload(tor *torr.Torrent, index int) bool {
 	torr.Preload(tor, index)
+
 	return true
 }
 
@@ -83,6 +84,7 @@ func (d torrentService) EnqueueMetadataFinalize(tor *torr.Torrent, spec *torrent
 	if saveToDB {
 		torr.SaveTorrentToDB(tor)
 	}
+
 	return true
 }
 
@@ -118,6 +120,7 @@ func (d settingsService) TMDBConfig() (sets.TMDBConfig, bool) {
 	if sets.BTsets == nil {
 		return sets.TMDBConfig{}, false
 	}
+
 	return sets.BTsets.TMDBSettings, true
 }
 
@@ -126,6 +129,7 @@ func (d settingsService) BuildPlayURL(hash, fileID string) string {
 	if sets.Ssl {
 		link = fmt.Sprintf("https://127.0.0.1:%s/play/%s/%s", sets.SslPort, hash, fileID)
 	}
+
 	return link
 }
 
@@ -173,6 +177,7 @@ func (d settingsService) RetrackersMode() int {
 	if sets.BTsets == nil {
 		return 1
 	}
+
 	return sets.BTsets.RetrackersMode
 }
 
@@ -180,6 +185,7 @@ func (d settingsService) DownloadRateLimit() int {
 	if sets.BTsets == nil {
 		return 0
 	}
+
 	return sets.BTsets.DownloadRateLimit
 }
 
@@ -187,6 +193,7 @@ func (d settingsService) UploadRateLimit() int {
 	if sets.BTsets == nil {
 		return 0
 	}
+
 	return sets.BTsets.UploadRateLimit
 }
 
@@ -194,6 +201,7 @@ func (d settingsService) ConnectionsLimit() int {
 	if sets.BTsets == nil {
 		return 25
 	}
+
 	return sets.BTsets.ConnectionsLimit
 }
 
@@ -201,6 +209,7 @@ func (d settingsService) PeersListenPort() int {
 	if sets.BTsets == nil {
 		return 0
 	}
+
 	return sets.BTsets.PeersListenPort
 }
 
@@ -208,6 +217,7 @@ func (d settingsService) CacheSize() int64 {
 	if sets.BTsets == nil {
 		return 64 * 1024 * 1024
 	}
+
 	return sets.BTsets.CacheSize
 }
 
@@ -215,6 +225,7 @@ func (d settingsService) PreloadCache() int {
 	if sets.BTsets == nil {
 		return 50
 	}
+
 	return sets.BTsets.PreloadCache
 }
 
@@ -226,6 +237,7 @@ func (d settingsService) TorrentsSavePath() string {
 	if sets.BTsets == nil {
 		return ""
 	}
+
 	return sets.BTsets.TorrentsSavePath
 }
 
@@ -241,6 +253,7 @@ func (d settingsService) TorznabURLs() []sets.TorznabConfig {
 	if sets.BTsets == nil {
 		return nil
 	}
+
 	return sets.BTsets.TorznabUrls
 }
 
@@ -252,6 +265,7 @@ func (d settingsService) ProxyHosts() []string {
 	if sets.BTsets == nil {
 		return nil
 	}
+
 	return sets.BTsets.ProxyHosts
 }
 
@@ -259,6 +273,7 @@ func (d settingsService) SslCert() string {
 	if sets.BTsets == nil {
 		return ""
 	}
+
 	return sets.BTsets.SslCert
 }
 
@@ -266,6 +281,7 @@ func (d settingsService) SslKey() string {
 	if sets.BTsets == nil {
 		return ""
 	}
+
 	return sets.BTsets.SslKey
 }
 
@@ -273,6 +289,7 @@ func (d settingsService) SslPort() int {
 	if sets.BTsets == nil {
 		return 0
 	}
+
 	return sets.BTsets.SslPort
 }
 
@@ -280,6 +297,7 @@ func (d settingsService) FriendlyName() string {
 	if sets.BTsets == nil {
 		return "TorrServer"
 	}
+
 	return sets.BTsets.FriendlyName
 }
 
@@ -291,6 +309,7 @@ func (d settingsService) TorrentDisconnectTimeout() int {
 	if sets.BTsets == nil {
 		return 30
 	}
+
 	return sets.BTsets.TorrentDisconnectTimeout
 }
 
@@ -310,6 +329,7 @@ func (d viewedService) ListViewed(hash string) []*sets.Viewed {
 	log.TLogln("viewedService.ListViewed: calling sets.ListViewed with hash:", hash)
 	result := sets.ListViewed(hash)
 	log.TLogln("viewedService.ListViewed: got result:", result)
+
 	return result
 }
 
@@ -331,6 +351,7 @@ func (d searchService) TorznabTest(host, key string) error {
 
 func (d mediaService) ProbePlayURL(hash, fileID string) (*goffprobe.ProbeData, error) {
 	link := settingsService{}.BuildPlayURL(hash, fileID)
+
 	return ffprobe.ProbeUrl(link)
 }
 
@@ -354,27 +375,34 @@ func (d streamService) ParseLink(link, title, poster, category string) (*torrent
 	}
 
 	var err error
+
 	link, _ = url.QueryUnescape(link)
 	meta.Title, _ = url.QueryUnescape(meta.Title)
 	meta.Poster, _ = url.QueryUnescape(meta.Poster)
 	meta.Category, _ = url.QueryUnescape(meta.Category)
 
 	var spec *torrent.TorrentSpec
+
 	if strings.HasPrefix(link, "torrs://") || (len(link) > 45 && torrshash.IsBase62(link)) {
 		var torrsHash *torrshash.TorrsHash
+
 		spec, torrsHash, err = utils.ParseTorrsHash(link)
 		if err != nil {
 			return nil, api.StreamMeta{}, api.ErrStreamInvalidTorrsHash
 		}
+
 		if meta.Title == "" {
 			meta.Title = torrsHash.Title()
 		}
+
 		if meta.Poster == "" {
 			meta.Poster = torrsHash.Poster()
 		}
+
 		if meta.Category == "" {
 			meta.Category = torrsHash.Category()
 		}
+
 		return spec, meta, nil
 	}
 
@@ -389,52 +417,69 @@ func (d streamService) ParseLink(link, title, poster, category string) (*torrent
 func (d streamService) EnsureTorrent(torrents api.TorrentService, spec *torrent.TorrentSpec, meta api.StreamMeta, allowCreate bool) (*torr.Torrent, error) {
 	log.TLogln("[DEBUG] EnsureTorrent: starting, hash=", spec.InfoHash.HexString())
 	log.TLogln("[DEBUG] EnsureTorrent: about to call torrents.Get")
+
 	tor := torrents.Get(spec.InfoHash.HexString())
 	log.TLogln("[DEBUG] EnsureTorrent: torrents.Get returned, tor=", tor != nil)
+
 	if tor != nil {
 		torStat := tor.Stat
 		log.TLogln("[DEBUG] EnsureTorrent: found existing torrent, stat=", torStat)
+
 		if meta.Title == "" {
 			meta.Title = tor.Title
 		}
+
 		if meta.Poster == "" {
 			meta.Poster = tor.Poster
 		}
+
 		if meta.Category == "" {
 			meta.Category = tor.Category
 		}
+
 		meta.Data = tor.Data
 		// Torrent already in memory and working/preloading — skip GotInfo() to avoid deadlock.
 		// The streaming layer (tor.Stream) will call GotInfo() internally if needed.
 		if torStat == state.TorrentWorking || torStat == state.TorrentPreload {
 			log.TLogln("[DEBUG] EnsureTorrent: torrent already working/preloading, skipping GotInfo")
+
 			if tor.Title == "" {
 				tor.Title = tor.Name()
 			}
+
 			return tor, nil
 		}
 	}
 
 	if tor == nil {
 		log.TLogln("[DEBUG] EnsureTorrent: need to add torrent")
+
 		if !allowCreate {
 			return nil, api.ErrStreamUnauthorized
 		}
+
 		var err error
+
 		tor, err = torrents.Add(spec, meta.Title, meta.Poster, meta.Data, meta.Category)
 		if err != nil {
 			log.TLogln("[DEBUG] EnsureTorrent: Add error:", err)
+
 			return nil, err
 		}
+
 		log.TLogln("[DEBUG] EnsureTorrent: Add succeeded, tor=", tor)
 	}
 
 	log.TLogln("[DEBUG] EnsureTorrent: calling GotInfo")
+
 	if !tor.GotInfo() {
 		log.TLogln("[DEBUG] EnsureTorrent: no GotInfo, returning connection timeout")
+
 		return nil, api.ErrStreamConnectionTimeout
 	}
+
 	log.TLogln("[DEBUG] EnsureTorrent: GotInfo succeeded")
+
 	if tor.Title == "" {
 		tor.Title = tor.Name()
 	}
@@ -446,10 +491,12 @@ func (d streamService) ParseFileIndex(index string, fileCount int) (int, error) 
 	if fileCount == 1 {
 		return 1, nil
 	}
+
 	ind, err := strconv.Atoi(index)
 	if err != nil || ind < 0 {
 		return 0, api.ErrStreamFileIndexInvalid
 	}
+
 	return ind, nil
 }
 
@@ -458,8 +505,10 @@ func (d streamService) NormalizePlaylistName(rawName, fallback string) string {
 	if name == "" {
 		return fallback + ".m3u"
 	}
+
 	if !strings.HasSuffix(strings.ToLower(name), ".m3u") && !strings.HasSuffix(strings.ToLower(name), ".m3u8") {
 		return name + ".m3u"
 	}
+
 	return name
 }

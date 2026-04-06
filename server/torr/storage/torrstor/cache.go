@@ -251,16 +251,33 @@ func (c *Cache) cleanPieces() {
 	if curFilled > curCapacity {
 		rems := (curFilled-curCapacity)/c.pieceLength + 1
 
-		for _, p := range remPieces {
+		for rems > 0 {
+			// Use LRU eviction when available
+			c.lruMu.Lock()
+			p := c.evictLRU()
+			c.lruMu.Unlock()
+
+			if p == nil {
+				break
+			}
+
 			c.removePiece(p)
 
 			rems--
-			if rems <= 0 {
-				utils.FreeOSMemGC()
-
-				return
-			}
 		}
+
+		// Fallback: getRemPieces for non-LRU pieces
+		for _, p := range remPieces {
+			if rems <= 0 {
+				break
+			}
+
+			c.removePiece(p)
+
+			rems--
+		}
+
+		utils.FreeOSMemGC()
 	}
 }
 
@@ -377,7 +394,7 @@ func (c *Cache) setLoadPriority(ranges []Range) {
 
 func (c *Cache) isIdInFileBE(ranges []Range, id int) bool {
 	// keep 8/16 MB
-	FileRangeNotDelete := max(int64(c.pieceLength), 8<<20)
+	FileRangeNotDelete := max(c.pieceLength, 8<<20)
 
 	for _, rng := range ranges {
 		ss := int(rng.File.Offset() / c.pieceLength)
@@ -396,7 +413,7 @@ func (c *Cache) isIdInFileBE(ranges []Range, id int) bool {
 
 // isIdInFileBEFast is a non-locking variant for use inside locked sections.
 func (c *Cache) isIdInFileBEFast(ranges []Range, id int) bool {
-	FileRangeNotDelete := max(int64(c.pieceLength), 8<<20)
+	FileRangeNotDelete := max(c.pieceLength, 8<<20)
 
 	for _, rng := range ranges {
 		ss := int(rng.File.Offset() / c.pieceLength)

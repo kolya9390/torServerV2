@@ -64,7 +64,7 @@ func TestCacheInit(t *testing.T) {
 		PieceLength: 16384, // 16 KB
 	}
 	// Calculate number of pieces
-	numPieces := int64(1000+info.PieceLength-1) / info.PieceLength
+	numPieces := (1000+info.PieceLength-1) / info.PieceLength
 	info.Pieces = make([]byte, numPieces*20)
 
 	hash := metainfo.NewHashFromHex("abcdef1234567890abcdef1234567890abcdef12")

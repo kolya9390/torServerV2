@@ -78,7 +78,7 @@ func Start() error {
 		LogHeaders:          settings.BTsets.EnableDebug,
 		NotifyInterval:      30 * time.Second,
 		AllowedIpNets: func() []*net.IPNet {
-			var nets []*net.IPNet
+			nets := make([]*net.IPNet, 0, 2)
 			_, ipnet, _ := net.ParseCIDR("0.0.0.0/0")
 			nets = append(nets, ipnet)
 			_, ipnet, _ = net.ParseCIDR("::/0")

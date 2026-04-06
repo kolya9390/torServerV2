@@ -36,7 +36,6 @@ func TestStoragePreferencesConcurrentAccess(t *testing.T) {
 	var wg sync.WaitGroup
 
 	wg.Go(func() {
-
 		for i := range 10 {
 			if err := SwitchViewedStorage(i%2 == 0); err != nil {
 				t.Errorf("switch viewed storage failed: %v", err)
@@ -47,9 +46,7 @@ func TestStoragePreferencesConcurrentAccess(t *testing.T) {
 	})
 
 	for range 4 {
-
 		wg.Go(func() {
-
 			for range 200 {
 				_ = GetStoragePreferences()
 			}

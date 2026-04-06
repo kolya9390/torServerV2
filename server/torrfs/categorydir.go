@@ -61,7 +61,7 @@ func (d *CategoryDir) ReadDir(n int) ([]fs.DirEntry, error) {
 func (d *CategoryDir) Open(name string) (fs.File, error) { return Open(d, name) }
 func (d *CategoryDir) Parent() INode                     { return nil }
 func (d *CategoryDir) Torrent() *torr.Torrent            { return nil }
-func (d *CategoryDir) SetTorrent(_ *torr.Torrent)     {}
+func (d *CategoryDir) SetTorrent(_ *torr.Torrent)        {}
 
 // DirEntry.
 func (d *CategoryDir) Name() string { return d.info.Name() }

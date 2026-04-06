@@ -214,7 +214,7 @@ func ListTorrent() []*Torrent {
 		}
 	}
 
-	var ret []*Torrent
+	ret := make([]*Torrent, 0, len(btlist))
 
 	for _, t := range btlist {
 		ret = append(ret, t)
@@ -250,9 +250,11 @@ func SetSettings(set *sets.BTSets) {
 	log.TLogln("disconect")
 	bts.Disconnect()
 	log.TLogln("connect")
+
 	if err := bts.Connect(); err != nil {
 		log.TLogln("Connect error:", err)
 	}
+
 	time.Sleep(time.Second * 1)
 	log.TLogln("end set settings")
 }
@@ -271,9 +273,11 @@ func SetDefSettings() {
 	log.TLogln("disconect")
 	bts.Disconnect()
 	log.TLogln("connect")
+
 	if err := bts.Connect(); err != nil {
 		log.TLogln("Connect error:", err)
 	}
+
 	time.Sleep(time.Second * 1)
 	log.TLogln("end set default settings")
 }

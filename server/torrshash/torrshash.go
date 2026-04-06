@@ -67,6 +67,7 @@ func (h *TorrsHash) String() string {
 	for _, f := range h.Fields {
 		strSb58.WriteString(" " + f.Tag.String() + ": " + f.Value)
 	}
+
 	str += strSb58.String()
 
 	return str

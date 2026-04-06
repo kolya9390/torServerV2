@@ -58,6 +58,7 @@ func (r *serverRuntime) Start() error {
 	if r.deps.setShutdown != nil {
 		r.deps.setShutdown(r.Stop)
 	}
+
 	if err := r.deps.initSettings(args.RDB, args.SearchWA); err != nil {
 		return err
 	}

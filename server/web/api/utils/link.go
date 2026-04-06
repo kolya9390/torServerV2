@@ -129,7 +129,7 @@ func fromHttp(link string) (*torrent.TorrentSpec, error) {
 	}
 
 	client := new(http.Client)
-	client.Timeout = time.Duration(time.Second * 60)
+	client.Timeout = 60 * time.Second
 
 	req.Header.Set("User-Agent", "DWL/1.1.1 (Torrent)")
 

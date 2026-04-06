@@ -33,6 +33,7 @@ func TestEchoEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
@@ -56,6 +57,7 @@ func TestHealthEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
@@ -79,6 +81,7 @@ func TestReadyzEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
@@ -167,6 +170,7 @@ func TestStreamEndpointExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	// Without valid link param, should return 400
@@ -218,6 +222,7 @@ func TestPprofEndpoints(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to connect: %v", err)
 			}
+
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
@@ -234,6 +239,7 @@ func TestVarsEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
@@ -261,6 +267,7 @@ func TestAPIVersionEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
@@ -311,6 +318,7 @@ func TestConcurrentRequests(t *testing.T) {
 
 				return
 			}
+
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {

@@ -169,6 +169,7 @@ func doSearchOne(host, key, query string) ([]*TorrentDetails, error) {
 		if err != nil {
 			return nil, fmt.Errorf("request error: %w", err)
 		}
+
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
@@ -274,6 +275,7 @@ func doTest(host, key string) error {
 		if err != nil {
 			return err
 		}
+
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {

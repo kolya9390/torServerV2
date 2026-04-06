@@ -44,6 +44,7 @@ func (p *DiskPiece) WriteAt(b []byte, off int64) (n int, err error) {
 	}
 
 	defer func() { _ = ff.Close() }()
+
 	n, err = ff.WriteAt(b, off)
 
 	p.piece.Size += int64(n)

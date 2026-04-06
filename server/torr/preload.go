@@ -136,6 +136,7 @@ func (t *Torrent) Preload(index int, size int64) {
 
 		return
 	}
+
 	defer func() { _ = readerStart.Close() }()
 
 	readerStart.SetResponsive()
@@ -162,9 +163,7 @@ func (t *Torrent) Preload(index int, size int64) {
 
 	// Start end range preload if needed
 	if readerEndStart > readerStartEnd {
-
 		wg.Go(func() {
-
 			// Check if we should still preload
 			t.muTorrent.Lock()
 			shouldPreload := t.Stat == state.TorrentPreload
@@ -182,6 +181,7 @@ func (t *Torrent) Preload(index int, size int64) {
 
 				return
 			}
+
 			defer func() { _ = readerEnd.Close() }() // Ensure reader is always closed
 
 			readerEnd.SetResponsive()
