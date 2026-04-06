@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"server/proxy"
 	"sync"
 
 	"github.com/anacrolix/publicip"
@@ -73,8 +72,6 @@ func (bt *BTServer) Connect() error {
 	bt.torrents = make(map[metainfo.Hash]*Torrent)
 	InitApiHelper(bt)
 
-	proxy.Start()
-
 	return err
 }
 
@@ -89,7 +86,6 @@ func (bt *BTServer) Disconnect() {
 		utils.FreeOSMemGC()
 	}
 
-	proxy.Stop()
 }
 
 // buildClientConfig creates and configures the torrent client configuration

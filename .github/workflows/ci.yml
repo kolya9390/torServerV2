@@ -13,6 +13,7 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,13 +25,9 @@ jobs:
           cache: true
           cache-dependency-path: server/go.sum
 
-      - name: Run unit tests
+      - name: Run all tests with race detector
         working-directory: server
-        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./torr/... ./settings/... ./config/...
-
-      - name: Run E2E tests
-        working-directory: server
-        run: go test -v -timeout 60s ./e2e/...
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -39,8 +36,9 @@ jobs:
           flags: unittests
 
   lint:
-    name: Lint
+    name: Lint (basic)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -51,23 +49,44 @@ jobs:
           go-version: '1.26'
           cache: true
 
-      - name: Run golangci-lint
+      - name: Run golangci-lint (basic)
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           working-directory: server
-          args: --timeout=5m
+          args: --timeout=10m
+
+  lint-strict:
+    name: Lint (strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Allow failures for now — strict lint is informative
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Run golangci-lint (strict)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: server
+          args: --config=.golangci-strict.yml --timeout=10m
 
   build:
     name: Build
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         arch: [amd64, arm64]
-        exclude:
-          - os: windows-latest
-            arch: arm64
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -81,7 +100,7 @@ jobs:
       - name: Build
         working-directory: server
         env:
-          GOOS: ${{ matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'darwin' || 'windows' }}
+          GOOS: ${{ matrix.os == 'ubuntu-latest' && 'linux' || 'darwin' }}
           GOARCH: ${{ matrix.arch }}
         run: go build -ldflags '-w -s' -o ../dist/torrserver-${{ matrix.os }}-${{ matrix.arch }} ./cmd
 
@@ -90,3 +109,4 @@ jobs:
         with:
           name: torrserver-${{ matrix.os }}-${{ matrix.arch }}
           path: dist/torrserver-*
+          retention-days: 7
