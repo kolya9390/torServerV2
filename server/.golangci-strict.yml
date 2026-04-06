@@ -1,5 +1,4 @@
 # golangci-lint strict configuration for TorrServer
-# Purpose: Maximum code quality and readability
 # Version: 2.x compatible
 
 version: "2"
@@ -40,11 +39,6 @@ linters:
     - usestdlibvars
     - intrange
     - lll
-
-formatters:
-  enable:
-    - gofmt
-    - goimports
 
   settings:
     lll:
@@ -214,6 +208,11 @@ formatters:
       - linters:
           - staticcheck
         text: "SA4000"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 issues:
   max-issues-per-linter: 0
