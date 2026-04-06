@@ -41,8 +41,8 @@ type Cache struct {
 	readers   map[*Reader]struct{}
 	muReaders sync.Mutex
 
-	isRemove bool
-	isClosed bool
+	isRemove atomic.Bool
+	isClosed atomic.Bool
 	muRemove sync.Mutex
 	torrent  *torrent.Torrent
 
@@ -121,7 +121,7 @@ func (c *Cache) Close() error {
 		log.TLogln("Close cache for:", c.hash)
 	}
 
-	c.isClosed = true
+	c.isClosed.Store(true)
 
 	delete(c.storage.caches, c.hash)
 
@@ -152,7 +152,7 @@ func (c *Cache) Close() error {
 }
 
 func (c *Cache) removePiece(piece *Piece) {
-	if !c.isClosed {
+	if !c.isClosed.Load() {
 		piece.Release()
 	}
 }
@@ -183,11 +183,11 @@ func (c *Cache) GetState() *state.CacheState {
 	c.mu.RLock()
 	if len(c.pieces) > 0 {
 		for _, p := range c.pieces {
-			if p.Size > 0 {
-				fill += p.Size
+			if p.Size.Load() > 0 {
+				fill += p.Size.Load()
 				piecesState[p.Id] = state.ItemState{
 					Id:        p.Id,
-					Size:      p.Size,
+					Size:      p.Size.Load(),
 					Length:    c.pieceLength,
 					Completed: p.Complete,
 					Priority:  int(c.torrent.PieceState(p.Id).Priority),
@@ -226,20 +226,20 @@ func (c *Cache) GetState() *state.CacheState {
 }
 
 func (c *Cache) cleanPieces() {
-	if c.isRemove || c.isClosed {
+	if c.isRemove.Load() || c.isClosed.Load() {
 		return
 	}
 
 	c.muRemove.Lock()
-	if c.isRemove {
+	if c.isRemove.Load() {
 		c.muRemove.Unlock()
 
 		return
 	}
 
-	c.isRemove = true
+	c.isRemove.Store(true)
 
-	defer func() { c.isRemove = false }()
+	defer func() { c.isRemove.Store(false) }()
 	c.muRemove.Unlock()
 
 	remPieces := c.getRemPieces()
@@ -312,11 +312,11 @@ func (c *Cache) getRemPieces() []*Piece {
 
 	pieces := c.pieces
 	for id, p := range pieces {
-		if p.Size > 0 {
-			fill += p.Size
+		if p.Size.Load() > 0 {
+			fill += p.Size.Load()
 		}
 
-		if !inRangeSet[id] && p.Size > 0 && !c.isIdInFileBEFast(ranges, id) {
+		if !inRangeSet[id] && p.Size.Load() > 0 && !c.isIdInFileBEFast(ranges, id) {
 			piecesRemove = append(piecesRemove, p)
 		}
 	}
@@ -480,7 +480,7 @@ func (c *Cache) CloseReader(r *Reader) {
 }
 
 func (c *Cache) clearPriority() {
-	if c == nil || c.isClosed || c.torrent == nil {
+	if c == nil || c.isClosed.Load() || c.torrent == nil {
 		return
 	}
 

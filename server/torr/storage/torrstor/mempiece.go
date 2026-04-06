@@ -68,9 +68,9 @@ func (p *MemPiece) WriteAt(b []byte, off int64) (n int, err error) {
 
 	n = copy(p.buffer[off:], b[:])
 
-	p.piece.Size += int64(n)
-	if p.piece.Size > p.piece.cache.pieceLength {
-		p.piece.Size = p.piece.cache.pieceLength
+	p.piece.Size.Add(int64(n))
+	if p.piece.Size.Load() > p.piece.cache.pieceLength {
+		p.piece.Size.Store(p.piece.cache.pieceLength)
 	}
 
 	p.piece.markAccessed()
@@ -94,7 +94,7 @@ func (p *MemPiece) ReadAt(b []byte, off int64) (n int, err error) {
 	n = copy(b, p.buffer[int(off) : int(off)+size][:])
 	p.piece.markAccessed()
 
-	if int64(len(b))+off >= p.piece.Size {
+	if int64(len(b))+off >= p.piece.Size.Load() {
 		go p.piece.cache.cleanPieces()
 	}
 
@@ -114,6 +114,6 @@ func (p *MemPiece) Release() {
 		p.buffer = nil
 	}
 
-	p.piece.Size = 0
+	p.piece.Size.Store(0)
 	p.piece.Complete = false
 }

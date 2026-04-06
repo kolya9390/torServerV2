@@ -24,7 +24,7 @@ func NewDiskPiece(p *Piece) *DiskPiece {
 
 	ff, err := os.Stat(name)
 	if err == nil {
-		p.Size = ff.Size()
+		p.Size.Store(ff.Size())
 		p.Complete = ff.Size() == p.cache.pieceLength
 		p.Accessed = ff.ModTime().Unix()
 	}
@@ -47,9 +47,9 @@ func (p *DiskPiece) WriteAt(b []byte, off int64) (n int, err error) {
 
 	n, err = ff.WriteAt(b, off)
 
-	p.piece.Size += int64(n)
-	if p.piece.Size > p.piece.cache.pieceLength {
-		p.piece.Size = p.piece.cache.pieceLength
+	p.piece.Size.Add(int64(n))
+	if p.piece.Size.Load() > p.piece.cache.pieceLength {
+		p.piece.Size.Store(p.piece.cache.pieceLength)
 	}
 
 	p.piece.markAccessed()
@@ -78,7 +78,7 @@ func (p *DiskPiece) ReadAt(b []byte, off int64) (n int, err error) {
 
 	p.piece.markAccessed()
 
-	if int64(len(b))+off >= p.piece.Size {
+	if int64(len(b))+off >= p.piece.Size.Load() {
 		go p.piece.cache.cleanPieces()
 	}
 
@@ -89,7 +89,7 @@ func (p *DiskPiece) Release() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.piece.Size = 0
+	p.piece.Size.Store(0)
 	p.piece.Complete = false
 
 	_ = os.Remove(p.name)

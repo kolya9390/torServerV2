@@ -2,6 +2,7 @@ package torrstor
 
 import (
 	"container/list"
+	"sync/atomic"
 	"time"
 
 	"server/settings"
@@ -10,11 +11,14 @@ import (
 	"github.com/anacrolix/torrent/storage"
 )
 
+// Piece represents a torrent piece in the cache.
 type Piece struct {
 	storage.PieceImpl `json:"-"`
 
-	Id   int   `json:"-"`
-	Size int64 `json:"size"`
+	Id   int `json:"-"`
+
+	// Size is accessed concurrently by WriteAt/ReadAt and cleanPieces.
+	Size atomic.Int64 `json:"size"`
 
 	Complete bool  `json:"complete"`
 	Accessed int64 `json:"accessed"`
@@ -85,7 +89,7 @@ func (p *Piece) Release() {
 		p.dPiece.Release()
 	}
 
-	if !p.cache.isClosed {
+	if !p.cache.isClosed.Load() {
 		p.cache.torrent.Piece(p.Id).SetPriority(torrent.PiecePriorityNone)
 		p.cache.torrent.Piece(p.Id).UpdateCompletion()
 	}
