@@ -55,7 +55,8 @@ func (d playbackService) BuildAllPlaylist(host string, torrents api.TorrentServi
 	}
 }
 
-func (d playbackService) BuildPlaylistByHash(hash, requestedName string, fromLast bool, host string, torrents api.TorrentService, viewed api.ViewedService) (api.PlaylistPayload, error) {
+func (d playbackService) BuildPlaylistByHash(hash, requestedName string, fromLast bool,
+	host string, torrents api.TorrentService, viewed api.ViewedService) (api.PlaylistPayload, error) {
 	if hash == "" {
 		return api.PlaylistPayload{}, api.ErrPlaylistHashRequired
 	}

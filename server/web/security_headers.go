@@ -17,7 +17,12 @@ func securityHeadersMiddleware() gin.HandlerFunc {
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("X-XSS-Protection", "0")
 		h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
+
+		csp := "default-src 'self'; img-src 'self' data: blob:; "
+		csp += "media-src 'self' blob:; "
+		csp += "script-src 'self' 'unsafe-inline'; "
+		csp += "style-src 'self' 'unsafe-inline'"
+		h.Set("Content-Security-Policy", csp)
 
 		if shouldSetHSTS(c) {
 			h.Set("Strict-Transport-Security", fmt.Sprintf("max-age=%d; includeSubDomains", getHSTSMaxAge()))

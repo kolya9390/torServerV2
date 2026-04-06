@@ -130,8 +130,8 @@ func (cb *CircuitBreaker) recordSuccess() {
 	cb.failures.Store(0)
 	cb.totalCalls.Add(1)
 
-	switch cb.State() {
-	case StateHalfOpen:
+	state := cb.State()
+	if state == StateHalfOpen {
 		cb.successes.Add(1)
 
 		if cb.successes.Load() >= int32(cb.config.SuccessThreshold) {
@@ -140,8 +140,6 @@ func (cb *CircuitBreaker) recordSuccess() {
 			cb.halfOpenCalls.Store(0)
 			cb.recordStateChange(StateHalfOpen, StateClosed)
 		}
-	case StateClosed:
-		// Reset failures on success
 	}
 }
 

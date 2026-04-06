@@ -88,7 +88,7 @@ func InitSets(readOnly, searchWA bool) error {
 	}
 
 	// Migrate old torrents
-	MigrateTorrents()
+	MigrateTorrent()
 
 	logConfiguration(settingsStoragePref, viewedStoragePref)
 

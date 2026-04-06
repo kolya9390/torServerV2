@@ -293,8 +293,6 @@ func Shutdown() {
 	bts.Disconnect()
 	sets.CloseDB()
 	log.TLogln("Received shutdown. Quit")
-	// Exit code is now handled by the caller (cmd/main.go)
-	// Use os.Exit(0) in main() after Shutdown() returns
 }
 
 func WriteStatus(w io.Writer) {

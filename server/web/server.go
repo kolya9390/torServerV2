@@ -92,7 +92,16 @@ func (s *Server) Start() error {
 		log.TLogln("Invalid trusted proxies config:", err)
 	}
 
-	route.Use(log.RequestIDMiddleware(), log.WebLogger(), blocker.Blocker(), gin.Recovery(), cors.New(corsCfg), location.Default(), securityHeadersMiddleware(), api.ErrorResponder())
+	route.Use(
+		log.RequestIDMiddleware(),
+		log.WebLogger(),
+		blocker.Blocker(),
+		gin.Recovery(),
+		cors.New(corsCfg),
+		location.Default(),
+		securityHeadersMiddleware(),
+		api.ErrorResponder(),
+	)
 	auth.SetupAuth(route)
 
 	route.GET("/echo", echo)
@@ -241,7 +250,7 @@ func (s *Server) Stop() {
 }
 
 func echo(c *gin.Context) {
-	c.String(200, "2.0.0")
+	c.String(200, "2.0.01")
 }
 
 func healthz(c *gin.Context) {

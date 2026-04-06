@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 	"runtime/debug"
 
@@ -109,35 +108,4 @@ func listViewed(svc *APIServices, req viewedReqJS, c *gin.Context) {
 	list := sets.ListViewed(req.Hash)
 	log.TLogln("listViewed: got list:", list)
 	c.JSON(200, list)
-}
-
-func callListViewed(viewed ViewedService, hash string) (result []*sets.Viewed) {
-	log.TLogln("callListViewed: ENTRY, hash:", hash)
-	log.TLogln("callListViewed: viewed is nil?", viewed == nil)
-	log.TLogln("callListViewed: viewed type:", fmt.Sprintf("%T", viewed))
-
-	defer func() {
-		if r := recover(); r != nil {
-			log.TLogln("callListViewed panic:", r)
-			log.TLogln("stack:", string(debug.Stack()))
-
-			result = []*sets.Viewed{}
-		}
-	}()
-	log.TLogln("callListViewed: before type switch")
-
-	switch v := viewed.(type) {
-	case interface{ ListViewed(string) []*sets.Viewed }:
-		log.TLogln("callListViewed: matched interface with ListViewed method")
-
-		result = v.ListViewed(hash)
-	default:
-		log.TLogln("callListViewed: type doesn't match, using direct call")
-
-		result = viewed.ListViewed(hash)
-	}
-
-	log.TLogln("callListViewed: got result:", result)
-
-	return result
 }

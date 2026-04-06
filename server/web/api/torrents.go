@@ -32,7 +32,7 @@ type torrReqJS struct {
 //
 //	@Tags			API
 //
-//	@Param			request	body	torrReqJS	true	"Torrent request. Available params for action: add, get, set, rem, list, drop, wipe. link required for add, hash required for get, set, rem, drop."
+//	@Param			request	body	torrReqJS	true	"Torrent request. Available params: add, get, set, rem, list, drop, wipe."
 //
 //	@Accept			json
 //	@Produce		json
@@ -206,7 +206,7 @@ func remTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 	}
 
 	svc.Torrents.Remove(req.Hash)
-	// TODO: remove
+	// Restart DLNA to reflect updated torrent list
 	if svc.Settings.EnableDLNA() {
 		if err := svc.Modules.RestartDLNA(true); err != nil {
 			log.TLogln("dlna restart error:", err)
@@ -236,7 +236,7 @@ func wipeTorrents(svc *APIServices, c *gin.Context) {
 	for _, t := range torrents {
 		svc.Torrents.Remove(t.TorrentSpec.InfoHash.HexString())
 	}
-	// TODO: remove (copied todo from remTorrent())
+	// Restart DLNA to reflect updated torrent list
 	if svc.Settings.EnableDLNA() {
 		if err := svc.Modules.RestartDLNA(true); err != nil {
 			log.TLogln("dlna restart error:", err)

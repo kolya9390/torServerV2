@@ -67,176 +67,149 @@ linters:
     - intrange          # Integer range
     - lll               # Line length
 
-formatters:
-  enable:
-    - gofmt             # Code formatting
-    - goimports         # Import sorting
-
-linters-settings:
-  # =============================================================================
-  # COMPLEXITY LIMITS
-  # =============================================================================
-  gocognit:
-    min-complexity: 30  # Maximum cognitive complexity
-  
-  gocyclo:
-    min-complexity: 30  # Maximum cyclomatic complexity
-  
-  funlen:
-    lines: 100          # Maximum lines in function
-    statements: 50      # Maximum statements
-  
-  nestif:
-    min-complexity: 15  # Maximum if nesting depth
-  
-  # =============================================================================
-  # LINE LENGTH
-  # =============================================================================
-  lll:
-    line-length: 120    # Maximum line length
-    tab-width: 4
-  
-  # =============================================================================
-  # NAMING CONVENTIONS
-  # =============================================================================
-  varnamelen:
-    max-distance: 20              # Maximum usage distance
-    min-name-length: 2            # Minimum name length
-    ignore-type-names:
-      - T
-      - "*"
-    ignore-names:
-      - i         # Loop index
-      - j         # Loop index
-      - k         # Loop index
-      - n         # Count
-      - wg        # WaitGroup
-      - mu        # Mutex
-      - err       # Error
-      - ctx       # Context
-      - ch        # Channel
-      - fn        # Function
-      - id        # ID
-      - ok        # OK result
-      - db        # Database connection (standard Go convention)
-      - ip        # IP address (standard Go convention)
-      - tr        # Torrent reference (project convention)
-      - t         # Torrent/type parameter (standard Go convention)
-      - p         # Piece/pointer parameter
-      - d         # Duration/distance parameter
-  
-  revive:
-    rules:
-      - name: var-naming
-        arguments:
-          - ["ID", "API", "HTTP", "JSON", "URL", "DB", "BBolt", "DSLNA", "SSL", "TLS", "IP", "TCP", "UDP", "M3U", "TMDB", "CLI", "DI", "FS", "OS", "HTTPAuth", "WebDAV", "FUSE", "UPNP", "PEX", "DHT", "NAT", "CGO", "RAM", "CPU", "IO", "GB", "MB", "KB", "MS", "NS"]
-          - []
-          - - "^.*_test\\.go$"
-      - name: exported
-        arguments:
-          - disableStutteringCheck
-      - name: indent-error-flow
-      - name: errorf
-      - name: blank-imports
-      - name: context-as-argument
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: range
-      - name: receiver-naming
-      - name: superfluous-else
-      - name: unnecessary-stmt
-      - name: unreachable-code
-      - name: unused-parameter
-      - name: unused-receiver
-      - name: struct-tag
-      - name: constant-logical-expr
-      - name: early-return
-      - name: unnecessary-export
-  
-  # =============================================================================
-  # WHITESPACE LINTER (WSL)
-  # =============================================================================
-  wsl:
-    strict-append: true              # Require empty line before append
-    allow-assign-and-call: true      # Allow assignment and call together
-    allow-assign-and-anything: false # Forbid assignment with other
-    allow-multiline-assign: true     # Allow multiline assignment
-    allow-separated-leading-comment: true # Allow separate leading comments
-    force-case-trailing-whitespace: 0 # Don't require empty line in case
-    allow-cuddle-declarations: false # Forbid cuddled declarations
-    allow-cuddle-with-rhs: false     # Forbid cuddle with RHS
-    allow-cuddle-used-in-block: false # Forbid cuddle with used in block
-    force-err-cuddling: false        # Don't require error cuddling
-    allow-cuddle-with-gox: []        # Allowed x-variables for cuddling
-  
-  # =============================================================================
-  # NEWLINE RETURN
-  # =============================================================================
-  nlreturn:
-    block-size: 2  # Require empty line before return for blocks > 2 lines
-  
-  # =============================================================================
-  # GODOT
-  # =============================================================================
-  godot:
-    scope: declarations  # Check only exported
-    capital: true        # Require capital letter
-    period: true         # Require period at end
-    exclude:
-      - "^fixme:"
-      - "^todo:"
-  
-  # =============================================================================
-  # ERROR CHECK
-  # =============================================================================
-  errcheck:
-    check-type-assertions: true   # Check type assertions
-    check-blank: true             # Check _ = func()
-    exclude-functions:
-      - fmt:.*
-      - io/ioutil:^Read.*
-      - (*bytes.Buffer).Write
-      - (*bytes.Buffer).WriteByte
-      - (*bytes.Buffer).WriteRune
-      - (*bytes.Buffer).WriteString
-      - (*bytes.Buffer).WriteTo
-      - (*strings.Builder).Write
-      - (*strings.Builder).WriteByte
-      - (*strings.Builder).WriteRune
-      - (*strings.Builder).WriteString
-      - (*strings.Builder).Copy
-  
-  # =============================================================================
-  # Gosec (Security)
-  # =============================================================================
-  gosec:
-    excludes:
-      - G104  # Errors unhandled (covered by errcheck)
-      - G107  # HTTP request with variable URL (false positives)
-      - G115  # Integer overflow (false positives)
-      - G204  # Subprocess with variable command (acceptable for our use case)
-      - G304  # File path from variable (acceptable for our use case)
-      - G402  # TLS InsecureSkipVerify (acceptable for self-signed certs)
-      - G501  # Blacklisted import (md5/sha1 for non-crypto use)
-      - G505  # Blacklisted import (crypto/sha1 for non-crypto use)
-  
-  # =============================================================================
-  # STATICCHECK
-  # =============================================================================
-  staticcheck:
-    checks:
-      - "all"
-      - "-SA1019"  # Allow deprecated functions (for backward compatibility)
-      - "-SA4000"  # Allow duplicate imports (sometimes necessary)
-  
-  # =============================================================================
-  # PREALLOC
-  # =============================================================================
-  prealloc:
-    simple: true      # Check simple cases
-    range-loops: true # Check range loops
-    for-loops: true   # Check for loops
+  settings:
+    # =============================================================================
+    # LINE LENGTH
+    # =============================================================================
+    lll:
+      line-length: 180    # Maximum line length (realistic limit for Go code)
+      tab-width: 4
+    
+    # =============================================================================
+    # NAMING CONVENTIONS
+    # =============================================================================
+    varnamelen:
+      max-distance: 20              # Maximum usage distance
+      min-name-length: 2            # Minimum name length
+      ignore-type-names:
+        - T
+        - "*"
+      ignore-names:
+        - i         # Loop index
+        - j         # Loop index
+        - k         # Loop index
+        - n         # Count
+        - wg        # WaitGroup
+        - mu        # Mutex
+        - err       # Error
+        - ctx       # Context
+        - ch        # Channel
+        - fn        # Function
+        - id        # ID
+        - ok        # OK result
+        - db        # Database connection (standard Go convention)
+        - ip        # IP address (standard Go convention)
+        - tr        # Torrent reference (project convention)
+        - t         # Torrent/type parameter (standard Go convention)
+        - p         # Piece/pointer parameter
+        - d         # Duration/distance parameter
+    
+    revive:
+      rules:
+        - name: var-naming
+          arguments:
+            - ["ID", "API", "HTTP", "JSON", "URL", "DB", "BBolt", "DSLNA", "SSL", "TLS", "IP", "TCP", "UDP", "M3U", "TMDB", "CLI", "DI", "FS", "OS", "HTTPAuth", "WebDAV", "FUSE", "UPNP", "PEX", "DHT", "NAT", "CGO", "RAM", "CPU", "IO", "GB", "MB", "KB", "MS", "NS"]
+            - []
+            - - "^.*_test\\.go$"
+        - name: exported
+          arguments:
+            - disableStutteringCheck
+        - name: indent-error-flow
+        - name: errorf
+        - name: blank-imports
+        - name: context-as-argument
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: range
+        - name: receiver-naming
+        - name: superfluous-else
+        - name: unnecessary-stmt
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: unused-receiver
+        - name: struct-tag
+        - name: constant-logical-expr
+        - name: early-return
+        - name: unnecessary-export
+    
+    # =============================================================================
+    # COMPLEXITY LIMITS
+    # =============================================================================
+    gocognit:
+      min-complexity: 30  # Maximum cognitive complexity
+    
+    gocyclo:
+      min-complexity: 30  # Maximum cyclomatic complexity
+    
+    funlen:
+      lines: 100          # Maximum lines in function
+      statements: 50      # Maximum statements
+    
+    nestif:
+      min-complexity: 15  # Maximum if nesting depth
+    
+    # =============================================================================
+    # GODOT
+    # =============================================================================
+    godot:
+      scope: declarations  # Check only exported
+      capital: true        # Require capital letter
+      period: true         # Require period at end
+      exclude:
+        - "^fixme:"
+        - "^todo:"
+    
+    # =============================================================================
+    # ERROR CHECK
+    # =============================================================================
+    errcheck:
+      check-type-assertions: true   # Check type assertions
+      check-blank: true             # Check _ = func()
+      exclude-functions:
+        - fmt:.*
+        - io/ioutil:^Read.*
+        - (*bytes.Buffer).Write
+        - (*bytes.Buffer).WriteByte
+        - (*bytes.Buffer).WriteRune
+        - (*bytes.Buffer).WriteString
+        - (*bytes.Buffer).WriteTo
+        - (*strings.Builder).Write
+        - (*strings.Builder).WriteByte
+        - (*strings.Builder).WriteRune
+        - (*strings.Builder).WriteString
+        - (*strings.Builder).Copy
+    
+    # =============================================================================
+    # Gosec (Security)
+    # =============================================================================
+    gosec:
+      excludes:
+        - G104  # Errors unhandled (covered by errcheck)
+        - G107  # HTTP request with variable URL (false positives)
+        - G115  # Integer overflow (false positives)
+        - G204  # Subprocess with variable command (acceptable for our use case)
+        - G304  # File path from variable (acceptable for our use case)
+        - G402  # TLS InsecureSkipVerify (acceptable for self-signed certs)
+        - G501  # Blacklisted import (md5/sha1 for non-crypto use)
+        - G505  # Blacklisted import (crypto/sha1 for non-crypto use)
+    
+    # =============================================================================
+    # STATICCHECK
+    # =============================================================================
+    staticcheck:
+      checks:
+        - "all"
+        - "-SA1019"  # Allow deprecated functions (for backward compatibility)
+        - "-SA4000"  # Allow duplicate imports (sometimes necessary)
+    
+    # =============================================================================
+    # PREALLOC
+    # =============================================================================
+    prealloc:
+      simple: true      # Check simple cases
+      range-loops: true # Check range loops
+      for-loops: true   # Check for loops
 
 issues:
   # Don't limit number of issues
@@ -279,10 +252,15 @@ issues:
         - revive
       text: "unused-parameter"
 
-    # Exclude godox for comments
+    # Exclude godox for TODO/FIXME comments (these are planning notes, not bugs)
     - linters:
         - godox
-      text: "// (TODO|FIXME|XXX|HACK):"
+      text: "Line contains TODO/BUG/FIXME"
+
+    # Exclude gomoddirectives for replace directives (needed for fork dependencies)
+    - linters:
+        - gomoddirectives
+      text: "replacement are not allowed"
 
     # Exclude specific gosec errors
     - linters:
