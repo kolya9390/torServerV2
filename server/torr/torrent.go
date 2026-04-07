@@ -67,7 +67,7 @@ func NewTorrent(spec *torrent.TorrentSpec, bt *BTServer) (*Torrent, error) {
 		return nil, errors.New("BT client not connected")
 	}
 
-	switch settings.BTsets.RetrackersMode {
+	switch settings.GetSettings().RetrackersMode {
 	case 1:
 		spec.Trackers = append(spec.Trackers, [][]string{utils.GetDefTrackers()}...)
 	case 2:
@@ -93,7 +93,7 @@ func NewTorrent(spec *torrent.TorrentSpec, bt *BTServer) (*Torrent, error) {
 		return tor, nil
 	}
 
-	timeout := min(time.Second*time.Duration(settings.BTsets.TorrentDisconnectTimeout), time.Minute)
+	timeout := min(time.Second*time.Duration(settings.GetSettings().TorrentDisconnectTimeout), time.Minute)
 
 	torr := new(Torrent)
 	torr.Torrent = goTorrent
@@ -118,13 +118,15 @@ func (t *Torrent) WaitInfo() bool {
 	}
 
 	// Close torrent if no info in 1 minute + TorrentDisconnectTimeout config option
-	tm := time.NewTimer(time.Minute + time.Second*time.Duration(settings.BTsets.TorrentDisconnectTimeout))
+	tm := time.NewTimer(time.Minute + time.Second*time.Duration(settings.GetSettings().TorrentDisconnectTimeout))
 
 	select {
 	case <-t.Torrent.GotInfo():
 		if t.bt != nil && t.bt.storage != nil {
-			t.cache = t.bt.storage.GetCache(t.Hash())
-			t.cache.SetTorrent(t.Torrent)
+			if torrstor, ok := t.bt.storage.(*torrstor.Storage); ok {
+				t.cache = torrstor.GetCache(t.Hash())
+				t.cache.SetTorrent(t.Torrent)
+			}
 		}
 
 		return true
@@ -149,7 +151,7 @@ func (t *Torrent) GotInfo() bool {
 	t.Stat = state.TorrentGettingInfo
 	if t.WaitInfo() {
 		t.Stat = state.TorrentWorking
-		t.AddExpiredTime(time.Second * time.Duration(settings.BTsets.TorrentDisconnectTimeout))
+		t.AddExpiredTime(time.Second * time.Duration(settings.GetSettings().TorrentDisconnectTimeout))
 
 		return true
 	}
@@ -281,7 +283,7 @@ func (t *Torrent) NewReader(file *torrent.File) *torrstor.Reader {
 
 func (t *Torrent) CloseReader(reader *torrstor.Reader) {
 	t.cache.CloseReader(reader)
-	t.AddExpiredTime(time.Second * time.Duration(settings.BTsets.TorrentDisconnectTimeout))
+	t.AddExpiredTime(time.Second * time.Duration(settings.GetSettings().TorrentDisconnectTimeout))
 }
 
 func (t *Torrent) GetCache() *torrstor.Cache {
@@ -303,7 +305,7 @@ func (t *Torrent) Close() bool {
 		return false
 	}
 
-	if settings.ReadOnly && t.cache != nil && t.cache.GetUseReaders() > 0 {
+	if settings.IsReadOnly() && t.cache != nil && t.cache.GetUseReaders() > 0 {
 		return false
 	}
 

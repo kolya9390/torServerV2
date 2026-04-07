@@ -45,7 +45,7 @@ func (d *CategoryDir) ReadDir(n int) ([]fs.DirEntry, error) {
 		}
 
 		if t.Category == d.Name() {
-			if settings.BTsets.ShowFSActiveTorr && !t.GotInfo() {
+			if settings.GetSettings().ShowFSActiveTorr && !t.GotInfo() {
 				continue
 			}
 

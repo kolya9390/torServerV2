@@ -41,7 +41,7 @@ func (d *TorrDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	// соединяемся с торрентом при чтении директории торрента
 	if !d.Torrent().GotInfo() {
 		hash := d.Torrent().Hash().String()
-		for range settings.BTsets.TorrentDisconnectTimeout * 2 {
+		for range settings.GetSettings().TorrentDisconnectTimeout * 2 {
 			tor := torr.GetTorrent(hash)
 			if tor.GotInfo() {
 				d.SetTorrent(tor)

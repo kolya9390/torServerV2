@@ -1,4 +1,4 @@
-.PHONY: build build-all build-prometheus test lint lint-strict lint-fix e2e docker docker-build docker-push clean help web web-dev
+.PHONY: build build-all build-prometheus test lint lint-strict lint-fix e2e docker docker-build docker-push clean help web web-dev generate-mocks
 
 # Go parameters
 GOCMD=go
@@ -34,15 +34,6 @@ build-all:
 	@echo "Building for all platforms..."
 	@bash ./build-all.sh
 
-## web: Build web assets
-web:
-	@echo "Building web assets..."
-	@go run gen_web.go
-
-## web-dev: Build web assets (clean first)
-web-clean:
-	@echo "Building web assets (clean)..."
-	@go run gen_web.go --clean
 
 ## test: Run tests
 test:
@@ -108,6 +99,14 @@ clean:
 	cd server && $(GOCLEAN) -cache
 	rm -f coverage.out coverage.html
 	rm -rf server/artifacts/e2e-smoke/
+
+## generate-mocks: Generate mock implementations using mockgen
+generate-mocks:
+	@echo "Generating mocks with mockgen..."
+	@mkdir -p server/internal/mocks
+	@cd server && $(HOME)/go/bin/mockgen -source=torr/service.go -destination=internal/mocks/mock_torrent_service.go -package=mocks TorrentService
+	@cd server && $(HOME)/go/bin/mockgen -source=settings/provider.go -destination=internal/mocks/mock_settings_provider.go -package=mocks SettingsProvider
+	@echo "Mocks generated successfully"
 
 ## help: Show this help message
 help:

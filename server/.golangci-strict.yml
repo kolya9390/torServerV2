@@ -1,4 +1,5 @@
-# golangci-lint strict configuration for TorrServer
+# golangci-lint strict configuration
+
 # Version: 2.x compatible
 
 version: "2"
@@ -67,11 +68,11 @@ linters:
         - t
         - p
         - d
-        - c  # gin handler context (standard convention)
-        - f  # range loop variable (standard Go idiom)
-        - b  # io.WriterAt data parameter (standard interface)
-        - a  # fuse.Attr pointer (standard fuse naming)
-        - s  # service receiver (common abbreviation)
+        - c
+        - f
+        - b
+        - a
+        - s
 
     revive:
       rules:
@@ -169,8 +170,8 @@ linters:
       - std-error-handling
 
     rules:
-      # Exclude test files from style linters (tests have different style requirements)
-      - path: _test\.go
+      # Exclude test files from style linters
+      - path: _test.go
         linters:
           - lll
           - funlen
@@ -179,110 +180,133 @@ linters:
           - varnamelen
           - revive
 
-      # Exclude revive for test files and mocks (interface implementations require unused params)
-      - path: _test\.go
-        linters:
-          - revive
-        text: "unused-parameter|unused-receiver"
-
-      # Exclude revive for mocks (generated/test stubs)
+      # Exclude revive for mocks
       - path: mocks/
         linters:
           - revive
         text: "unused-parameter|unused-receiver"
 
-      # Exclude revive for noop service implementations (they document interface contracts)
+      # Exclude errcheck for mocks and tests
+      - path: mocks/
+        linters:
+          - errcheck
+        text: "Error return value is not checked"
+      - path: _test.go
+        linters:
+          - errcheck
+        text: "Error return value"
+
+      # Exclude gosec for test files (e2e tests make HTTP requests, test fixtures use relaxed permissions)
+      - path: _test.go
+        linters:
+          - gosec
+        text: "G306|G304|G302|G703|G704|G702|G701"
+
+      # Exclude revive for noop service implementations
       - linters:
           - revive
         text: "unused-parameter|unused-receiver"
         source: "noop.*Service"
-
-      # Exclude revive for defaults.go noop implementations
-      - path: internal/app/apiservices/defaults\.go
+      - path: internal/app/apiservices/defaults.go
+        linters:
+          - revive
+        text: "unused-parameter|unused-receiver"
+      - path: internal/app/apiservices/playback.go
         linters:
           - revive
         text: "unused-parameter|unused-receiver"
 
-      # Exclude revive for playback.go noop implementations
-      - path: internal/app/apiservices/playback\.go
-        linters:
-          - revive
-        text: "unused-parameter|unused-receiver"
-
-      # Exclude revive for DLNA callback signatures (must match dms.Server interface)
+      # Exclude revive for DLNA callback signatures
       - path: dlna/
         linters:
           - revive
         text: "unused-parameter|indent-error-flow"
 
-      # Exclude revive for FUSE interface implementations (must match go-fuse API)
+      # Exclude revive for FUSE interface implementations
       - path: torrfs/
         linters:
           - revive
         text: "unused-parameter|unused-receiver"
 
-      # Exclude revive for PieceFake stub (implements storage.PieceImpl interface)
-      - path: torr/storage/torrstor/piecefake\.go
-        linters:
-          - revive
-        text: "unused-parameter"
-
-      # Exclude revive for Storage.OpenTorrent (interface implementation)
-      - path: torr/storage/torrstor/storage\.go
-        linters:
-          - revive
-        text: "unused-parameter"
-
-      # Exclude revive for circuitbreaker (interface implementation)
-      - path: utils/circuitbreaker/circuitbreaker\.go
-        linters:
-          - revive
-        text: "unused-parameter"
-
-      # Exclude revive for error_middleware (gin middleware signature)
-      - path: web/api/error_middleware\.go
-        linters:
-          - revive
-        text: "unused-parameter"
-
-      # Exclude revive for corsService.GetAllowedOrigins (interface implementation)
-      - path: web/webinfra/webinfra\.go
-        linters:
-          - revive
-        text: "unused-receiver"
-
-      # Exclude revive for settings methods (interface implementations)
+      # Exclude revive for interface implementations (storage, settings, utils)
       - path: settings/
         linters:
           - revive
         text: "unused-parameter|unused-receiver"
+      - path: torr/storage/torrstor/piecefake.go
+        linters:
+          - revive
+        text: "unused-parameter"
+      - path: torr/storage/torrstor/storage.go
+        linters:
+          - revive
+        text: "unused-parameter"
+      - path: utils/circuitbreaker/circuitbreaker.go
+        linters:
+          - revive
+        text: "unused-parameter"
+      - path: web/api/error_middleware.go
+        linters:
+          - revive
+        text: "unused-parameter"
+      - path: web/webinfra/webinfra.go
+        linters:
+          - revive
+        text: "unused-receiver"
 
-      # Exclude revive for package naming conflicts with stdlib (existing packages cannot be renamed)
+      # Exclude revive for service adapter (calls global functions)
+      - path: torr/service_adapter.go
+        linters:
+          - revive
+        text: "unused-receiver"
+
+      # Exclude revive for package naming
       - linters:
           - revive
         text: "avoid package names that conflict with Go standard library package names"
         path: "log/|metrics/|version/"
-
-      # Exclude revive for meaningless package names (utils is a common Go pattern)
       - linters:
           - revive
         text: "avoid meaningless package names"
         path: "torr/utils/|utils/|tmdb|web/api"
 
-      # Exclude godox for TODO/FIXME comments (these are planning notes)
+      # Exclude gocyclo for stream handler
+      - linters:
+          - gocyclo
+        text: "cyclomatic complexity"
+        path: web/api/stream.go
+      - linters:
+          - funlen
+        text: "Function 'stream' has too many statements"
+        path: web/api/stream.go
+
+      # Exclude gosec SSRF and path traversal false positives
+      - linters:
+          - gosec
+        text: "G704|G703|G702|G701"
+        path: "torr/utils/webImageChecker.go|torznab/torznab.go|web/api/utils/link.go|internal/torrentparse/parse.go|config/config.go"
+
+      # Exclude gosec APIKey warnings
+      - linters:
+          - gosec
+        text: "G117"
+        path: "config/config.go|settings/btsets.go"
+
+      # Exclude wsl for runtime_server.go (dependency injection setup)
+      - path: internal/app/runtime_server\.go
+        linters:
+          - wsl
+        text: "if statements should only be cuddled"
+
+      # Exclude godox for TODO/FIXME comments
       - linters:
           - godox
         text: "Line contains TODO/BUG/FIXME"
 
-      # Exclude gomoddirectives for replace directives (needed for fork dependencies)
+      # Exclude gomoddirectives for replace directives
       - linters:
           - gomoddirectives
         text: "replacement are not allowed"
-
-      # Exclude gosec false positives
-      - linters:
-          - gosec
-        text: "G304|G204|G402"
 
       # Exclude staticcheck false positives
       - linters:

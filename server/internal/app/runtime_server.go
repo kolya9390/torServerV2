@@ -75,8 +75,8 @@ func (r *serverRuntime) Start() error {
 
 	settings.Ssl = args.Ssl
 	if args.Ssl && args.SslCert != "" && args.SslKey != "" {
-		settings.BTsets.SslCert = args.SslCert
-		settings.BTsets.SslKey = args.SslKey
+		settings.GetSettings().SslCert = args.SslCert
+		settings.GetSettings().SslKey = args.SslKey
 	}
 
 	log.TLogln("Check web ssl port", args.SslPort)

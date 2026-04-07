@@ -15,6 +15,7 @@ import (
 	"server/log"
 	"server/proxy"
 	"server/settings"
+	"server/torr/storage"
 	"server/torr/storage/torrstor"
 	"server/torr/utils"
 	"server/version"
@@ -24,7 +25,7 @@ type BTServer struct {
 	config *torrent.ClientConfig
 	client *torrent.Client
 
-	storage *torrstor.Storage
+	storage storage.Storage
 
 	torrents map[metainfo.Hash]*Torrent
 
@@ -96,7 +97,7 @@ func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
 
 	config := torrent.NewDefaultClientConfig()
 
-	storage := torrstor.NewStorage(settings.BTsets.CacheSize)
+	storage := torrstor.NewStorage(settings.GetSettings().CacheSize)
 	bt.storage = storage
 	config.DefaultStorage = storage
 
@@ -105,44 +106,44 @@ func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
 	upnpID := "TorrServer/" + version.Version
 	cliVers := userAgent
 
-	config.Debug = settings.BTsets.EnableDebug
-	config.DisableIPv6 = !settings.BTsets.EnableIPv6
-	config.DisableTCP = settings.BTsets.DisableTCP
-	config.DisableUTP = settings.BTsets.DisableUTP
-	config.NoDefaultPortForwarding = settings.BTsets.DisableUPNP
-	config.NoDHT = settings.BTsets.DisableDHT
-	config.DisablePEX = settings.BTsets.DisablePEX
-	config.NoUpload = settings.BTsets.DisableUpload
+	config.Debug = settings.GetSettings().EnableDebug
+	config.DisableIPv6 = !settings.GetSettings().EnableIPv6
+	config.DisableTCP = settings.GetSettings().DisableTCP
+	config.DisableUTP = settings.GetSettings().DisableUTP
+	config.NoDefaultPortForwarding = settings.GetSettings().DisableUPNP
+	config.NoDHT = settings.GetSettings().DisableDHT
+	config.DisablePEX = settings.GetSettings().DisablePEX
+	config.NoUpload = settings.GetSettings().DisableUpload
 	config.IPBlocklist = blocklist
 	config.Bep20 = peerID
 	config.PeerID = utils.PeerIDRandom(peerID)
 	config.UpnpID = upnpID
 	config.HTTPUserAgent = userAgent
 	config.ExtendedHandshakeClientVersion = cliVers
-	config.EstablishedConnsPerTorrent = settings.BTsets.ConnectionsLimit
+	config.EstablishedConnsPerTorrent = settings.GetSettings().ConnectionsLimit
 
-	if settings.BTsets.ForceEncrypt {
+	if settings.GetSettings().ForceEncrypt {
 		config.HeaderObfuscationPolicy = torrent.HeaderObfuscationPolicy{
 			RequirePreferred: true,
 			Preferred:        true,
 		}
 	}
 
-	if settings.BTsets.DownloadRateLimit > 0 {
-		config.DownloadRateLimiter = utils.Limit(settings.BTsets.DownloadRateLimit * 1024)
+	if settings.GetSettings().DownloadRateLimit > 0 {
+		config.DownloadRateLimiter = utils.Limit(settings.GetSettings().DownloadRateLimit * 1024)
 	}
 
-	if settings.BTsets.UploadRateLimit > 0 {
+	if settings.GetSettings().UploadRateLimit > 0 {
 		config.Seed = true
-		config.UploadRateLimiter = utils.Limit(settings.BTsets.UploadRateLimit * 1024)
+		config.UploadRateLimiter = utils.Limit(settings.GetSettings().UploadRateLimit * 1024)
 	}
 
 	if settings.TorAddr != "" {
 		log.TLogln("Set listen addr", settings.TorAddr)
 		config.SetListenAddr(settings.TorAddr)
-	} else if settings.BTsets.PeersListenPort > 0 {
-		log.TLogln("Set listen port", settings.BTsets.PeersListenPort)
-		config.ListenPort = settings.BTsets.PeersListenPort
+	} else if settings.GetSettings().PeersListenPort > 0 {
+		log.TLogln("Set listen port", settings.GetSettings().PeersListenPort)
+		config.ListenPort = settings.GetSettings().PeersListenPort
 	} else {
 		log.TLogln("Set listen port to random autoselect (0)")
 
@@ -226,7 +227,7 @@ func (bt *BTServer) configure(ctx context.Context) {
 
 	// Detect public IP addresses
 	detectPublicIPv4(ctx, bt.config)
-	detectPublicIPv6(ctx, bt.config, settings.BTsets.EnableIPv6)
+	detectPublicIPv6(ctx, bt.config, settings.GetSettings().EnableIPv6)
 }
 
 func (bt *BTServer) configureProxy() error {
@@ -383,4 +384,10 @@ func getPublicIP6() net.IP {
 	}
 
 	return nil
+}
+
+// Storage returns the storage implementation.
+// This method implements the StorageProvider interface.
+func (bt *BTServer) Storage() storage.Storage {
+	return bt.storage
 }

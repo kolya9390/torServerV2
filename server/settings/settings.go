@@ -472,3 +472,18 @@ func CloseDB() {
 		tdb.CloseDB()
 	}
 }
+
+// GetSettings returns the current settings via the provider.
+func GetSettings() *BTSets {
+	return DefaultSettingsProvider.Get()
+}
+
+// SetSettings updates the settings via the provider.
+func SetSettings(sets *BTSets) {
+	DefaultSettingsProvider.Set(sets)
+}
+
+// IsReadOnly returns true if settings cannot be modified.
+func IsReadOnly() bool {
+	return DefaultSettingsProvider.ReadOnly()
+}

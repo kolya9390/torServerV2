@@ -75,7 +75,7 @@ func Start() error {
 		NoProbe:             true,
 		StallEventSubscribe: false,
 		Icons:               []dms.Icon{}, // No icons
-		LogHeaders:          settings.BTsets.EnableDebug,
+		LogHeaders:          settings.GetSettings().EnableDebug,
 		NotifyInterval:      30 * time.Second,
 		AllowedIpNets: func() []*net.IPNet {
 			nets := make([]*net.IPNet, 0, 2)
@@ -250,8 +250,8 @@ func collectNonLoopbackIPs(ifaces []net.Interface) []string {
 func getDefaultFriendlyName() string {
 	logger := log.Default.WithNames("dlna")
 
-	if settings.BTsets.FriendlyName != "" {
-		return settings.BTsets.FriendlyName
+	if settings.GetSettings().FriendlyName != "" {
+		return settings.GetSettings().FriendlyName
 	}
 
 	userName := ""

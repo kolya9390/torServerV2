@@ -80,8 +80,8 @@ func (c *Cache) Init(info *metainfo.Info, hash metainfo.Hash) {
 	c.pieceCount = info.NumPieces()
 	c.hash = hash
 
-	if settings.BTsets.UseDisk {
-		name := filepath.Join(settings.BTsets.TorrentsSavePath, hash.HexString())
+	if settings.GetSettings().UseDisk {
+		name := filepath.Join(settings.GetSettings().TorrentsSavePath, hash.HexString())
 
 		err := os.MkdirAll(name, 0o777)
 		if err != nil {
@@ -125,8 +125,8 @@ func (c *Cache) Close() error {
 
 	delete(c.storage.caches, c.hash)
 
-	if settings.BTsets.RemoveCacheOnDrop {
-		name := filepath.Join(settings.BTsets.TorrentsSavePath, c.hash.HexString())
+	if settings.GetSettings().RemoveCacheOnDrop {
+		name := filepath.Join(settings.GetSettings().TorrentsSavePath, c.hash.HexString())
 		if name != "" && name != "/" {
 			for _, v := range c.pieces {
 				if v.dPiece != nil {
@@ -158,7 +158,7 @@ func (c *Cache) removePiece(piece *Piece) {
 }
 
 func (c *Cache) AdjustRA(readahead int64) {
-	if settings.BTsets.CacheSize == 0 {
+	if settings.GetSettings().CacheSize == 0 {
 		c.mu.Lock()
 		c.capacity = readahead * 3
 		c.mu.Unlock()
@@ -355,7 +355,7 @@ func (c *Cache) setLoadPriority(ranges []Range) {
 		return
 	}
 
-	count := settings.BTsets.ConnectionsLimit / readerCount // max concurrent loading blocks
+	count := settings.GetSettings().ConnectionsLimit / readerCount // max concurrent loading blocks
 
 	for r := range c.readers {
 		if !r.isUse {

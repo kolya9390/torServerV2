@@ -38,7 +38,7 @@ func NewPiece(id int, cache *Cache) *Piece {
 		cache: cache,
 	}
 
-	if !settings.BTsets.UseDisk {
+	if !settings.GetSettings().UseDisk {
 		p.mPiece = NewMemPiece(p)
 	} else {
 		p.dPiece = NewDiskPiece(p)
@@ -48,7 +48,7 @@ func NewPiece(id int, cache *Cache) *Piece {
 }
 
 func (p *Piece) WriteAt(b []byte, off int64) (n int, err error) {
-	if !settings.BTsets.UseDisk {
+	if !settings.GetSettings().UseDisk {
 		return p.mPiece.WriteAt(b, off)
 	}
 
@@ -56,7 +56,7 @@ func (p *Piece) WriteAt(b []byte, off int64) (n int, err error) {
 }
 
 func (p *Piece) ReadAt(b []byte, off int64) (n int, err error) {
-	if !settings.BTsets.UseDisk {
+	if !settings.GetSettings().UseDisk {
 		return p.mPiece.ReadAt(b, off)
 	}
 
@@ -83,7 +83,7 @@ func (p *Piece) Completion() storage.Completion {
 }
 
 func (p *Piece) Release() {
-	if settings.BTsets.UseDisk {
+	if settings.GetSettings().UseDisk {
 		p.dPiece.Release()
 	} else {
 		p.mPiece.Release()

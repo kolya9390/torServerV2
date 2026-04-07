@@ -260,7 +260,7 @@ func (t *Torrent) runPreloadSequence(file *torrent.File, size int64, index int) 
 
 	defer func() { _ = setup.readerStart.Close() }()
 
-	timeout := min(time.Second*time.Duration(settings.BTsets.TorrentDisconnectTimeout), time.Minute)
+	timeout := min(time.Second*time.Duration(settings.GetSettings().TorrentDisconnectTimeout), time.Minute)
 
 	// Create a stop channel for the logging goroutine
 	logStopChan := make(chan struct{})

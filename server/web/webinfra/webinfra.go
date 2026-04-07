@@ -128,7 +128,7 @@ func (s *sslService) PrepareCertificates(ips []string) error {
 		return nil
 	}
 
-	if settings.BTsets.SslCert != "" && settings.BTsets.SslKey != "" {
+	if settings.GetSettings().SslCert != "" && settings.GetSettings().SslKey != "" {
 		return nil
 	}
 
@@ -142,8 +142,8 @@ func (s *sslService) PrepareCertificates(ips []string) error {
 	s.key = key
 	s.mu.Unlock()
 
-	settings.BTsets.SslCert, settings.BTsets.SslKey = cert, key
-	log.TLogln("Saving path to ssl cert and key in db", settings.BTsets.SslCert, settings.BTsets.SslKey)
+	settings.GetSettings().SslCert, settings.GetSettings().SslKey = cert, key
+	log.TLogln("Saving path to ssl cert and key in db", settings.GetSettings().SslCert, settings.GetSettings().SslKey)
 	settings.SetBTSets(settings.BTsets)
 
 	return nil
@@ -154,7 +154,7 @@ func (s *sslService) VerifyOrRegenerateCerts(ips []string) error {
 		return nil
 	}
 
-	err := sslcerts.VerifyCertKeyFiles(settings.BTsets.SslCert, settings.BTsets.SslKey, settings.SslPort)
+	err := sslcerts.VerifyCertKeyFiles(settings.GetSettings().SslCert, settings.GetSettings().SslKey, settings.SslPort)
 	if err == nil {
 		return nil
 	}
@@ -171,8 +171,8 @@ func (s *sslService) VerifyOrRegenerateCerts(ips []string) error {
 	s.key = key
 	s.mu.Unlock()
 
-	settings.BTsets.SslCert, settings.BTsets.SslKey = cert, key
-	log.TLogln("Saving path to ssl cert and key in db", settings.BTsets.SslCert, settings.BTsets.SslKey)
+	settings.GetSettings().SslCert, settings.GetSettings().SslKey = cert, key
+	log.TLogln("Saving path to ssl cert and key in db", settings.GetSettings().SslCert, settings.GetSettings().SslKey)
 	settings.SetBTSets(settings.BTsets)
 
 	return nil

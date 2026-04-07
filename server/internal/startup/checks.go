@@ -42,7 +42,7 @@ func PrepareNetwork(args *settings.ExecArgs) error {
 
 func prepareSSL(args *settings.ExecArgs) error {
 	if args.SslPort == "" {
-		dbSSLPort := strconv.Itoa(settings.BTsets.SslPort)
+		dbSSLPort := strconv.Itoa(settings.GetSettings().SslPort)
 		if dbSSLPort != "0" {
 			args.SslPort = dbSSLPort
 		} else {
@@ -51,7 +51,7 @@ func prepareSSL(args *settings.ExecArgs) error {
 	} else {
 		dbSSLPort, err := strconv.Atoi(args.SslPort)
 		if err == nil {
-			settings.BTsets.SslPort = dbSSLPort
+			settings.GetSettings().SslPort = dbSSLPort
 		}
 	}
 

@@ -104,6 +104,9 @@ func loadConfig(args *settings.ExecArgs) (*config.Config, error) {
 		return nil, err
 	}
 
+	// Set static configuration from config.yaml
+	settings.SetStaticConfig(cfg.ToStaticConfig())
+
 	if args.Ssl {
 		cfg.Server.SSL = true
 	}

@@ -82,14 +82,14 @@ func Init() {
 				return 0
 			}
 
-			return settings.BTsets.CacheSize / (1024 * 1024)
+			return settings.GetSettings().CacheSize / (1024 * 1024)
 		}))
 		expvar.Publish("responsive_mode", expvar.Func(func() any {
 			if settings.BTsets == nil {
 				return false
 			}
 
-			return settings.BTsets.ResponsiveMode
+			return settings.GetSettings().ResponsiveMode
 		}))
 
 		// Periodic updater goroutine

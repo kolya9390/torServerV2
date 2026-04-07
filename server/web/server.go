@@ -147,7 +147,7 @@ func registerAppRoutes(route *gin.Engine) {
 		webdav.MountWebDAV(route)
 	}
 
-	if settings.BTsets.EnableDLNA {
+	if settings.GetSettings().EnableDLNA {
 		modules.LogPeripheralFailure("dlna", modules.RestartDLNA(true))
 	}
 
@@ -183,7 +183,7 @@ func (s *Server) startHTTPSServer(route *gin.Engine, ips []string) error {
 		}()
 		log.TLogln("Start https server at", httpsAddr)
 
-		err := httpsSrv.ListenAndServeTLS(settings.BTsets.SslCert, settings.BTsets.SslKey)
+		err := httpsSrv.ListenAndServeTLS(settings.GetSettings().SslCert, settings.GetSettings().SslKey)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.waitChan <- err
 

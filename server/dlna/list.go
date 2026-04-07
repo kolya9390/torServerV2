@@ -282,7 +282,7 @@ func getLink(host, path string) string {
 func getObjFromTorrent(path, parent, host string, torr *torr.Torrent, file *state.TorrentFileStat) (ret any) {
 	mime, err := mt.MimeTypeByPath(file.Path)
 	if err != nil {
-		if settings.BTsets.EnableDebug {
+		if settings.GetSettings().EnableDebug {
 			log.TLogln("Can't detect mime type", err)
 		}
 
@@ -293,7 +293,7 @@ func getObjFromTorrent(path, parent, host string, torr *torr.Torrent, file *stat
 		return
 	}
 
-	if settings.BTsets.EnableDebug {
+	if settings.GetSettings().EnableDebug {
 		log.TLogln("mime type", mime.String(), file.Path)
 	}
 

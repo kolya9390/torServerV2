@@ -152,7 +152,7 @@ func (r *Reader) getPieceNum(offset int64) int {
 }
 
 func (r *Reader) getOffsetRange() (int64, int64) {
-	prc := int64(settings.BTsets.ReaderReadAHead)
+	prc := int64(settings.GetSettings().ReaderReadAHead)
 
 	readers := int64(r.getUseReaders())
 	if readers == 0 {

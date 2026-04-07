@@ -50,8 +50,8 @@ func BenchmarkMemPieceWriteAt(b *testing.B) {
 
 	for range b.N {
 		// Simulate sequential piece write
-		mp.Release() // Reset to measure fresh allocation
-		_, _ = mp.WriteAt(data, 0)
+		mp.Release()               // Reset to measure fresh allocation
+		_, _ = mp.WriteAt(data, 0) //nolint:errcheck // benchmark intentionally ignores return value
 	}
 }
 
@@ -76,7 +76,7 @@ func BenchmarkMemPieceWriteAtSmallChunks(b *testing.B) {
 		mp.Release()
 		// Write piece in 8 chunks of 32KB
 		for off := int64(0); off < pieceLen; off += chunkSize {
-			_, _ = mp.WriteAt(data, off)
+			_, _ = mp.WriteAt(data, off) //nolint:errcheck // benchmark intentionally ignores return value
 		}
 	}
 }

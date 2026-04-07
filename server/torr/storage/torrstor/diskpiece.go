@@ -20,7 +20,7 @@ type DiskPiece struct {
 }
 
 func NewDiskPiece(p *Piece) *DiskPiece {
-	name := filepath.Join(settings.BTsets.TorrentsSavePath, p.cache.hash.HexString(), strconv.Itoa(p.ID))
+	name := filepath.Join(settings.GetSettings().TorrentsSavePath, p.cache.hash.HexString(), strconv.Itoa(p.ID))
 
 	ff, err := os.Stat(name)
 	if err == nil {
