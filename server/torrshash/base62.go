@@ -21,7 +21,7 @@ func Encode62(b []byte) string {
 	zero := big.NewInt(0)
 	mod := new(big.Int)
 
-	var res []byte
+	res := make([]byte, 0, 128)
 
 	for x.Cmp(zero) > 0 {
 		x.QuoRem(x, base, mod)

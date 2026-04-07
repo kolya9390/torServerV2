@@ -1,52 +1,59 @@
-# TorrServer v3.0 — Минималистичный Dockerfile
-# Без Web UI, без Prometheus, без лишнего
+# TorrServer — Minimal multi-stage Dockerfile
+# No Web UI, no Prometheus, production-ready
 
+### Build stage
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
-# Установка зависимостей для сборки
-RUN apk add --update git
+# Install build dependencies
+RUN apk add --no-cache git
 
 WORKDIR /src
 
-# Кэширование зависимостей Go
+# Cache Go modules (copy manifests first)
 COPY server/go.mod server/go.sum ./
 RUN go mod download
 
-# Копирование исходников
+# Copy source code and build
 COPY server/ ./
 
-# Сборка с автоматическим определением платформы
 ARG TARGETOS TARGETARCH
-RUN GOOS=$TARGETOS GOARCH=$TARGETARCH CGO_ENABLED=0 go build -ldflags '-w -s' -o /torrserver ./cmd
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH CGO_ENABLED=0 \
+    go build -ldflags '-w -s' -o /torrserver ./cmd
 
 
-### runtime image
+### Runtime stage
 FROM alpine:3.21
 
-# Установка минимальных зависимостей
-RUN apk add --no-cache ffmpeg ca-certificates tzdata tini
+# Install runtime dependencies only
+RUN apk add --no-cache ca-certificates tini tzdata
 
-# Копирование бинарника
+# Create non-root user
+RUN addgroup -g 1000 torrserver && \
+    adduser -u 1000 -G torrserver -s /bin/sh -D torrserver
+
+# Copy binary from builder
 COPY --from=builder /torrserver /usr/bin/torrserver
 
-# Создание директорий
-RUN mkdir -p /opt/ts/config /opt/ts/torrents /opt/ts/log
+# Create data directories
+RUN mkdir -p /opt/ts/config /opt/ts/torrents /opt/ts/log && \
+    chown -R torrserver:torrserver /opt/ts
 
-# Порты
+# Expose ports
 # 8090 — HTTP API
 # 9080 — DLNA
 EXPOSE 8090 9080
 
-# Переменные окружения по умолчанию
+# Default environment variables
 ENV TS_PORT=8090
 ENV TS_DLN=1
 ENV TS_CONF_PATH=/opt/ts/config
 ENV TS_TORR_DIR=/opt/ts/torrents
 ENV TS_LOG_PATH=/opt/ts/log
 
-# Healthcheck
+# Health check
 HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8090/healthz || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8090/healthz || exit 1
 
-# Точка входа с tini для корректной обработки сигналов
+# Run as non-root user with tini for signal handling
+USER torrserver
 ENTRYPOINT ["/sbin/tini", "--", "/usr/bin/torrserver"]

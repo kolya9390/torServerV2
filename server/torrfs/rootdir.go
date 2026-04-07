@@ -63,7 +63,7 @@ func (d *RootDir) ReadDir(n int) ([]fs.DirEntry, error) {
 		nodes[cat] = NewCategoryDir(cat)
 	}
 
-	var entries []fs.DirEntry
+	entries := make([]fs.DirEntry, 0, 8)
 	for _, c := range nodes {
 		entries = append(entries, c)
 	}

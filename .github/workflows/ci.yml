@@ -36,7 +36,7 @@ jobs:
           flags: unittests
 
   lint:
-    name: Lint (basic)
+    name: Lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -49,37 +49,13 @@ jobs:
           go-version: '1.26'
           cache: true
 
-      - name: Run golangci-lint (basic)
+      - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.1
           install-mode: goinstall
           working-directory: server
           args: --timeout=10m
-
-  lint-strict:
-    name: Lint (strict)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # Allow failures for now — strict lint is informative
-    continue-on-error: true
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
-          cache: true
-
-      - name: Run golangci-lint (strict)
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.1
-          install-mode: goinstall
-          working-directory: server
-          args: --config=.golangci-strict.yml --timeout=10m
 
   build:
     name: Build

@@ -1,14 +1,321 @@
+# golangci-lint basic configuration for CI
+# Purpose: Fast checks for push/PR, strict checks in strict config
+
 version: "2"
 
 run:
-  timeout: 5m
+  timeout: 10m
   tests: true
+  allow-parallel-runners: true
+  allow-serial-runners: true
 
 linters:
-  default: none
+  default: standard
+
   enable:
+    - errcheck
+    - gosec
+    - staticcheck
     - govet
     - ineffassign
+    - unconvert
+    - gocognit
+    - gocyclo
+    - funlen
+    - nestif
+    - misspell
+    - whitespace
+    - wsl
+    - nlreturn
+    - gomoddirectives
+    - godox
+    - godot
+    - prealloc
+    - perfsprint
+    - revive
+    - varnamelen
+    - recvcheck
+    - copyloopvar
+    - usestdlibvars
+    - intrange
+    - lll
+
+  settings:
+    lll:
+      line-length: 180
+      tab-width: 4
+
+    varnamelen:
+      max-distance: 20
+      min-name-length: 2
+      ignore-names:
+        - i
+        - j
+        - k
+        - n
+        - wg
+        - mu
+        - err
+        - ctx
+        - ch
+        - fn
+        - id
+        - ok
+        - db
+        - ip
+        - tr
+        - t
+        - p
+        - d
+        - c
+        - f
+        - b
+        - a
+        - s
+
+    revive:
+      rules:
+        - name: var-naming
+          arguments:
+            - ["ID", "API", "HTTP", "JSON", "URL", "DB", "BBolt", "DSLNA", "SSL", "TLS", "IP", "TCP", "UDP", "M3U", "TMDB", "CLI", "DI", "FS", "OS", "HTTPAuth", "WebDAV", "FUSE", "UPNP", "PEX", "DHT", "NAT", "CGO", "RAM", "CPU", "IO", "GB", "MB", "KB", "MS", "NS"]
+            - []
+        - name: exported
+          arguments:
+            - disableStutteringCheck
+        - name: indent-error-flow
+        - name: errorf
+        - name: blank-imports
+        - name: context-as-argument
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: range
+        - name: receiver-naming
+        - name: superfluous-else
+        - name: unnecessary-stmt
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: unused-receiver
+        - name: struct-tag
+        - name: constant-logical-expr
+        - name: early-return
+
+    gocognit:
+      min-complexity: 30
+
+    gocyclo:
+      min-complexity: 30
+
+    funlen:
+      lines: 100
+      statements: 50
+
+    nestif:
+      min-complexity: 15
+
+    godot:
+      scope: declarations
+      capital: true
+      period: true
+      exclude:
+        - "^fixme:"
+        - "^todo:"
+
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+      exclude-functions:
+        - fmt:.*
+        - io/ioutil:^Read.*
+        - (*bytes.Buffer).Write
+        - (*bytes.Buffer).WriteByte
+        - (*bytes.Buffer).WriteRune
+        - (*bytes.Buffer).WriteString
+        - (*bytes.Buffer).WriteTo
+        - (*strings.Builder).Write
+        - (*strings.Builder).WriteByte
+        - (*strings.Builder).WriteRune
+        - (*strings.Builder).WriteString
+        - (*strings.Builder).Copy
+
+    gosec:
+      excludes:
+        - G104
+        - G107
+        - G115
+        - G204
+        - G304
+        - G402
+        - G501
+        - G505
+
+    staticcheck:
+      checks:
+        - "all"
+        - "-SA1019"
+        - "-SA4000"
+
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: true
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+
+    rules:
+      # Exclude test files from style linters
+      - path: _test.go
+        linters:
+          - lll
+          - funlen
+          - gocognit
+          - gocyclo
+          - varnamelen
+          - revive
+
+      # Exclude revive for mocks
+      - path: mocks/
+        linters:
+          - revive
+        text: "unused-parameter|unused-receiver"
+
+      # Exclude errcheck for mocks and tests
+      - path: mocks/
+        linters:
+          - errcheck
+        text: "Error return value is not checked"
+      - path: _test.go
+        linters:
+          - errcheck
+        text: "Error return value"
+
+      # Exclude revive for noop service implementations
+      - linters:
+          - revive
+        text: "unused-parameter|unused-receiver"
+        source: "noop.*Service"
+      - path: internal/app/apiservices/defaults.go
+        linters:
+          - revive
+        text: "unused-parameter|unused-receiver"
+      - path: internal/app/apiservices/playback.go
+        linters:
+          - revive
+        text: "unused-parameter|unused-receiver"
+
+      # Exclude revive for DLNA callback signatures
+      - path: dlna/
+        linters:
+          - revive
+        text: "unused-parameter|indent-error-flow"
+
+      # Exclude revive for FUSE interface implementations
+      - path: torrfs/
+        linters:
+          - revive
+        text: "unused-parameter|unused-receiver"
+
+      # Exclude revive for interface implementations (storage, settings, utils)
+      - path: settings/
+        linters:
+          - revive
+        text: "unused-parameter|unused-receiver"
+      - path: torr/storage/torrstor/piecefake.go
+        linters:
+          - revive
+        text: "unused-parameter"
+      - path: torr/storage/torrstor/storage.go
+        linters:
+          - revive
+        text: "unused-parameter"
+      - path: utils/circuitbreaker/circuitbreaker.go
+        linters:
+          - revive
+        text: "unused-parameter"
+      - path: web/api/error_middleware.go
+        linters:
+          - revive
+        text: "unused-parameter"
+      - path: web/webinfra/webinfra.go
+        linters:
+          - revive
+        text: "unused-receiver"
+
+      # Exclude revive for package naming
+      - linters:
+          - revive
+        text: "avoid package names that conflict with Go standard library package names"
+        path: "log/|metrics/|version/"
+      - linters:
+          - revive
+        text: "avoid meaningless package names"
+        path: "torr/utils/|utils/|tmdb|web/api"
+
+      # Exclude gocyclo for stream handler
+      - linters:
+          - gocyclo
+        text: "cyclomatic complexity"
+        path: web/api/stream.go
+      - linters:
+          - funlen
+        text: "Function 'stream' has too many statements"
+        path: web/api/stream.go
+
+      # Exclude wsl for runtime_server.go
+      - path: internal/app/runtime_server.go
+        linters:
+          - wsl
+        text: "if statements should only be cuddled"
+
+      # Exclude gosec for test files
+      - path: _test.go
+        linters:
+          - gosec
+        text: "G306|G304|G302|G703|G704|G702|G701"
+
+      # Exclude gosec SSRF false positives
+      - linters:
+          - gosec
+        text: "G704|G703|G702|G701"
+        path: "torr/utils/webImageChecker.go|torznab/torznab.go|web/api/utils/link.go|internal/torrentparse/parse.go|config/config.go"
+
+      # Exclude gosec APIKey warnings
+      - linters:
+          - gosec
+        text: "G117"
+        path: "config/config.go|settings/btsets.go"
+
+      # Exclude revive for service adapter
+      - path: torr/service_adapter.go
+        linters:
+          - revive
+        text: "unused-receiver"
+
+      # Exclude godox for TODO/FIXME comments
+      - linters:
+          - godox
+        text: "Line contains TODO/BUG/FIXME"
+
+      # Exclude gomoddirectives for replace directives
+      - linters:
+          - gomoddirectives
+        text: "replacement are not allowed"
+
+      # Exclude staticcheck false positives
+      - linters:
+          - staticcheck
+        text: "SA4000"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 issues:
   max-issues-per-linter: 0

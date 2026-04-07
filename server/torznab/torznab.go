@@ -121,7 +121,7 @@ func Search(query string, index int) []*TorrentDetails {
 func searchOne(host, key, query string) []*TorrentDetails {
 	cb := getBreaker()
 
-	var results []*TorrentDetails
+	results := make([]*TorrentDetails, 0, 32)
 
 	err := cb.Execute(func() error {
 		var err error
@@ -176,7 +176,7 @@ func parseSearchResponse(resp *http.Response) ([]*TorrentDetails, error) {
 		return nil, fmt.Errorf("decode error: %w", err)
 	}
 
-	var results []*TorrentDetails
+	results := make([]*TorrentDetails, 0, 32)
 
 	for _, item := range torznabResp.Channel.Items {
 		detail := parseItem(item)

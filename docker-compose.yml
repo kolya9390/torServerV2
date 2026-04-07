@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  torrserver:
+    build:
+      context: .
+    container_name: torrserver-light
+
+    ports:
+      - "8090:8090"   # HTTP API
+      - "9080:9080"   # DLNA
+
+    environment:
+      # Основные
+      - TS_PORT=8090
+      - TS_DLN=1
+      - TS_CONF_PATH=/opt/ts/config
+      - TS_TORR_DIR=/opt/ts/torrents
+      - TS_LOG_PATH=/opt/ts/log
+
+    volumes:
+      - ./config:/opt/ts/config
+      - ./torrents:/opt/ts/torrents
+      - ./logs:/opt/ts/log
+
+    mem_limit: 512m
+    cpus: 1.0
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8090/healthz"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"

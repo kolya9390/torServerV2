@@ -25,7 +25,7 @@ all: build
 
 ## build: Build the server binary (default, no Prometheus)
 build:
-	@echo "Building $(BINARY_NAME) (without Prometheus)..."
+	@echo "Building $(BINARY_NAME)"
 	@mkdir -p $(BINARY_DIR)
 	cd server && $(GOBUILD) $(LDFLAGS) -o ../$(BINARY_DIR)/$(BINARY_NAME) ./cmd
 
@@ -47,15 +47,15 @@ test-coverage:
 	cd server && $(GOCMD) tool cover -html=coverage.out -o ../coverage.html
 	@echo "Coverage report: coverage.html"
 
-## lint: Run linter with strict config
+## lint: Run linter
 lint:
-	@echo "Running linter (strict mode)..."
-	cd server && $(GOLANGCI_LINT) run -c $(LINT_CONFIG) ./...
+	@echo "Running linter..."
+	cd server && $(GOLANGCI_LINT) run ./...
 
-## lint-strict: Run linter with strict config and fix auto-fixable issues
+## lint-fix: Run linter with auto-fix
 lint-fix:
-	@echo "Running linter (strict mode, auto-fix)..."
-	cd server && $(GOLANGCI_LINT) run -c $(LINT_CONFIG) --fix ./...
+	@echo "Running linter (auto-fix)..."
+	cd server && $(GOLANGCI_LINT) run --fix ./...
 
 ## lint-legacy: Run legacy linter script (deprecated)
 lint-legacy:
