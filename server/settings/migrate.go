@@ -59,6 +59,7 @@ func loadTorrentFromBucket(hdb *bolt.Bucket, hash string) *torrentBackupDB {
 		val := hdb.Get([]byte(key))
 		if val == nil {
 			log.TLogln("MigrateTorrents: missing required field", key, "for hash", hash)
+
 			return nil
 		}
 
@@ -128,6 +129,7 @@ func loadAllTorrents(db *bolt.DB) []*torrentBackupDB {
 		}
 
 		c := tdb.Cursor()
+
 		for h, _ := c.First(); h != nil; h, _ = c.Next() {
 			hdb := tdb.Bucket(h)
 			if hdb == nil {
@@ -158,6 +160,7 @@ func migrateAndSave(torrs []*torrentBackupDB) {
 		spec, err := torrentparse.ParseLink(oldTorr.Magnet)
 		if err != nil {
 			log.TLogln("MigrateTorrents: parse link error, skipping", oldTorr.Name)
+
 			skipped++
 
 			continue
@@ -181,14 +184,15 @@ func migrateAndSave(torrs []*torrentBackupDB) {
 		}
 
 		AddTorrent(newTorr)
+
 		saved++
 	}
 
 	log.TLogln("MigrateTorrents: saved", saved, "torrents, skipped", skipped)
 }
 
-// MigrateSettingsToJson migrates Settings from BBolt to JSON.
-func MigrateSettingsToJson(bboltDB, jsonDB TorrServerDB) error {
+// MigrateSettingsToJSON migrates Settings from BBolt to JSON.
+func MigrateSettingsToJSON(bboltDB, jsonDB TorrServerDB) error {
 	// if BTsets != nil {
 	// 	return errors.New("migration must be called before initializing BTSets")
 	// }
@@ -200,8 +204,8 @@ func MigrateSettingsToJson(bboltDB, jsonDB TorrServerDB) error {
 	return err
 }
 
-// MigrateSettingsFromJson migrates Settings from JSON to BBolt.
-func MigrateSettingsFromJson(jsonDB, bboltDB TorrServerDB) error {
+// MigrateSettingsFromJSON migrates Settings from JSON to BBolt.
+func MigrateSettingsFromJSON(jsonDB, bboltDB TorrServerDB) error {
 	// if BTsets != nil {
 	// 	return errors.New("migration must be called before initializing BTSets")
 	// }
@@ -213,16 +217,16 @@ func MigrateSettingsFromJson(jsonDB, bboltDB TorrServerDB) error {
 	return err
 }
 
-// MigrateViewedToJson migrates Viewed data from BBolt to JSON.
-func MigrateViewedToJson(bboltDB, jsonDB TorrServerDB) error {
+// MigrateViewedToJSON migrates Viewed data from BBolt to JSON.
+func MigrateViewedToJSON(bboltDB, jsonDB TorrServerDB) error {
 	migrated, skipped, err := MigrateAll(bboltDB, jsonDB, "Viewed")
 	log.TLogln(fmt.Sprintf("Viewed->JSON: %d migrated, %d skipped", migrated, skipped))
 
 	return err
 }
 
-// MigrateViewedFromJson migrates Viewed data from JSON to BBolt.
-func MigrateViewedFromJson(jsonDB, bboltDB TorrServerDB) error {
+// MigrateViewedFromJSON migrates Viewed data from JSON to BBolt.
+func MigrateViewedFromJSON(jsonDB, bboltDB TorrServerDB) error {
 	migrated, skipped, err := MigrateAll(jsonDB, bboltDB, "Viewed")
 	log.TLogln(fmt.Sprintf("Viewed->BBolt: %d migrated, %d skipped", migrated, skipped))
 
@@ -262,7 +266,7 @@ func migrateSingleWithReport(source, target TorrServerDB, xpath, name string, dr
 	targetData := target.Get(xpath, name)
 	if targetData != nil {
 		// Check if already identical
-		if equal, err := isByteArraysEqualJson(sourceData, targetData); err == nil && equal {
+		if equal, err := isByteArraysEqualJSON(sourceData, targetData); err == nil && equal {
 			if IsDebug() {
 				log.TLogln(fmt.Sprintf("Skipping %s/%s (already identical)", xpath, name))
 			}
@@ -385,13 +389,13 @@ func SmartMigrate(bboltDB, jsonDB TorrServerDB, forceDirection string) error {
 	// }
 	switch forceDirection {
 	case "viewed_to_json":
-		return MigrateViewedToJson(bboltDB, jsonDB)
+		return MigrateViewedToJSON(bboltDB, jsonDB)
 	case "viewed_to_bbolt":
-		return MigrateViewedFromJson(jsonDB, bboltDB)
+		return MigrateViewedFromJSON(jsonDB, bboltDB)
 	case "settings_to_json":
-		return MigrateSettingsToJson(bboltDB, jsonDB)
+		return MigrateSettingsToJSON(bboltDB, jsonDB)
 	case "settings_to_bbolt":
-		return MigrateSettingsFromJson(jsonDB, bboltDB)
+		return MigrateSettingsFromJSON(jsonDB, bboltDB)
 	case "sync_both":
 		// Simple sync: copy missing data both ways
 		if err := migrateMissing(bboltDB, jsonDB, "Settings", "BitTorr"); err != nil {
@@ -404,7 +408,7 @@ func SmartMigrate(bboltDB, jsonDB TorrServerDB, forceDirection string) error {
 	}
 }
 
-func isByteArraysEqualJson(a, b []byte) (bool, error) {
+func isByteArraysEqualJSON(a, b []byte) (bool, error) {
 	if len(a) == 0 && len(b) == 0 {
 		return true, nil
 	}
@@ -438,7 +442,7 @@ func isByteArraysEqualJson(a, b []byte) (bool, error) {
 }
 
 // Optimized version for performance.
-func isByteArraysEqualJsonOptimized(a, b []byte) (bool, error) {
+func isByteArraysEqualJSONOptimized(a, b []byte) (bool, error) {
 	// Fast paths
 	if a == nil && b == nil {
 		return true, nil
@@ -466,7 +470,7 @@ func isByteArraysEqualJsonOptimized(a, b []byte) (bool, error) {
 		return true, nil
 	}
 	// Parse as JSON (slower but accurate)
-	return isByteArraysEqualJson(a, b)
+	return isByteArraysEqualJSON(a, b)
 }
 
 func verifyMigration(source, target TorrServerDB, xpath, name string, originalData []byte) error {
@@ -476,7 +480,7 @@ func verifyMigration(source, target TorrServerDB, xpath, name string, originalDa
 		return fmt.Errorf("migration failed: no data after migration for %s/%s", xpath, name)
 	}
 	// Compare with original
-	if equal, err := isByteArraysEqualJsonOptimized(originalData, migratedData); err != nil {
+	if equal, err := isByteArraysEqualJSONOptimized(originalData, migratedData); err != nil {
 		return fmt.Errorf("verification failed for %s/%s: %w", xpath, name, err)
 	} else if !equal {
 		return fmt.Errorf("data mismatch after migration for %s/%s", xpath, name)

@@ -74,7 +74,6 @@ linters:
           arguments:
             - ["ID", "API", "HTTP", "JSON", "URL", "DB", "BBolt", "DSLNA", "SSL", "TLS", "IP", "TCP", "UDP", "M3U", "TMDB", "CLI", "DI", "FS", "OS", "HTTPAuth", "WebDAV", "FUSE", "UPNP", "PEX", "DHT", "NAT", "CGO", "RAM", "CPU", "IO", "GB", "MB", "KB", "MS", "NS"]
             - []
-            - - "^.*_test\\.go$"
         - name: exported
           arguments:
             - disableStutteringCheck
@@ -165,21 +164,16 @@ linters:
       - std-error-handling
 
     rules:
+      # Exclude test files from style linters (tests have different style requirements)
       - path: _test\.go
         linters:
           - lll
           - funlen
           - gocognit
           - gocyclo
-
-      - path: _test\.go
-        linters:
           - varnamelen
 
-      - linters:
-          - varnamelen
-        text: "variable name '.*' is too short"
-
+      # Exclude revive for test files and mocks (interface implementations require unused params)
       - path: _test\.go
         linters:
           - revive
@@ -187,24 +181,34 @@ linters:
       - path: mocks/
         linters:
           - revive
-        text: "unused-parameter"
+        text: "unused-parameter|unused-receiver"
       - path: noop
         linters:
           - revive
-        text: "unused-parameter"
+        text: "unused-parameter|unused-receiver"
 
+      # Exclude revive for noop service implementations (they document interface contracts)
+      - linters:
+          - revive
+        text: "unused-parameter|unused-receiver"
+        source: "noop.*Service"
+
+      # Exclude godox for TODO/FIXME comments (these are planning notes)
       - linters:
           - godox
         text: "Line contains TODO/BUG/FIXME"
 
+      # Exclude gomoddirectives for replace directives (needed for fork dependencies)
       - linters:
           - gomoddirectives
         text: "replacement are not allowed"
 
+      # Exclude gosec false positives
       - linters:
           - gosec
         text: "G304|G204|G402"
 
+      # Exclude staticcheck false positives
       - linters:
           - staticcheck
         text: "SA4000"

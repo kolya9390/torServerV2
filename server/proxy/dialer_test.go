@@ -106,6 +106,7 @@ func TestConfigValidate(t *testing.T) {
 			if tt.wantErr && err == nil {
 				t.Error("expected validation error, got nil")
 			}
+
 			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected validation error: %v", err)
 			}
@@ -130,6 +131,7 @@ func TestDialerNoProxy(t *testing.T) {
 	if d.IsConfigured() {
 		t.Error("dialer with nil config should not be configured")
 	}
+
 	if d.HTTPProxy() != nil {
 		t.Error("HTTPProxy should return nil for nil config")
 	}
@@ -145,6 +147,7 @@ func TestDialerConfigured(t *testing.T) {
 	if !d.IsConfigured() {
 		t.Error("dialer should be configured")
 	}
+
 	if d.HTTPProxy() == nil {
 		t.Error("HTTPProxy should return non-nil function")
 	}

@@ -16,7 +16,7 @@ import (
 	"server/log"
 )
 
-func CheckImgUrl(link string) bool {
+func CheckImgURL(link string) bool {
 	if link == "" {
 		return false
 	}

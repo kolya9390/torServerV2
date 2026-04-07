@@ -114,7 +114,13 @@ func GetTorrent(hashHex string) *Torrent {
 		go func() {
 			log.TLogln("New torrent", tor.Hash())
 
-			tr, _ := NewTorrent(tor.TorrentSpec, bts)
+			tr, err := NewTorrent(tor.TorrentSpec, bts)
+			if err != nil {
+				log.TLogln("Error creating torrent:", err)
+
+				return
+			}
+
 			if tr != nil {
 				tr.Title = tor.Title
 				tr.Poster = tor.Poster
@@ -188,7 +194,11 @@ func RemTorrent(hashHex string) {
 	if bts.RemoveTorrent(hash) {
 		if sets.BTsets.UseDisk && hashHex != "" && hashHex != "/" {
 			name := filepath.Join(sets.BTsets.TorrentsSavePath, hashHex)
-			ff, _ := os.ReadDir(name)
+
+			ff, readErr := os.ReadDir(name)
+			if readErr != nil {
+				log.TLogln("Error reading directory:", readErr)
+			}
 
 			for _, f := range ff {
 				_ = os.Remove(filepath.Join(name, f.Name()))

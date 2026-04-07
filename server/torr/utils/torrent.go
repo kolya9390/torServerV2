@@ -1,9 +1,9 @@
 package utils
 
 import (
+	"crypto/rand"
 	"encoding/base32"
 	"io"
-	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"

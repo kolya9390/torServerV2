@@ -39,7 +39,10 @@ func pack(t *TorrsHash) ([]byte, error) {
 		return nil, err
 	}
 
-	hashBytes, _ := hex.DecodeString(strings.TrimSpace(t.Hash))
+	hashBytes, err := hex.DecodeString(strings.TrimSpace(t.Hash))
+	if err != nil {
+		return nil, err
+	}
 
 	_, err = zw.Write(hashBytes)
 	if err != nil {

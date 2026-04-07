@@ -160,16 +160,16 @@ func TestMigrateAllWithRealBackendsAndDryRun(t *testing.T) {
 	globalBboltDBMu.Lock()
 	globalBboltDB = nil
 	globalBboltDBMu.Unlock()
-	globalJsonDBMu.Lock()
-	globalJsonDB = nil
-	globalJsonDBMu.Unlock()
+	globalJSONDBMu.Lock()
+	globalJSONDB = nil
+	globalJSONDBMu.Unlock()
 
 	bboltDB := NewTDB()
 	if bboltDB == nil {
 		t.Fatalf("failed to init bbolt db")
 	}
 
-	jsonDB := NewJsonDB()
+	jsonDB := NewJSONDB()
 	if jsonDB == nil {
 		t.Fatalf("failed to init json db")
 	}
@@ -180,9 +180,9 @@ func TestMigrateAllWithRealBackendsAndDryRun(t *testing.T) {
 		globalBboltDB = nil
 		globalBboltDBMu.Unlock()
 
-		globalJsonDBMu.Lock()
-		globalJsonDB = nil
-		globalJsonDBMu.Unlock()
+		globalJSONDBMu.Lock()
+		globalJSONDB = nil
+		globalJSONDBMu.Unlock()
 	})
 
 	bboltDB.Set("Viewed", "hash-a", mustJSON(t, map[string]any{"0": struct{}{}}))

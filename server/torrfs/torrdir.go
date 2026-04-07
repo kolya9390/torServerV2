@@ -139,9 +139,9 @@ func (d *TorrDir) SetTorrent(torr *torr.Torrent) { d.torr = torr }
 func (d *TorrDir) Name() string { return d.info.Name() }
 func (d *TorrDir) IsDir() bool  { return true }
 func (d *TorrDir) Type() fs.FileMode {
-	s, _ := d.Stat()
+	return d.info.Mode()
 
-	return s.Mode()
+	
 }
 func (d *TorrDir) Info() (fs.FileInfo, error) { return d.info, nil }
 func (d *TorrDir) Stat() (fs.FileInfo, error) { return d.info, nil }

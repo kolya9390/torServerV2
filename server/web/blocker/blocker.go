@@ -23,13 +23,13 @@ func Blocker() gin.HandlerFunc {
 
 	name := filepath.Join(settings.Path, "bip.txt")
 	buf := readIPListFile(name)
-	blackIpList := scanBuf(buf)
+	blackIPList := scanBuf(buf)
 
 	name = filepath.Join(settings.Path, "wip.txt")
 	buf = readIPListFile(name)
-	whiteIpList := scanBuf(buf)
+	whiteIPList := scanBuf(buf)
 
-	if blackIpList.NumRanges() == 0 && whiteIpList.NumRanges() == 0 {
+	if blackIPList.NumRanges() == 0 && whiteIPList.NumRanges() == 0 {
 		return emptyFN
 	}
 
@@ -43,8 +43,8 @@ func Blocker() gin.HandlerFunc {
 
 		minifyIP(&ip)
 
-		if whiteIpList.NumRanges() > 0 {
-			if _, ok := whiteIpList.Lookup(ip); !ok {
+		if whiteIPList.NumRanges() > 0 {
+			if _, ok := whiteIPList.Lookup(ip); !ok {
 				log.WebLogln("Block ip, not in white list", ip.String())
 				c.String(http.StatusTeapot, "Banned")
 				c.Abort()
@@ -53,8 +53,8 @@ func Blocker() gin.HandlerFunc {
 			}
 		}
 
-		if blackIpList.NumRanges() > 0 {
-			if r, ok := blackIpList.Lookup(ip); ok {
+		if blackIPList.NumRanges() > 0 {
+			if r, ok := blackIPList.Lookup(ip); ok {
 				log.WebLogln("Block ip, in black list:", ip.String(), "in range", r.Description, ":", r.First, "-", r.Last)
 				c.String(http.StatusTeapot, "Banned")
 				c.Abort()

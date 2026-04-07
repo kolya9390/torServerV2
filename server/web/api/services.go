@@ -199,16 +199,16 @@ func (noopSettingsService) ReadOnly() bool        { return false }
 func (noopSettingsService) GetStoragePreferences() map[string]any {
 	return map[string]any{}
 }
-func (noopSettingsService) SetStoragePreferences(map[string]any) error { return nil }
-func (noopSettingsService) TMDBConfig() (sets.TMDBConfig, bool)        { return sets.TMDBConfig{}, false }
-func (noopSettingsService) BuildPlayURL(hash, fileID string) string    { return "" }
-func (noopSettingsService) EnableDLNA() bool                           { return false }
-func (noopSettingsService) EnableDebug() bool                          { return false }
-func (noopViewedService) SetViewed(v *sets.Viewed)                     {}
-func (noopViewedService) RemoveViewed(v *sets.Viewed)                  {}
-func (noopViewedService) ListViewed(hash string) []*sets.Viewed        { return []*sets.Viewed{} }
-func (noopSystemService) Shutdown()                                    {}
-func (noopSearchService) EnableTorznabSearch() bool                    { return false }
+func (noopSettingsService) SetStoragePreferences(prefs map[string]any) error { return nil }
+func (noopSettingsService) TMDBConfig() (sets.TMDBConfig, bool)            { return sets.TMDBConfig{}, false }
+func (noopSettingsService) BuildPlayURL(hash, fileID string) string        { return "" }
+func (noopSettingsService) EnableDLNA() bool                               { return false }
+func (noopSettingsService) EnableDebug() bool                              { return false }
+func (noopViewedService) SetViewed(v *sets.Viewed)              {}
+func (noopViewedService) RemoveViewed(v *sets.Viewed)           {}
+func (noopViewedService) ListViewed(hash string) []*sets.Viewed { return []*sets.Viewed{} }
+func (noopSystemService) Shutdown()                             {}
+func (noopSearchService) EnableTorznabSearch() bool             { return false }
 func (noopSearchService) TorznabSearch(query string, index int) []*torznab.TorrentDetails {
 	return []*torznab.TorrentDetails{}
 }

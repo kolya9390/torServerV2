@@ -52,6 +52,6 @@ func play(c *gin.Context) {
 	}
 
 	if err := target.Torrent.Stream(target.FileIndex, c.Request, c.Writer); err != nil {
-		_ = c.Error(err)
+		c.Error(err) //nolint:errcheck // gin adds error to context
 	}
 }

@@ -79,6 +79,7 @@ func (d *Dialer) getProxyDialer() (proxy.Dialer, error) {
 	dialer, err := d.createProxyDialer()
 	if err != nil {
 		d.initErr = err
+
 		return nil, err
 	}
 

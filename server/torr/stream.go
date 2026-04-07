@@ -199,6 +199,7 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 
 		return errors.New("cannot create torrent reader")
 	}
+
 	defer t.CloseReader(reader)
 	defer cancel()
 

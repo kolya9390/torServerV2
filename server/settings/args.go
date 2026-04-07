@@ -13,7 +13,7 @@ type ExecArgs struct {
 	LogPath     string
 	WebLogPath  string
 	RDB         bool
-	HttpAuth    bool
+	HTTPAuth    bool
 	DontKill    bool
 	UI          bool
 	TorrentsDir string

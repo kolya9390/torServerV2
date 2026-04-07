@@ -251,7 +251,7 @@ func (t *Torrent) Files() []*torrent.File {
 
 func (t *Torrent) Hash() metainfo.Hash {
 	if t.Torrent != nil {
-		return t.Torrent.InfoHash()
+		return t.InfoHash()
 	}
 
 	if t.TorrentSpec != nil {

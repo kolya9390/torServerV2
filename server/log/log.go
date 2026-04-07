@@ -69,7 +69,9 @@ func Init(logPath, webLogPath string) {
 // Close закрывает логгер.
 func Close() {
 	if logger != nil {
-		_ = logger.Sync()
+		if err := logger.Sync(); err != nil {
+			logger.Warn("failed to sync logger", zap.Error(err))
+		}
 	}
 }
 
@@ -178,7 +180,11 @@ func randomString(n int) string {
 
 func GetRequestID(c *gin.Context) string {
 	if id, exists := c.Get(ContextKeyRequestID); exists {
-		return id.(string)
+		if s, ok := id.(string); ok {
+			return s
+		}
+
+		return ""
 	}
 
 	return ""

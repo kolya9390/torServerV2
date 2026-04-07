@@ -16,7 +16,7 @@ import (
 
 // SetupAuth enables passive auth parsing middleware when HTTP auth is configured.
 func SetupAuth(engine *gin.Engine) {
-	if !settings.HttpAuth {
+	if !settings.HTTPAuth {
 		return
 	}
 
@@ -63,7 +63,7 @@ func BasicAuth(accounts gin.Accounts) gin.HandlerFunc {
 // CheckAuth enforces authentication for protected routes.
 func CheckAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !settings.HttpAuth {
+		if !settings.HTTPAuth {
 			return
 		}
 

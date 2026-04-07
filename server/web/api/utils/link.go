@@ -45,7 +45,7 @@ func ParseLink(link string) (*torrent.TorrentSpec, error) {
 	case "magnet":
 		return fromMagnet(urlLink.String())
 	case "http", "https":
-		return fromHttp(urlLink.String())
+		return fromHTTP(urlLink.String())
 	case "":
 		return fromMagnet("magnet:?xt=urn:btih:" + urlLink.Path)
 	case "file":
@@ -62,6 +62,7 @@ func fromMagnet(link string) (*torrent.TorrentSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return spec, nil
 }
 
@@ -87,7 +88,7 @@ func ParseTorrsHash(token string) (*torrent.TorrentSpec, *torrshash.TorrsHash, e
 	}, th, nil
 }
 
-func fromHttp(link string) (*torrent.TorrentSpec, error) {
+func fromHTTP(link string) (*torrent.TorrentSpec, error) {
 	req, err := http.NewRequest(http.MethodGet, link, nil)
 	if err != nil {
 		return nil, err

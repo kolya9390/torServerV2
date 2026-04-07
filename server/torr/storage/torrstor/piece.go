@@ -15,7 +15,7 @@ import (
 type Piece struct {
 	storage.PieceImpl `json:"-"`
 
-	Id   int `json:"-"`
+	Id int `json:"-"`
 
 	// Size is accessed concurrently by WriteAt/ReadAt and cleanPieces.
 	Size atomic.Int64 `json:"size"`

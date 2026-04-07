@@ -23,6 +23,7 @@ import (
 func canPreload(t *Torrent) bool {
 	t.muTorrent.Lock()
 	defer t.muTorrent.Unlock()
+
 	return t.Stat == state.TorrentWorking
 }
 
@@ -31,6 +32,7 @@ func canPreload(t *Torrent) bool {
 func isPreloadComplete(t *Torrent) bool {
 	t.muTorrent.Lock()
 	defer t.muTorrent.Unlock()
+
 	return t.Stat == state.TorrentPreload
 }
 
@@ -86,6 +88,7 @@ func (t *Torrent) runPreloadLoop(reader torrent.Reader, readerEnd int64) error {
 	for offset+int64(len(tmp)) < readerEnd {
 		if !isPreloadComplete(t) {
 			log.TLogln("Preload cancelled")
+
 			return nil
 		}
 
@@ -93,8 +96,10 @@ func (t *Torrent) runPreloadLoop(reader torrent.Reader, readerEnd int64) error {
 		if err != nil {
 			if err != io.EOF {
 				log.TLogln("Error preload:", err)
+
 				return err
 			}
+
 			break
 		}
 
@@ -102,6 +107,7 @@ func (t *Torrent) runPreloadLoop(reader torrent.Reader, readerEnd int64) error {
 
 		if readahead > 0 && readerEnd-(offset+int64(len(tmp))) < readahead {
 			readahead = 0
+
 			reader.SetReadahead(0)
 		}
 	}
@@ -118,6 +124,7 @@ func (t *Torrent) runEndRangePreloadLoop(reader torrent.Reader, readerStart, rea
 	_, err := reader.Seek(readerStart, io.SeekStart)
 	if err != nil {
 		log.TLogln("Err preload seek:", err)
+
 		return err
 	}
 
@@ -129,8 +136,10 @@ func (t *Torrent) runEndRangePreloadLoop(reader torrent.Reader, readerStart, rea
 		if err != nil {
 			if err != io.EOF {
 				log.TLogln("Err preload read:", err)
+
 				return err
 			}
+
 			break
 		}
 
@@ -156,7 +165,7 @@ func (t *Torrent) probeFileMetadata(index int) {
 		link = "https://127.0.0.1:" + settings.SslPort + "/play/" + t.Hash().HexString() + "/" + strconv.Itoa(index)
 	}
 
-	if data, err := ffprobe.ProbeUrl(link); err == nil {
+	if data, err := ffprobe.ProbeURL(link); err == nil {
 		t.BitRate = data.Format.BitRate
 		t.DurationSeconds = data.Format.DurationSeconds
 	}
@@ -166,7 +175,6 @@ func (t *Torrent) probeFileMetadata(index int) {
 type preloadResult struct {
 	file        *torrent.File
 	readerStart torrent.Reader
-	readerEnd   torrent.Reader
 	startEnd    int64
 	startEndPos int64
 	endStartPos int64
@@ -181,6 +189,7 @@ func (t *Torrent) setupPreloadReaders(file *torrent.File, size int64) preloadRes
 
 	if t.Info() == nil {
 		result.err = errors.New("torrent info not available")
+
 		return result
 	}
 
@@ -190,6 +199,7 @@ func (t *Torrent) setupPreloadReaders(file *torrent.File, size int64) preloadRes
 	result.readerStart = file.NewReader()
 	if result.readerStart == nil {
 		result.err = errors.New("null reader")
+
 		return result
 	}
 
@@ -200,6 +210,7 @@ func (t *Torrent) setupPreloadReaders(file *torrent.File, size int64) preloadRes
 	if result.startEndPos < 0 {
 		result.startEndPos = size
 	}
+
 	if result.startEndPos > file.Length() {
 		result.startEndPos = file.Length()
 	}
@@ -225,9 +236,12 @@ func (t *Torrent) runEndRangePreload(result *preloadResult, wg *sync.WaitGroup, 
 		readerEnd := result.file.NewReader()
 		if readerEnd == nil {
 			log.TLogln("Err preload: null reader")
+
 			*preloadErr = errors.New("null reader for end range")
+
 			return
 		}
+
 		defer func() { _ = readerEnd.Close() }()
 
 		*preloadErr = errors.Join(*preloadErr, t.runEndRangePreloadLoop(readerEnd, result.endStartPos, result.endEndPos))
@@ -240,8 +254,10 @@ func (t *Torrent) runPreloadSequence(file *torrent.File, size int64, index int) 
 	setup := t.setupPreloadReaders(file, size)
 	if setup.err != nil {
 		log.TLogln("End preload:", setup.err)
+
 		return setup.err
 	}
+
 	defer func() { _ = setup.readerStart.Close() }()
 
 	timeout := min(time.Second*time.Duration(settings.BTsets.TorrentDisconnectTimeout), time.Minute)
@@ -259,10 +275,12 @@ func (t *Torrent) runPreloadSequence(file *torrent.File, size int64, index int) 
 	// Check if torrent was closed
 	if !isPreloadComplete(t) {
 		log.TLogln("End preload: torrent closed")
+
 		return nil
 	}
 
 	var wg sync.WaitGroup
+
 	var preloadErr error
 
 	// Start end range preload if needed
@@ -337,7 +355,9 @@ func (t *Torrent) Preload(index int, size int64) {
 	}
 
 	// Run the main preload sequence
-	_ = t.runPreloadSequence(file, size, index)
+	if err := t.runPreloadSequence(file, size, index); err != nil {
+		log.TLogln("Preload error:", err)
+	}
 }
 
 func (t *Torrent) findFileIndex(index int) *torrent.File {

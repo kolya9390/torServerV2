@@ -84,9 +84,9 @@ func (d *RootDir) SetTorrent(torr *torr.Torrent) {}
 func (d *RootDir) Name() string { return d.info.Name() }
 func (d *RootDir) IsDir() bool  { return true }
 func (d *RootDir) Type() fs.FileMode {
-	s, _ := d.Stat()
+	return d.info.Mode()
 
-	return s.Mode()
+	
 }
 func (d *RootDir) Info() (fs.FileInfo, error) { return d.info, nil }
 

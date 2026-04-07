@@ -35,7 +35,7 @@ func Exists() bool {
 	return !os.IsNotExist(err)
 }
 
-func ProbeUrl(link string) (*ffprobe.ProbeData, error) {
+func ProbeURL(link string) (*ffprobe.ProbeData, error) {
 	data, err := ffprobe.ProbeURL(getCtx(), link)
 
 	return data, err

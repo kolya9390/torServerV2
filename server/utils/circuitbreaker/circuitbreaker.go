@@ -2,7 +2,6 @@ package circuitbreaker
 
 import (
 	"errors"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -59,7 +58,6 @@ type CircuitBreaker struct {
 	totalCalls    atomic.Int32
 	lastAttempt   atomic.Int64
 	halfOpenCalls atomic.Int32
-	mu            sync.Mutex
 	openTime      time.Time
 }
 

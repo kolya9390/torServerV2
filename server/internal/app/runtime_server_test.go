@@ -101,7 +101,7 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 		SslCert:  "cert.pem",
 		SslKey:   "key.pem",
 		IP:       "127.0.0.1",
-		HttpAuth: true,
+		HTTPAuth: true,
 	}
 	settings.SetArgs(args)
 	t.Cleanup(func() {
@@ -135,7 +135,7 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 		t.Fatalf("runtime settings were not applied: port=%s ssl=%s ip=%s", settings.Port, settings.SslPort, settings.IP)
 	}
 
-	if !settings.HttpAuth {
+	if !settings.HTTPAuth {
 		t.Fatal("expected HttpAuth to be enabled from args")
 	}
 

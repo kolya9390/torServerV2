@@ -33,11 +33,17 @@ func Open(d INode, name string) (fs.File, error) {
 		return nil, fs.ErrNotExist
 	}
 
-	dirs, _ := d.ReadDir(-1)
+	dirs, err := d.ReadDir(-1)
+	if err != nil {
+		return nil, fs.ErrNotExist
+	}
 
 	for _, dir := range dirs {
 		if dir.Name() == arr[0] {
-			return dir.(INode).Open(trimPath)
+			if inode, ok := dir.(INode); ok {
+			return inode.Open(trimPath)
+		}
+		return nil, fs.ErrNotExist
 		}
 	}
 

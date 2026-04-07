@@ -59,7 +59,7 @@ func download(c *gin.Context) {
 
 	sz, err := strconv.Atoi(szStr)
 	if err != nil {
-		_ = c.Error(err)
+		c.Error(err) //nolint:errcheck // gin adds error to context
 
 		return
 	}

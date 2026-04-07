@@ -79,10 +79,12 @@ func Start() error {
 		NotifyInterval:      30 * time.Second,
 		AllowedIpNets: func() []*net.IPNet {
 			nets := make([]*net.IPNet, 0, 2)
-			_, ipnet, _ := net.ParseCIDR("0.0.0.0/0")
-			nets = append(nets, ipnet)
-			_, ipnet, _ = net.ParseCIDR("::/0")
-			nets = append(nets, ipnet)
+			if _, ipnet, err := net.ParseCIDR("0.0.0.0/0"); err == nil {
+				nets = append(nets, ipnet)
+			}
+			if _, ipnet, err := net.ParseCIDR("::/0"); err == nil {
+				nets = append(nets, ipnet)
+			}
 
 			return nets
 		}(),
@@ -152,6 +154,15 @@ func onBrowseMeta(path string, rootObjectPath string, host, userAgent string) (r
 // findBestInterfaceForName returns the first suitable network interface
 // for constructing a friendly DLNA name. It skips loopback, down,
 // and non-multicast interfaces on non-Windows platforms.
+
+// findInterfaceIP returns the first non-loopback IPv4 address of the given
+// network interface. It returns an error if no suitable address is found.
+
+// findBestInterfaceForName returns the first suitable network interface
+// for constructing a friendly DLNA name. It skips loopback, down,
+// and non-multicast interfaces on non-Windows platforms.
+//
+//nolint:unused // Reserved for future DLNA interface selection
 func findBestInterfaceForName(ifaces []net.Interface) *net.Interface {
 	for _, i := range ifaces {
 		// interface flags seem to always be 0 on Windows
@@ -167,6 +178,8 @@ func findBestInterfaceForName(ifaces []net.Interface) *net.Interface {
 
 // findInterfaceIP returns the first non-loopback IPv4 address of the given
 // network interface. It returns an error if no suitable address is found.
+//
+//nolint:unused // Reserved for future DLNA interface selection
 func findInterfaceIP(iface *net.Interface) (string, error) {
 	if iface == nil {
 		return "", errors.New("interface is nil")
@@ -208,7 +221,11 @@ func collectNonLoopbackIPs(ifaces []net.Interface) []string {
 			continue
 		}
 
-		addrs, _ := anet.InterfaceAddrsByInterface(&i)
+		addrs, err := anet.InterfaceAddrsByInterface(&i)
+		if err != nil {
+			continue
+		}
+
 		for _, addr := range addrs {
 			var ip net.IP
 
@@ -238,6 +255,7 @@ func getDefaultFriendlyName() string {
 	}
 
 	userName := ""
+
 	user, err := user.Current()
 	if err != nil {
 		logger.Printf("getDefaultFriendlyName could not get username: %s", err)
@@ -246,6 +264,7 @@ func getDefaultFriendlyName() string {
 	}
 
 	host := ""
+
 	host, err = os.Hostname()
 	if err != nil {
 		logger.Printf("getDefaultFriendlyName could not get hostname: %s", err)

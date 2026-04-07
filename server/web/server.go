@@ -186,6 +186,7 @@ func (s *Server) startHTTPSServer(route *gin.Engine, ips []string) error {
 		err := httpsSrv.ListenAndServeTLS(settings.BTsets.SslCert, settings.BTsets.SslKey)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.waitChan <- err
+
 			return
 		}
 		s.waitChan <- nil
@@ -220,6 +221,7 @@ func (s *Server) startHTTPServer(route *gin.Engine) {
 		err := httpSrv.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.waitChan <- err
+
 			return
 		}
 		s.waitChan <- nil
@@ -276,7 +278,7 @@ func (s *Server) Stop() {
 }
 
 func echo(c *gin.Context) {
-	c.String(200, "2.0.0111")
+	c.String(200, "2.0.1231")
 }
 
 func healthz(c *gin.Context) {

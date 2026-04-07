@@ -13,9 +13,9 @@ func TestStoragePreferencesConcurrentAccess(t *testing.T) {
 	globalBboltDBMu.Lock()
 	globalBboltDB = nil
 	globalBboltDBMu.Unlock()
-	globalJsonDBMu.Lock()
-	globalJsonDB = nil
-	globalJsonDBMu.Unlock()
+	globalJSONDBMu.Lock()
+	globalJSONDB = nil
+	globalJSONDBMu.Unlock()
 
 	if err := InitSets(false, false); err != nil {
 		t.Fatalf("init failed: %v", err)
@@ -26,9 +26,9 @@ func TestStoragePreferencesConcurrentAccess(t *testing.T) {
 		globalBboltDBMu.Lock()
 		globalBboltDB = nil
 		globalBboltDBMu.Unlock()
-		globalJsonDBMu.Lock()
-		globalJsonDB = nil
-		globalJsonDBMu.Unlock()
+		globalJSONDBMu.Lock()
+		globalJSONDB = nil
+		globalJSONDBMu.Unlock()
 
 		BTsets = nil
 	})

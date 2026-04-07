@@ -14,8 +14,8 @@ func New(hash string) *TorrsHash {
 	return th
 }
 
-func (th *TorrsHash) AddField(tag Tag, value string) {
-	th.Fields = append(th.Fields, &Field{tag, value})
+func (h *TorrsHash) AddField(tag Tag, value string) {
+	h.Fields = append(h.Fields, &Field{tag, value})
 }
 
 func (h *TorrsHash) Title() string {

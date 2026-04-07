@@ -352,7 +352,7 @@ func (d searchService) TorznabTest(host, key string) error {
 func (d mediaService) ProbePlayURL(hash, fileID string) (*goffprobe.ProbeData, error) {
 	link := settingsService{}.BuildPlayURL(hash, fileID)
 
-	return ffprobe.ProbeUrl(link)
+	return ffprobe.ProbeURL(link)
 }
 
 func (d modulesService) RestartDLNA(enable bool) error {
@@ -376,10 +376,25 @@ func (d streamService) ParseLink(link, title, poster, category string) (*torrent
 
 	var err error
 
-	link, _ = url.QueryUnescape(link)
-	meta.Title, _ = url.QueryUnescape(meta.Title)
-	meta.Poster, _ = url.QueryUnescape(meta.Poster)
-	meta.Category, _ = url.QueryUnescape(meta.Category)
+	link, err = url.QueryUnescape(link)
+	if err != nil {
+		return nil, meta, err
+	}
+
+	meta.Title, err = url.QueryUnescape(meta.Title)
+	if err != nil {
+		return nil, meta, err
+	}
+
+	meta.Poster, err = url.QueryUnescape(meta.Poster)
+	if err != nil {
+		return nil, meta, err
+	}
+
+	meta.Category, err = url.QueryUnescape(meta.Category)
+	if err != nil {
+		return nil, meta, err
+	}
 
 	var spec *torrent.TorrentSpec
 

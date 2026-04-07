@@ -35,7 +35,7 @@ func AddTorrentDB(torr *Torrent) {
 		t.Data = torr.Data
 	}
 
-	if torr.Poster != "" && utils.CheckImgUrl(torr.Poster) {
+	if torr.Poster != "" && utils.CheckImgURL(torr.Poster) {
 		t.Poster = torr.Poster
 	}
 

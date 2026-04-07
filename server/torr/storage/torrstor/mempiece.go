@@ -14,8 +14,14 @@ var memPieceBufPool = sync.Pool{
 	},
 }
 
+// getBuffer obtains a reusable byte slice of at least the requested size.
+// If the pool returns an unexpected type, a new buffer is created as fallback.
 func getBuffer(size int) []byte {
-	ptr := memPieceBufPool.Get().(*[]byte)
+	ptr, ok := memPieceBufPool.Get().(*[]byte)
+	if !ok {
+		// Pool returned unexpected type — create new buffer
+		return make([]byte, size)
+	}
 
 	buf := *ptr
 	if cap(buf) < size {
@@ -26,13 +32,20 @@ func getBuffer(size int) []byte {
 	return buf[:size]
 }
 
+// putBuffer returns a byte slice to the pool for reuse.
+// Buffers smaller than 4KB are discarded to avoid pooling overhead.
 func putBuffer(buf []byte) {
 	// Don't pool tiny buffers — not worth the GC overhead
 	if cap(buf) < 4096 {
 		return
 	}
 
-	ptr := memPieceBufPool.Get().(*[]byte)
+	ptr, ok := memPieceBufPool.Get().(*[]byte)
+	if !ok {
+		// Pool corrupted — discard this buffer
+		return
+	}
+
 	if cap(buf) > cap(*ptr) {
 		// Replace pooled buffer with larger one
 		*ptr = buf
@@ -69,6 +82,7 @@ func (p *MemPiece) WriteAt(b []byte, off int64) (n int, err error) {
 	n = copy(p.buffer[off:], b[:])
 
 	p.piece.Size.Add(int64(n))
+
 	if p.piece.Size.Load() > p.piece.cache.pieceLength {
 		p.piece.Size.Store(p.piece.cache.pieceLength)
 	}

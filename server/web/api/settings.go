@@ -61,7 +61,13 @@ func settings(c *gin.Context) {
 		c.Header("Cache-Control", "private, max-age=5")
 		c.Header("Content-Type", "application/json")
 
-		data, _ := json.Marshal(current)
+		data, err := json.Marshal(current)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal settings"})
+
+			return
+		}
+
 		c.Data(200, "application/json", data)
 
 		return

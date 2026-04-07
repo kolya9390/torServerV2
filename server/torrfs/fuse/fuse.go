@@ -66,7 +66,9 @@ func FuseAutoMount() error {
 func FuseCleanup() {
 	ffs := GetFuseFS()
 	if ffs.enabled {
-		_ = ffs.Unmount()
+		if err := ffs.Unmount(); err != nil {
+			log.TLogln("Fuse unmount error:", err)
+		}
 	}
 }
 
@@ -340,7 +342,10 @@ var (
 )
 
 func (h *tfsHandle) Read(ctx context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
-	rs := h.f.(io.ReadSeeker)
+	rs, ok := h.f.(io.ReadSeeker)
+	if !ok {
+		return nil, syscall.EINVAL
+	}
 
 	if _, err := rs.Seek(off, io.SeekStart); err != nil {
 		return nil, syscall.EIO

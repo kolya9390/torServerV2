@@ -84,13 +84,16 @@ func (bt *BTServer) Disconnect() {
 
 		utils.FreeOSMemGC()
 	}
-
 }
 
 // buildClientConfig creates and configures the torrent client configuration
 // based on current application settings.
 func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
-	blocklist, _ := utils.ReadBlockedIP()
+	blocklist, err := utils.ReadBlockedIP()
+	if err != nil {
+		log.TLogln("Error reading blocked IPs:", err)
+	}
+
 	config := torrent.NewDefaultClientConfig()
 
 	storage := torrstor.NewStorage(settings.BTsets.CacheSize)
@@ -142,6 +145,7 @@ func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
 		config.ListenPort = settings.BTsets.PeersListenPort
 	} else {
 		log.TLogln("Set listen port to random autoselect (0)")
+
 		config.ListenPort = 0
 	}
 
@@ -154,6 +158,7 @@ func detectPublicIPv4(ctx context.Context, config *torrent.ClientConfig) {
 	if settings.PubIPv4 != "" {
 		if ip4 := net.ParseIP(settings.PubIPv4); ip4.To4() != nil && !isPrivateIP(ip4) {
 			config.PublicIp4 = ip4
+
 			return
 		}
 	}
@@ -162,12 +167,14 @@ func detectPublicIPv4(ctx context.Context, config *torrent.ClientConfig) {
 		ip, err := publicip.Get4(ctx)
 		if err != nil {
 			log.TLogln("Error getting public ipv4 address:", err)
+
 			return
 		}
 		// publicip.Get4 can return IPv6 in some cases, validate
 		if ip.To4() == nil {
 			return
 		}
+
 		config.PublicIp4 = ip
 	}
 
@@ -182,6 +189,7 @@ func detectPublicIPv6(ctx context.Context, config *torrent.ClientConfig, enableI
 	if settings.PubIPv6 != "" {
 		if ip6 := net.ParseIP(settings.PubIPv6); ip6.To16() != nil && ip6.To4() == nil && !isPrivateIP(ip6) {
 			config.PublicIp6 = ip6
+
 			return
 		}
 	}
@@ -190,12 +198,14 @@ func detectPublicIPv6(ctx context.Context, config *torrent.ClientConfig, enableI
 		ip, err := publicip.Get6(ctx)
 		if err != nil {
 			log.TLogln("Error getting public ipv6 address:", err)
+
 			return
 		}
 		// Ensure it's valid IPv6
 		if ip.To16() == nil {
 			return
 		}
+
 		config.PublicIp6 = ip
 	}
 
@@ -239,18 +249,23 @@ func (bt *BTServer) configureProxy() error {
 	switch proxyCfg.Mode {
 	case proxy.ModeTracker:
 		log.TLogln("Configuring HTTP proxy for tracker requests:", proxyCfg.URL.String())
+
 		bt.config.HTTPProxy = d.HTTPProxy()
+
 		log.TLogln("Proxy configured successfully for HTTP tracker connections only")
 
 	case proxy.ModePeers, proxy.ModeFull:
 		log.TLogln("Configuring proxy for all connections:", proxyCfg.URL.String())
+
 		bt.config.HTTPDialContext = d.DialContext
 		bt.config.HTTPProxy = d.HTTPProxy()
+
 		log.TLogln("Proxy configured successfully for all BitTorrent connections")
 
 	default:
 		// Fallback to tracker mode for unknown modes
 		log.TLogln("Configuring HTTP proxy for tracker requests (default):", proxyCfg.URL.String())
+
 		bt.config.HTTPProxy = d.HTTPProxy()
 	}
 
@@ -294,6 +309,10 @@ func isPrivateIP(ip net.IP) bool {
 	return false
 }
 
+// getPublicIp4 returns the first non-private IPv4 address of all active interfaces.
+// It returns nil if no suitable address is found.
+//
+//nolint:unused // Reserved for debugging public IP addresses
 func getPublicIp4() net.IP {
 	ifaces, err := anet.Interfaces()
 	if err != nil {
@@ -303,7 +322,11 @@ func getPublicIp4() net.IP {
 	}
 
 	for _, i := range ifaces {
-		addrs, _ := anet.InterfaceAddrsByInterface(&i)
+		addrs, err := anet.InterfaceAddrsByInterface(&i)
+		if err != nil {
+			continue
+		}
+
 		if i.Flags&net.FlagUp == net.FlagUp {
 			for _, addr := range addrs {
 				var ip net.IP
@@ -324,6 +347,10 @@ func getPublicIp4() net.IP {
 	return nil
 }
 
+// getPublicIp6 returns the first non-private IPv6 address of all active interfaces.
+// It returns nil if no suitable address is found.
+//
+//nolint:unused // Reserved for debugging public IP addresses
 func getPublicIp6() net.IP {
 	ifaces, err := anet.Interfaces()
 	if err != nil {
@@ -333,7 +360,11 @@ func getPublicIp6() net.IP {
 	}
 
 	for _, i := range ifaces {
-		addrs, _ := anet.InterfaceAddrsByInterface(&i)
+		addrs, err := anet.InterfaceAddrsByInterface(&i)
+		if err != nil {
+			continue
+		}
+
 		if i.Flags&net.FlagUp == net.FlagUp {
 			for _, addr := range addrs {
 				var ip net.IP

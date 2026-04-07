@@ -316,7 +316,7 @@ func (c *Cache) getRemPieces() []*Piece {
 			fill += p.Size.Load()
 		}
 
-		if !inRangeSet[id] && p.Size.Load() > 0 && !c.isIdInFileBEFast(ranges, id) {
+		if !inRangeSet[id] && p.Size.Load() > 0 && !c.isIDInFileBEFast(ranges, id) {
 			piecesRemove = append(piecesRemove, p)
 		}
 	}
@@ -362,7 +362,7 @@ func (c *Cache) setLoadPriority(ranges []Range) {
 			continue
 		}
 
-		if c.isIdInFileBE(ranges, r.getReaderPiece()) {
+		if c.isIDInFileBE(ranges, r.getReaderPiece()) {
 			continue
 		}
 
@@ -392,7 +392,7 @@ func (c *Cache) setLoadPriority(ranges []Range) {
 	c.muReaders.Unlock()
 }
 
-func (c *Cache) isIdInFileBE(ranges []Range, id int) bool {
+func (c *Cache) isIDInFileBE(ranges []Range, id int) bool {
 	// keep 8/16 MB
 	FileRangeNotDelete := max(c.pieceLength, 8<<20)
 
@@ -411,8 +411,8 @@ func (c *Cache) isIdInFileBE(ranges []Range, id int) bool {
 	return false
 }
 
-// isIdInFileBEFast is a non-locking variant for use inside locked sections.
-func (c *Cache) isIdInFileBEFast(ranges []Range, id int) bool {
+// isIDInFileBEFast is a non-locking variant for use inside locked sections.
+func (c *Cache) isIDInFileBEFast(ranges []Range, id int) bool {
 	FileRangeNotDelete := max(c.pieceLength, 8<<20)
 
 	for _, rng := range ranges {
@@ -562,7 +562,10 @@ func (c *Cache) evictLRU() *Piece {
 		return nil
 	}
 
-	p := el.Value.(*Piece)
+	p, ok := el.Value.(*Piece)
+	if !ok {
+		return nil
+	}
 	c.lru.Remove(el)
 
 	p.lruEl = nil

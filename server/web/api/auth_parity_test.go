@@ -63,11 +63,11 @@ func TestProtectedEndpointAllowsValidAuth(t *testing.T) {
 func TestNoAuthModeKeepsEndpointsAccessible(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	prevHTTPAuth := sets.HttpAuth
-	sets.HttpAuth = false
+	prevHTTPAuth := sets.HTTPAuth
+	sets.HTTPAuth = false
 
 	t.Cleanup(func() {
-		sets.HttpAuth = prevHTTPAuth
+		sets.HTTPAuth = prevHTTPAuth
 	})
 
 	r := gin.New()
@@ -116,16 +116,16 @@ func setupAuthRouter(t *testing.T, searchWA bool) *gin.Engine {
 	}
 
 	prevPath := sets.Path
-	prevHTTPAuth := sets.HttpAuth
+	prevHTTPAuth := sets.HTTPAuth
 	prevSearchWA := sets.SearchWA
 
 	sets.Path = tmpDir
-	sets.HttpAuth = true
+	sets.HTTPAuth = true
 	sets.SearchWA = searchWA
 
 	t.Cleanup(func() {
 		sets.Path = prevPath
-		sets.HttpAuth = prevHTTPAuth
+		sets.HTTPAuth = prevHTTPAuth
 		sets.SearchWA = prevSearchWA
 	})
 

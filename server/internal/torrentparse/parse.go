@@ -40,6 +40,7 @@ func fromMagnet(link string) (*torrent.TorrentSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return spec, nil
 }
 

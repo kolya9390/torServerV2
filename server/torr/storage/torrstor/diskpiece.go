@@ -48,6 +48,7 @@ func (p *DiskPiece) WriteAt(b []byte, off int64) (n int, err error) {
 	n, err = ff.WriteAt(b, off)
 
 	p.piece.Size.Add(int64(n))
+
 	if p.piece.Size.Load() > p.piece.cache.pieceLength {
 		p.piece.Size.Store(p.piece.cache.pieceLength)
 	}

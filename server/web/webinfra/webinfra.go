@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/wlynxg/anet"
@@ -186,8 +187,9 @@ func (s *sslService) Server(addr string, handler http.Handler) *http.Server {
 	}
 
 	s.srv = &http.Server{
-		Addr:    addr,
-		Handler: handler,
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
 		TLSConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 		},
@@ -207,7 +209,11 @@ func GetLocalIps() []string {
 	var list []string
 
 	for _, i := range ifaces {
-		addrs, _ := anet.InterfaceAddrsByInterface(&i)
+		addrs, err := anet.InterfaceAddrsByInterface(&i)
+		if err != nil {
+			continue
+		}
+
 		if i.Flags&net.FlagUp == net.FlagUp {
 			for _, addr := range addrs {
 				var ip net.IP

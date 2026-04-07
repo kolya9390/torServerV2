@@ -85,7 +85,7 @@ func (r *serverRuntime) Start() error {
 	settings.Port = args.Port
 	settings.SslPort = args.SslPort
 	settings.IP = args.IP
-	settings.HttpAuth = args.HttpAuth
+	settings.HTTPAuth = args.HTTPAuth
 
 	if r.cfg != nil {
 		r.applyConfig()

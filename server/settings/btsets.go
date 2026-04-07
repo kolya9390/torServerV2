@@ -23,94 +23,94 @@ func maxInt(a, b int) int {
 
 // lowEndProfile defines a preset optimized for resource-constrained devices.
 var lowEndProfile = BTSets{
-	CacheSize:          32 * 1024 * 1024,
-	PreloadCache:       25,
-	ConnectionsLimit:   12,
+	CacheSize:            32 * 1024 * 1024,
+	PreloadCache:         25,
+	ConnectionsLimit:     12,
 	MaxConcurrentStreams: 1,
-	StreamQueueSize:    2,
-	StreamQueueWaitSec: 2,
-	AdaptiveRAMinMB:    2,
-	AdaptiveRAMaxMB:    16,
-	WarmDiskCacheSizeMB: 256,
-	WarmDiskCacheTTLMin: 60,
-	MetadataWorkers:    1,
-	MetadataQueueSize:  64,
-	PreloadWorkers:     1,
-	PreloadQueueSize:   8,
-	DiskSyncPolicy:     "periodic",
-	DiskSyncIntervalMS: 800,
-	DiskWriteBatchSize: 8,
+	StreamQueueSize:      2,
+	StreamQueueWaitSec:   2,
+	AdaptiveRAMinMB:      2,
+	AdaptiveRAMaxMB:      16,
+	WarmDiskCacheSizeMB:  256,
+	WarmDiskCacheTTLMin:  60,
+	MetadataWorkers:      1,
+	MetadataQueueSize:    64,
+	PreloadWorkers:       1,
+	PreloadQueueSize:     8,
+	DiskSyncPolicy:       "periodic",
+	DiskSyncIntervalMS:   800,
+	DiskWriteBatchSize:   8,
 }
 
 // balancedProfile defines the default balanced preset.
 var balancedProfile = BTSets{
-	CacheSize:          64 * 1024 * 1024,
-	PreloadCache:       50,
-	ConnectionsLimit:   25,
+	CacheSize:            64 * 1024 * 1024,
+	PreloadCache:         50,
+	ConnectionsLimit:     25,
 	MaxConcurrentStreams: 0,
-	StreamQueueSize:    0,
-	StreamQueueWaitSec: 3,
-	AdaptiveRAMinMB:    4,
-	AdaptiveRAMaxMB:    64,
-	WarmDiskCacheSizeMB: 0,
-	WarmDiskCacheTTLMin: 180,
-	MetadataWorkers:    0,
-	MetadataQueueSize:  0,
-	PreloadWorkers:     0,
-	PreloadQueueSize:   0,
-	DiskSyncPolicy:     "periodic",
-	DiskSyncIntervalMS: 1000,
-	DiskWriteBatchSize: 16,
+	StreamQueueSize:      0,
+	StreamQueueWaitSec:   3,
+	AdaptiveRAMinMB:      4,
+	AdaptiveRAMaxMB:      64,
+	WarmDiskCacheSizeMB:  0,
+	WarmDiskCacheTTLMin:  180,
+	MetadataWorkers:      0,
+	MetadataQueueSize:    0,
+	PreloadWorkers:       0,
+	PreloadQueueSize:     0,
+	DiskSyncPolicy:       "periodic",
+	DiskSyncIntervalMS:   1000,
+	DiskWriteBatchSize:   16,
 }
 
 // highThroughputProfile defines a preset optimized for high-performance systems.
 var highThroughputProfile = BTSets{
-	CacheSize:          256 * 1024 * 1024,
-	PreloadCache:       70,
-	ConnectionsLimit:   0, // computed at apply time
+	CacheSize:            256 * 1024 * 1024,
+	PreloadCache:         70,
+	ConnectionsLimit:     0, // computed at apply time
 	MaxConcurrentStreams: 0, // computed at apply time
-	StreamQueueSize:    0, // computed at apply time
-	StreamQueueWaitSec: 4,
-	AdaptiveRAMinMB:    8,
-	AdaptiveRAMaxMB:    128,
-	WarmDiskCacheSizeMB: 4096,
-	WarmDiskCacheTTLMin: 360,
-	MetadataWorkers:    0, // computed at apply time
-	MetadataQueueSize:  512,
-	PreloadWorkers:     0, // computed at apply time
-	PreloadQueueSize:   64,
-	DiskSyncPolicy:     "periodic",
-	DiskSyncIntervalMS: 1500,
-	DiskWriteBatchSize: 32,
+	StreamQueueSize:      0, // computed at apply time
+	StreamQueueWaitSec:   4,
+	AdaptiveRAMinMB:      8,
+	AdaptiveRAMaxMB:      128,
+	WarmDiskCacheSizeMB:  4096,
+	WarmDiskCacheTTLMin:  360,
+	MetadataWorkers:      0, // computed at apply time
+	MetadataQueueSize:    512,
+	PreloadWorkers:       0, // computed at apply time
+	PreloadQueueSize:     64,
+	DiskSyncPolicy:       "periodic",
+	DiskSyncIntervalMS:   1500,
+	DiskWriteBatchSize:   32,
 }
 
 // nasProfile defines a preset optimized for NAS devices.
 var nasProfile = BTSets{
-	CacheSize:          128 * 1024 * 1024,
-	PreloadCache:       55,
-	ConnectionsLimit:   0, // computed at apply time
+	CacheSize:            128 * 1024 * 1024,
+	PreloadCache:         55,
+	ConnectionsLimit:     0, // computed at apply time
 	MaxConcurrentStreams: 0, // computed at apply time
-	StreamQueueSize:    0, // computed at apply time
-	StreamQueueWaitSec: 4,
-	AdaptiveRAMinMB:    4,
-	AdaptiveRAMaxMB:    64,
-	WarmDiskCacheSizeMB: 8192,
-	WarmDiskCacheTTLMin: 720,
-	MetadataWorkers:    0, // computed at apply time
-	MetadataQueueSize:  256,
-	PreloadWorkers:     1,
-	PreloadQueueSize:   32,
-	DiskSyncPolicy:     "periodic",
-	DiskSyncIntervalMS: 2500,
-	DiskWriteBatchSize: 24,
+	StreamQueueSize:      0, // computed at apply time
+	StreamQueueWaitSec:   4,
+	AdaptiveRAMinMB:      4,
+	AdaptiveRAMaxMB:      64,
+	WarmDiskCacheSizeMB:  8192,
+	WarmDiskCacheTTLMin:  720,
+	MetadataWorkers:      0, // computed at apply time
+	MetadataQueueSize:    256,
+	PreloadWorkers:       1,
+	PreloadQueueSize:     32,
+	DiskSyncPolicy:       "periodic",
+	DiskSyncIntervalMS:   2500,
+	DiskWriteBatchSize:   24,
 }
 
 // profilePresets maps profile names to their preset configurations.
 var profilePresets = map[string]BTSets{
-	"low-end":          lowEndProfile,
-	"balanced":         balancedProfile,
-	"high-throughput":  highThroughputProfile,
-	"nas":              nasProfile,
+	"low-end":         lowEndProfile,
+	"balanced":        balancedProfile,
+	"high-throughput": highThroughputProfile,
+	"nas":             nasProfile,
 }
 
 // computeCPUFields applies runtime-computed CPU-dependent values to preset.
@@ -125,6 +125,7 @@ func computeCPUFields(preset BTSets) BTSets {
 		preset.StreamQueueSize = maxInt(cpus*4, 12)
 		preset.MetadataWorkers = maxInt(cpus, 4)
 		preset.PreloadWorkers = maxInt(cpus/2, 2)
+
 		return preset
 	}
 
@@ -165,12 +166,16 @@ var copyRules = []fieldCopyRule{
 		apply:      func(dst *BTSets, p BTSets) { dst.ConnectionsLimit = p.ConnectionsLimit },
 	},
 	{
-		shouldCopy: func(p BTSets, _ int64) bool { return p.MaxConcurrentStreams > 0 || p.MaxConcurrentStreams == 0 && balancedZero(p, 64*1024*1024) },
-		apply:      func(dst *BTSets, p BTSets) { dst.MaxConcurrentStreams = p.MaxConcurrentStreams },
+		shouldCopy: func(p BTSets, _ int64) bool {
+			return p.MaxConcurrentStreams > 0 || p.MaxConcurrentStreams == 0 && balancedZero(p, 64*1024*1024)
+		},
+		apply: func(dst *BTSets, p BTSets) { dst.MaxConcurrentStreams = p.MaxConcurrentStreams },
 	},
 	{
-		shouldCopy: func(p BTSets, _ int64) bool { return p.StreamQueueSize > 0 || p.StreamQueueSize == 0 && balancedZero(p, 64*1024*1024) },
-		apply:      func(dst *BTSets, p BTSets) { dst.StreamQueueSize = p.StreamQueueSize },
+		shouldCopy: func(p BTSets, _ int64) bool {
+			return p.StreamQueueSize > 0 || p.StreamQueueSize == 0 && balancedZero(p, 64*1024*1024)
+		},
+		apply: func(dst *BTSets, p BTSets) { dst.StreamQueueSize = p.StreamQueueSize },
 	},
 	{
 		shouldCopy: func(p BTSets, _ int64) bool { return p.StreamQueueWaitSec > 0 },
@@ -185,28 +190,38 @@ var copyRules = []fieldCopyRule{
 		apply:      func(dst *BTSets, p BTSets) { dst.AdaptiveRAMaxMB = p.AdaptiveRAMaxMB },
 	},
 	{
-		shouldCopy: func(p BTSets, _ int64) bool { return p.WarmDiskCacheSizeMB > 0 || p.WarmDiskCacheSizeMB == 0 && balancedZero(p, 64*1024*1024) },
-		apply:      func(dst *BTSets, p BTSets) { dst.WarmDiskCacheSizeMB = p.WarmDiskCacheSizeMB },
+		shouldCopy: func(p BTSets, _ int64) bool {
+			return p.WarmDiskCacheSizeMB > 0 || p.WarmDiskCacheSizeMB == 0 && balancedZero(p, 64*1024*1024)
+		},
+		apply: func(dst *BTSets, p BTSets) { dst.WarmDiskCacheSizeMB = p.WarmDiskCacheSizeMB },
 	},
 	{
 		shouldCopy: func(p BTSets, _ int64) bool { return p.WarmDiskCacheTTLMin > 0 },
 		apply:      func(dst *BTSets, p BTSets) { dst.WarmDiskCacheTTLMin = p.WarmDiskCacheTTLMin },
 	},
 	{
-		shouldCopy: func(p BTSets, _ int64) bool { return p.MetadataWorkers > 0 || p.MetadataWorkers == 0 && balancedZero(p, 64*1024*1024) },
-		apply:      func(dst *BTSets, p BTSets) { dst.MetadataWorkers = p.MetadataWorkers },
+		shouldCopy: func(p BTSets, _ int64) bool {
+			return p.MetadataWorkers > 0 || p.MetadataWorkers == 0 && balancedZero(p, 64*1024*1024)
+		},
+		apply: func(dst *BTSets, p BTSets) { dst.MetadataWorkers = p.MetadataWorkers },
 	},
 	{
-		shouldCopy: func(p BTSets, _ int64) bool { return p.MetadataQueueSize > 0 || p.MetadataQueueSize == 0 && balancedZero(p, 64*1024*1024) },
-		apply:      func(dst *BTSets, p BTSets) { dst.MetadataQueueSize = p.MetadataQueueSize },
+		shouldCopy: func(p BTSets, _ int64) bool {
+			return p.MetadataQueueSize > 0 || p.MetadataQueueSize == 0 && balancedZero(p, 64*1024*1024)
+		},
+		apply: func(dst *BTSets, p BTSets) { dst.MetadataQueueSize = p.MetadataQueueSize },
 	},
 	{
-		shouldCopy: func(p BTSets, _ int64) bool { return p.PreloadWorkers > 0 || p.PreloadWorkers == 0 && balancedZero(p, 64*1024*1024) },
-		apply:      func(dst *BTSets, p BTSets) { dst.PreloadWorkers = p.PreloadWorkers },
+		shouldCopy: func(p BTSets, _ int64) bool {
+			return p.PreloadWorkers > 0 || p.PreloadWorkers == 0 && balancedZero(p, 64*1024*1024)
+		},
+		apply: func(dst *BTSets, p BTSets) { dst.PreloadWorkers = p.PreloadWorkers },
 	},
 	{
-		shouldCopy: func(p BTSets, _ int64) bool { return p.PreloadQueueSize > 0 || p.PreloadQueueSize == 0 && balancedZero(p, 64*1024*1024) },
-		apply:      func(dst *BTSets, p BTSets) { dst.PreloadQueueSize = p.PreloadQueueSize },
+		shouldCopy: func(p BTSets, _ int64) bool {
+			return p.PreloadQueueSize > 0 || p.PreloadQueueSize == 0 && balancedZero(p, 64*1024*1024)
+		},
+		apply: func(dst *BTSets, p BTSets) { dst.PreloadQueueSize = p.PreloadQueueSize },
 	},
 	{
 		shouldCopy: func(p BTSets, _ int64) bool { return p.DiskSyncPolicy != "" },
@@ -348,16 +363,19 @@ type BTSets struct {
 	ShowFSActiveTorr bool
 
 	// Storage preferences
-	StoreSettingsInJson bool
-	StoreViewedInJson   bool
+	StoreSettingsInJSON bool
+	StoreViewedInJSON   bool
 
 	// P2P Proxy
 	EnableProxy bool
 	ProxyHosts  []string
 }
 
-func (v *BTSets) String() string {
-	buf, _ := json.Marshal(v)
+func (s *BTSets) String() string {
+	buf, err := json.Marshal(s)
+	if err != nil {
+		return ""
+	}
 
 	return string(buf)
 }
@@ -408,7 +426,7 @@ func resolveTorrentsSavePath(sets *BTSets) bool {
 		return false
 	}
 
-	_ = filepath.WalkDir(sets.TorrentsSavePath, func(path string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(sets.TorrentsSavePath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -425,7 +443,9 @@ func resolveTorrentsSavePath(sets *BTSets) bool {
 		}
 
 		return nil
-	})
+	}); err != nil {
+		log.TLogln("Error walking torrents save path:", err)
+	}
 
 	return true
 }
@@ -533,7 +553,7 @@ func SetDefaultConfig() {
 	sets.PreloadWorkers = 0    // auto
 	sets.PreloadQueueSize = 0  // auto
 	sets.ShowFSActiveTorr = true
-	sets.StoreSettingsInJson = true
+	sets.StoreSettingsInJSON = true
 	// Set default TMDB settings
 	sets.TMDBSettings = TMDBConfig{
 		APIKey:     "",
@@ -632,6 +652,7 @@ func (s *BTSets) ensureDefaults() {
 	}
 
 	s.normalizeDiskSyncPolicy()
+
 	if s.DiskSyncIntervalMS <= 0 {
 		s.DiskSyncIntervalMS = 1000
 	}

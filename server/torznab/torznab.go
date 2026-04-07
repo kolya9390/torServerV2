@@ -208,9 +208,13 @@ func parseItem(item TorznabItem) *TorrentDetails {
 			detail.Magnet = attr.Value
 			detail.Hash = extractHash(detail.Magnet)
 		case "seeders":
-			detail.Seed, _ = strconv.Atoi(attr.Value)
+			if val, err := strconv.Atoi(attr.Value); err == nil {
+				detail.Seed = val
+			}
 		case "peers":
-			detail.Peer, _ = strconv.Atoi(attr.Value)
+			if val, err := strconv.Atoi(attr.Value); err == nil {
+				detail.Peer = val
+			}
 		}
 	}
 
@@ -239,6 +243,7 @@ func doSearchOne(host, key, query string) ([]*TorrentDetails, error) {
 		if err != nil {
 			return nil, fmt.Errorf("request error: %w", err)
 		}
+
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {

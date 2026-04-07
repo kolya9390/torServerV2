@@ -278,8 +278,11 @@ func applyDefaults(cfg *Config) {
 	}
 }
 
-func (c *Config) GetConfigPath() string {
-	execPath, _ := os.Executable()
+func (*Config) GetConfigPath() string {
+	execPath, err := os.Executable()
+	if err != nil {
+		execPath = "."
+	}
 
 	return filepath.Join(filepath.Dir(execPath), "config.yml")
 }
@@ -414,8 +417,8 @@ func applyProxySettings(c *Config, sets *settings.BTSets) {
 
 // applyStorageSettings maps storage config fields to BTSets.
 func applyStorageSettings(c *Config, sets *settings.BTSets) {
-	sets.StoreSettingsInJson = c.Storage.SettingsInJSON
-	sets.StoreViewedInJson = c.Storage.ViewedInJSON
+	sets.StoreSettingsInJSON = c.Storage.SettingsInJSON
+	sets.StoreViewedInJSON = c.Storage.ViewedInJSON
 }
 
 // applySSLSettings maps SSL/TLS config fields to BTSets.

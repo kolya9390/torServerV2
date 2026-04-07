@@ -46,6 +46,7 @@ func processUploadFile(
 	if openErr != nil {
 		return false, nil, openErr
 	}
+
 	defer func() {
 		if closeErr := torrFile.Close(); closeErr != nil {
 			log.TLogln("error close uploaded file:", closeErr)
@@ -135,6 +136,7 @@ func torrentUpload(c *gin.Context) {
 		log.TLogln("add .torrent", name)
 
 		var procErr error
+
 		torSet, status, procErr = processUploadFile(file[0], svc, save, title, category, poster, data)
 		if procErr != nil {
 			log.TLogln("error upload torrent:", procErr)

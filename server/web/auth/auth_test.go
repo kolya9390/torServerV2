@@ -14,11 +14,11 @@ import (
 func TestBasicAuthAndCheckAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	prevAuth := settings.HttpAuth
-	settings.HttpAuth = true
+	prevAuth := settings.HTTPAuth
+	settings.HTTPAuth = true
 
 	t.Cleanup(func() {
-		settings.HttpAuth = prevAuth
+		settings.HTTPAuth = prevAuth
 	})
 
 	r := gin.New()
