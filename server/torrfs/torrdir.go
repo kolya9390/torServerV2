@@ -140,8 +140,6 @@ func (d *TorrDir) Name() string { return d.info.Name() }
 func (d *TorrDir) IsDir() bool  { return true }
 func (d *TorrDir) Type() fs.FileMode {
 	return d.info.Mode()
-
-	
 }
 func (d *TorrDir) Info() (fs.FileInfo, error) { return d.info, nil }
 func (d *TorrDir) Stat() (fs.FileInfo, error) { return d.info, nil }

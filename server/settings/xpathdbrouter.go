@@ -80,13 +80,13 @@ func (v *XPathDBRouter) getDBForXPath(xPath string) TorrServerDB {
 		return nil
 	}
 
-	lookup_route := v.xPathToRoute(xPath)
+	lookupRoute := v.xPathToRoute(xPath)
 
 	var db TorrServerDB = nil
 
-	for _, route_prefix := range v.routes {
-		if strings.HasPrefix(lookup_route, route_prefix) {
-			db = v.route2db[route_prefix]
+	for _, routePrefix := range v.routes {
+		if strings.HasPrefix(lookupRoute, routePrefix) {
+			db = v.route2db[routePrefix]
 
 			break
 		}

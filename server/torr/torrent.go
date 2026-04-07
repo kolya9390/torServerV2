@@ -152,11 +152,11 @@ func (t *Torrent) GotInfo() bool {
 		t.AddExpiredTime(time.Second * time.Duration(settings.BTsets.TorrentDisconnectTimeout))
 
 		return true
-	} else {
-		t.Close()
-
-		return false
 	}
+
+	t.Close()
+
+	return false
 }
 
 func (t *Torrent) AddExpiredTime(duration time.Duration) {
@@ -407,7 +407,7 @@ func (t *Torrent) collectFileStats(st *state.TorrentStatus) {
 
 	for i, f := range files {
 		st.FileStats = append(st.FileStats, &state.TorrentFileStat{
-			Id:     i + 1, // in web id 0 is undefined
+			ID:     i + 1, // in web id 0 is undefined
 			Path:   f.Path(),
 			Length: f.Length(),
 		})

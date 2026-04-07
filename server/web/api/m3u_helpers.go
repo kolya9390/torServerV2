@@ -34,7 +34,7 @@ func searchLastPlayed(viewedSvc ViewedService, tor *state.TorrentStatus) int {
 
 	lastViewedIndex := viewed[0].FileIndex
 	for i, stat := range tor.FileStats {
-		if stat.Id == lastViewedIndex {
+		if stat.ID == lastViewedIndex {
 			if i >= len(tor.FileStats) {
 				return -1
 			}

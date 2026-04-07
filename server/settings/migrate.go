@@ -408,33 +408,36 @@ func SmartMigrate(bboltDB, jsonDB TorrServerDB, forceDirection string) error {
 	}
 }
 
-func isByteArraysEqualJSON(a, b []byte) (bool, error) {
-	if len(a) == 0 && len(b) == 0 {
+func isByteArraysEqualJSON(first, second []byte) (bool, error) {
+	if len(first) == 0 && len(second) == 0 {
 		return true, nil
 	}
 
-	if len(a) == 0 || len(b) == 0 {
+	if len(first) == 0 || len(second) == 0 {
 		return false, nil
 	}
+
 	// Quick check: same length and byte equality
-	if len(a) == len(b) {
+	if len(first) == len(second) {
 		// Fast path: byte-by-byte comparison
-		for i := range a {
-			if a[i] != b[i] {
+		for i := range first {
+			if first[i] != second[i] {
 				break // Need to parse as JSON
 			}
 		}
+
 		// If we get here, bytes are identical
 		return true, nil
 	}
+
 	// Parse as JSON for structural comparison
 	var objectA, objectB any
 
-	if err := json.Unmarshal(a, &objectA); err != nil {
+	if err := json.Unmarshal(first, &objectA); err != nil {
 		return false, fmt.Errorf("error unmarshalling A: %w", err)
 	}
 
-	if err := json.Unmarshal(b, &objectB); err != nil {
+	if err := json.Unmarshal(second, &objectB); err != nil {
 		return false, fmt.Errorf("error unmarshalling B: %w", err)
 	}
 
@@ -442,24 +445,24 @@ func isByteArraysEqualJSON(a, b []byte) (bool, error) {
 }
 
 // Optimized version for performance.
-func isByteArraysEqualJSONOptimized(a, b []byte) (bool, error) {
+func isByteArraysEqualJSONOptimized(first, second []byte) (bool, error) {
 	// Fast paths
-	if a == nil && b == nil {
+	if first == nil && second == nil {
 		return true, nil
 	}
 
-	if len(a) != len(b) {
+	if len(first) != len(second) {
 		return false, nil
 	}
 
-	if len(a) == 0 {
+	if len(first) == 0 {
 		return true, nil
 	}
 	// Byte equality (fastest check)
 	equal := true
 
-	for i := range a {
-		if a[i] != b[i] {
+	for i := range first {
+		if first[i] != second[i] {
 			equal = false
 
 			break
@@ -470,7 +473,7 @@ func isByteArraysEqualJSONOptimized(a, b []byte) (bool, error) {
 		return true, nil
 	}
 	// Parse as JSON (slower but accurate)
-	return isByteArraysEqualJSON(a, b)
+	return isByteArraysEqualJSON(first, second)
 }
 
 func verifyMigration(source, target TorrServerDB, xpath, name string, originalData []byte) error {

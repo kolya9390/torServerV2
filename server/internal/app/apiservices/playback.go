@@ -202,7 +202,7 @@ func (d playbackService) BuildM3UFromStatus(tor *state.TorrentStatus, host strin
 				body.WriteString("?link=")
 				body.WriteString(tor.Hash)
 				body.WriteString("&index=")
-				body.WriteString(strconv.Itoa(namesake.Id))
+				body.WriteString(strconv.Itoa(namesake.ID))
 				body.WriteString("&play#")
 			}
 
@@ -217,7 +217,7 @@ func (d playbackService) BuildM3UFromStatus(tor *state.TorrentStatus, host strin
 		body.WriteString("?link=")
 		body.WriteString(tor.Hash)
 		body.WriteString("&index=")
-		body.WriteString(strconv.Itoa(f.Id))
+		body.WriteString(strconv.Itoa(f.ID))
 		body.WriteString("&play\n")
 	}
 
@@ -251,7 +251,7 @@ func searchLastPlayed(viewedSvc api.ViewedService, tor *state.TorrentStatus) int
 
 	lastViewedIndex := viewed[0].FileIndex
 	for i, stat := range tor.FileStats {
-		if stat.Id == lastViewedIndex {
+		if stat.ID == lastViewedIndex {
 			if i >= len(tor.FileStats) {
 				return -1
 			}

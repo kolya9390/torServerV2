@@ -23,7 +23,7 @@ type TorrentDB struct {
 
 type File struct {
 	Name string `json:"name,omitempty"`
-	Id   int    `json:"id,omitempty"`
+	ID   int    `json:"id,omitempty"` //nolint:staticcheck // json tag preserves API compatibility
 	Size int64  `json:"size,omitempty"`
 }
 

@@ -99,14 +99,6 @@ func (m *testTorrentService) LoadFromDB(tor *torr.Torrent) *torr.Torrent {
 	return nil
 }
 
-type testViewedService struct{}
-
-func (m *testViewedService) SetViewed(v any)    {}
-func (m *testViewedService) RemoveViewed(v any) {}
-func (m *testViewedService) ListViewed(hash string) []any {
-	return nil
-}
-
 func TestStreamPlayValidationErrors(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

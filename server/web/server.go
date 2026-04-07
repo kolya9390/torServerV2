@@ -278,7 +278,7 @@ func (s *Server) Stop() {
 }
 
 func echo(c *gin.Context) {
-	c.String(200, "2.0.1231")
+	c.String(200, "2.0.0")
 }
 
 func healthz(c *gin.Context) {

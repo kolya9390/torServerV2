@@ -138,10 +138,6 @@ func newServerRuntime(deps serverRuntimeDeps, cfg *config.Config) Runtime {
 		deps.closeSettings = settings.CloseDB
 	}
 
-	if false {
-		// removed
-	}
-
 	if deps.setAPIServices == nil {
 		deps.setAPIServices = api.SetServices
 	}

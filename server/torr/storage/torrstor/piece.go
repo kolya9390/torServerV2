@@ -15,7 +15,7 @@ import (
 type Piece struct {
 	storage.PieceImpl `json:"-"`
 
-	Id int `json:"-"`
+	ID int `json:"-"`
 
 	// Size is accessed concurrently by WriteAt/ReadAt and cleanPieces.
 	Size atomic.Int64 `json:"size"`
@@ -23,10 +23,10 @@ type Piece struct {
 	Complete bool  `json:"complete"`
 	Accessed int64 `json:"accessed"`
 
-	mPiece *MemPiece  `json:"-"`
-	dPiece *DiskPiece `json:"-"`
+	mPiece *MemPiece
+	dPiece *DiskPiece
 
-	cache *Cache `json:"-"`
+	cache *Cache
 
 	// LRU element for O(1) removal from cache LRU list
 	lruEl *list.Element
@@ -34,7 +34,7 @@ type Piece struct {
 
 func NewPiece(id int, cache *Cache) *Piece {
 	p := &Piece{
-		Id:    id,
+		ID:    id,
 		cache: cache,
 	}
 
@@ -50,17 +50,17 @@ func NewPiece(id int, cache *Cache) *Piece {
 func (p *Piece) WriteAt(b []byte, off int64) (n int, err error) {
 	if !settings.BTsets.UseDisk {
 		return p.mPiece.WriteAt(b, off)
-	} else {
-		return p.dPiece.WriteAt(b, off)
 	}
+
+	return p.dPiece.WriteAt(b, off)
 }
 
 func (p *Piece) ReadAt(b []byte, off int64) (n int, err error) {
 	if !settings.BTsets.UseDisk {
 		return p.mPiece.ReadAt(b, off)
-	} else {
-		return p.dPiece.ReadAt(b, off)
 	}
+
+	return p.dPiece.ReadAt(b, off)
 }
 
 func (p *Piece) MarkComplete() error {
@@ -83,15 +83,15 @@ func (p *Piece) Completion() storage.Completion {
 }
 
 func (p *Piece) Release() {
-	if !settings.BTsets.UseDisk {
-		p.mPiece.Release()
-	} else {
+	if settings.BTsets.UseDisk {
 		p.dPiece.Release()
+	} else {
+		p.mPiece.Release()
 	}
 
-	if !p.cache.isClosed.Load() {
-		p.cache.torrent.Piece(p.Id).SetPriority(torrent.PiecePriorityNone)
-		p.cache.torrent.Piece(p.Id).UpdateCompletion()
+	if p.cache != nil && !p.cache.isClosed.Load() {
+		p.cache.torrent.Piece(p.ID).SetPriority(torrent.PiecePriorityNone)
+		p.cache.torrent.Piece(p.ID).UpdateCompletion()
 	}
 }
 

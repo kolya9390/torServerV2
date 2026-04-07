@@ -85,8 +85,6 @@ func (d *RootDir) Name() string { return d.info.Name() }
 func (d *RootDir) IsDir() bool  { return true }
 func (d *RootDir) Type() fs.FileMode {
 	return d.info.Mode()
-
-	
 }
 func (d *RootDir) Info() (fs.FileInfo, error) { return d.info, nil }
 

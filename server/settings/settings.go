@@ -95,7 +95,7 @@ func InitSets(readOnly, searchWA bool) error {
 	return nil
 }
 
-func determineStoragePreferences(bboltDB, jsonDB TorrServerDB) (settingsInJSON, viewedInJson bool) {
+func determineStoragePreferences(bboltDB, jsonDB TorrServerDB) (settingsInJSON, viewedInJSON bool) {
 	// Try to load existing settings first
 	if existing := loadExistingSettings(bboltDB, jsonDB); existing != nil {
 		if IsDebug() {
@@ -109,7 +109,7 @@ func determineStoragePreferences(bboltDB, jsonDB TorrServerDB) (settingsInJSON, 
 
 	// Defaults (if not set by user)
 	settingsInJSON = true // JSON for settings (easy editable)
-	viewedInJson = false  // BBolt for viewed (performance)
+	viewedInJSON = false  // BBolt for viewed (performance)
 
 	// Environment overrides
 	if env := os.Getenv("TS_SETTINGS_STORAGE"); env != "" {
@@ -117,15 +117,15 @@ func determineStoragePreferences(bboltDB, jsonDB TorrServerDB) (settingsInJSON, 
 	}
 
 	if env := os.Getenv("TS_VIEWED_STORAGE"); env != "" {
-		viewedInJson = (env == "json")
+		viewedInJSON = (env == "json")
 	}
 
 	if IsDebug() {
-		log.TLogln(fmt.Sprintf("Using flags: settingsInJSON=%v, viewedInJson=%v",
-			settingsInJSON, viewedInJson))
+		log.TLogln(fmt.Sprintf("Using flags: settingsInJSON=%v, viewedInJSON=%v",
+			settingsInJSON, viewedInJSON))
 	}
 
-	return settingsInJSON, viewedInJson
+	return settingsInJSON, viewedInJSON
 }
 
 func loadExistingSettings(bboltDB, jsonDB TorrServerDB) *BTSets {
@@ -147,7 +147,7 @@ func loadExistingSettings(bboltDB, jsonDB TorrServerDB) *BTSets {
 	return nil
 }
 
-func applyCleanMigrations(bboltDB, jsonDB TorrServerDB, settingsInJSON, viewedInJson bool) {
+func applyCleanMigrations(bboltDB, jsonDB TorrServerDB, settingsInJSON, viewedInJSON bool) {
 	// Settings migration
 	if settingsInJSON {
 		safeMigrate(bboltDB, jsonDB, "Settings", "BitTorr", "JSON", true)
@@ -156,7 +156,7 @@ func applyCleanMigrations(bboltDB, jsonDB TorrServerDB, settingsInJSON, viewedIn
 	}
 
 	// Viewed migration
-	if viewedInJson {
+	if viewedInJSON {
 		safeMigrateAll(bboltDB, jsonDB, "Viewed", "JSON", true)
 	} else {
 		safeMigrateAll(jsonDB, bboltDB, "Viewed", "BBolt", true)
@@ -232,7 +232,7 @@ func safeMigrateAll(source, target TorrServerDB, xpath, targetName string, clear
 	}
 }
 
-func setupDatabaseRouting(bboltDB, jsonDB TorrServerDB, settingsInJSON, viewedInJson bool) {
+func setupDatabaseRouting(bboltDB, jsonDB TorrServerDB, settingsInJSON, viewedInJSON bool) {
 	dbRouter := NewXPathDBRouter()
 	registerRoute := func(db TorrServerDB, route string) {
 		if err := dbRouter.RegisterRoute(db, route); err != nil {
@@ -246,7 +246,7 @@ func setupDatabaseRouting(bboltDB, jsonDB TorrServerDB, settingsInJSON, viewedIn
 		registerRoute(bboltDB, "Settings")
 	}
 
-	if viewedInJson {
+	if viewedInJSON {
 		registerRoute(jsonDB, "Viewed")
 	} else {
 		registerRoute(bboltDB, "Viewed")
@@ -257,14 +257,14 @@ func setupDatabaseRouting(bboltDB, jsonDB TorrServerDB, settingsInJSON, viewedIn
 	tdb = NewDBReadCache(dbRouter)
 }
 
-func logConfiguration(settingsInJSON, viewedInJson bool) {
+func logConfiguration(settingsInJSON, viewedInJSON bool) {
 	settingsLoc := "JSON"
 	if !settingsInJSON {
 		settingsLoc = "BBolt"
 	}
 
 	viewedLoc := "JSON"
-	if !viewedInJson {
+	if !viewedInJSON {
 		viewedLoc = "BBolt"
 	}
 

@@ -17,33 +17,33 @@ const (
 	EB
 )
 
-func Format(b float64) string {
+func Format(bytesValue float64) string {
 	multiple := ""
-	value := b
+	value := bytesValue
 
 	switch {
-	case b >= EB:
+	case bytesValue >= EB:
 		value /= EB
 		multiple = "EB"
-	case b >= PB:
+	case bytesValue >= PB:
 		value /= PB
 		multiple = "PB"
-	case b >= TB:
+	case bytesValue >= TB:
 		value /= TB
 		multiple = "TB"
-	case b >= GB:
+	case bytesValue >= GB:
 		value /= GB
 		multiple = "GB"
-	case b >= MB:
+	case bytesValue >= MB:
 		value /= MB
 		multiple = "MB"
-	case b >= KB:
+	case bytesValue >= KB:
 		value /= KB
 		multiple = "KB"
-	case b == 0:
+	case bytesValue == 0:
 		return "0"
 	default:
-		return strconv.FormatInt(int64(b), 10) + "B"
+		return strconv.FormatInt(int64(bytesValue), 10) + "B"
 	}
 
 	return fmt.Sprintf("%.2f%s", value, multiple)

@@ -16,7 +16,7 @@ type CacheState struct {
 }
 
 type ItemState struct {
-	Id        int
+	ID        int
 	Length    int64
 	Size      int64
 	Completed bool

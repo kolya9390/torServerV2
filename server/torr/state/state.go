@@ -70,7 +70,7 @@ type TorrentStatus struct {
 }
 
 type TorrentFileStat struct {
-	Id     int    `json:"id,omitempty"`
+	ID     int    `json:"id,omitempty"` //nolint:staticcheck // json tag preserves API compatibility
 	Path   string `json:"path,omitempty"`
 	Length int64  `json:"length,omitempty"`
 }

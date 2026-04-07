@@ -85,9 +85,6 @@ func (v *JSONDB) Get(xPath, name string) []byte {
 
 					return data
 				}
-			} else {
-				// We assume this is not 'error' but 'no entry' which is normal
-				return nil
 			}
 		}
 	}

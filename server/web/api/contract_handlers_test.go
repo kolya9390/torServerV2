@@ -36,7 +36,7 @@ type contractSearchService struct {
 
 type contractViewedService struct{ noopViewedService }
 type contractSystemService struct{ noopSystemService }
-type contractMediaService struct{ noopMediaService }
+type contractMediaService struct{ noopMediaService } //nolint:unused // embedded to document interface contract
 
 func (s *contractSettingsService) Current() *sets.BTSets {
 	if s.current == nil {

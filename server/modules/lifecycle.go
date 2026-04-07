@@ -39,16 +39,17 @@ func startWithPolicy(name string, start func() error, policy RestartPolicy) erro
 	var lastErr error
 
 	for attempt := 1; attempt <= policy.MaxAttempts; attempt++ {
-		if err := start(); err == nil {
+		err := start()
+		if err == nil {
 			if attempt > 1 {
 				log.TLogln("module started after retry", name, "attempt", attempt)
 			}
 
 			return nil
-		} else {
-			lastErr = err
-			log.TLogln("module start failed", name, "attempt", attempt, "error", err)
 		}
+
+		lastErr = err
+		log.TLogln("module start failed", name, "attempt", attempt, "error", err)
 
 		if attempt < policy.MaxAttempts {
 			time.Sleep(backoff)

@@ -3,6 +3,8 @@ package utils
 import (
 	"context"
 	"image"
+
+	// Blank imports required for image format registration in http.DetectContentType.
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"

@@ -65,8 +65,6 @@ func (f *TorrFile) Name() string { return f.info.Name() }
 func (f *TorrFile) IsDir() bool  { return false }
 func (f *TorrFile) Type() fs.FileMode {
 	return f.info.Mode()
-
-	
 }
 func (f *TorrFile) Info() (fs.FileInfo, error)           { return f.info, nil }
 func (f *TorrFile) Stat() (fs.FileInfo, error)           { return f.info, nil }

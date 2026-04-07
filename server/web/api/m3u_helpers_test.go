@@ -19,10 +19,10 @@ func (s *testViewedSvc) ListViewed(hash string) []*sets.Viewed {
 
 func TestFindFileNamesakes(t *testing.T) {
 	files := []*state.TorrentFileStat{
-		{Id: 1, Path: "movie.avi"},
-		{Id: 2, Path: "movie.avi.srt"},
-		{Id: 3, Path: "movie.avi.eng.srt"},
-		{Id: 4, Path: "other.avi"},
+		{ID: 1, Path: "movie.avi"},
+		{ID: 2, Path: "movie.avi.srt"},
+		{ID: 3, Path: "movie.avi.eng.srt"},
+		{ID: 4, Path: "other.avi"},
 	}
 
 	result := findFileNamesakes(files, files[0])
@@ -34,8 +34,8 @@ func TestFindFileNamesakes(t *testing.T) {
 
 func TestFindFileNamesakes_NoMatches(t *testing.T) {
 	files := []*state.TorrentFileStat{
-		{Id: 1, Path: "video.mp4"},
-		{Id: 2, Path: "audio.mp3"},
+		{ID: 1, Path: "video.mp4"},
+		{ID: 2, Path: "audio.mp3"},
 	}
 
 	result := findFileNamesakes(files, files[0])
@@ -50,7 +50,7 @@ func TestSearchLastPlayed_NoViewed(t *testing.T) {
 	tor := &state.TorrentStatus{
 		Hash: "abc123",
 		FileStats: []*state.TorrentFileStat{
-			{Id: 1, Path: "video.mp4"},
+			{ID: 1, Path: "video.mp4"},
 		},
 	}
 
@@ -71,8 +71,8 @@ func TestSearchLastPlayed_Found(t *testing.T) {
 	tor := &state.TorrentStatus{
 		Hash: "abc123",
 		FileStats: []*state.TorrentFileStat{
-			{Id: 1, Path: "video1.mp4"},
-			{Id: 2, Path: "video2.mp4"},
+			{ID: 1, Path: "video1.mp4"},
+			{ID: 2, Path: "video2.mp4"},
 		},
 	}
 

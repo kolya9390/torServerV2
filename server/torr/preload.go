@@ -366,7 +366,7 @@ func (t *Torrent) findFileIndex(index int) *torrent.File {
 	var stFile *state.TorrentFileStat
 
 	for _, f := range st.FileStats {
-		if index == f.Id {
+		if index == f.ID {
 			stFile = f
 
 			break

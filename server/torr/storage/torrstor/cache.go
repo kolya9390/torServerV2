@@ -185,12 +185,12 @@ func (c *Cache) GetState() *state.CacheState {
 		for _, p := range c.pieces {
 			if p.Size.Load() > 0 {
 				fill += p.Size.Load()
-				piecesState[p.Id] = state.ItemState{
-					Id:        p.Id,
+				piecesState[p.ID] = state.ItemState{
+					ID:        p.ID,
 					Size:      p.Size.Load(),
 					Length:    c.pieceLength,
 					Completed: p.Complete,
-					Priority:  int(c.torrent.PieceState(p.Id).Priority),
+					Priority:  int(c.torrent.PieceState(p.ID).Priority),
 				}
 			}
 		}
@@ -566,6 +566,7 @@ func (c *Cache) evictLRU() *Piece {
 	if !ok {
 		return nil
 	}
+
 	c.lru.Remove(el)
 
 	p.lruEl = nil

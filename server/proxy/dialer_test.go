@@ -152,12 +152,3 @@ func TestDialerConfigured(t *testing.T) {
 		t.Error("HTTPProxy should return non-nil function")
 	}
 }
-
-func parseURL(s string) (*url.URL, error) {
-	cfg, err := NewConfig(s, "tracker")
-	if err != nil {
-		return nil, err
-	}
-
-	return cfg.URL, nil
-}

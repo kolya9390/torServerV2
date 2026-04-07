@@ -3,6 +3,8 @@ package torrstor
 import (
 	"io"
 	"sync"
+
+	"server/log"
 )
 
 // memPieceBufPool reuses byte slices for piece buffers.
@@ -71,7 +73,12 @@ func (p *MemPiece) WriteAt(b []byte, off int64) (n int, err error) {
 
 	if p.buffer == nil {
 		go func() {
-			defer func() { _ = recover() }()
+			defer func() {
+				if r := recover(); r != nil {
+					log.TLogln("cleanPieces panic recovered in goroutine:", r)
+				}
+			}()
+
 			p.piece.cache.cleanPieces()
 		}()
 

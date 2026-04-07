@@ -69,7 +69,7 @@ func (bt *BTServer) Connect() error {
 	bt.configure(context.TODO())
 	bt.client, err = torrent.NewClient(bt.config)
 	bt.torrents = make(map[metainfo.Hash]*Torrent)
-	InitApiHelper(bt)
+	InitAPIHelper(bt)
 
 	return err
 }
@@ -309,11 +309,11 @@ func isPrivateIP(ip net.IP) bool {
 	return false
 }
 
-// getPublicIp4 returns the first non-private IPv4 address of all active interfaces.
+// getPublicIP4 returns the first non-private IPv4 address of all active interfaces.
 // It returns nil if no suitable address is found.
 //
 //nolint:unused // Reserved for debugging public IP addresses
-func getPublicIp4() net.IP {
+func getPublicIP4() net.IP {
 	ifaces, err := anet.Interfaces()
 	if err != nil {
 		log.TLogln("Error get public IPv4:", err)
@@ -347,11 +347,11 @@ func getPublicIp4() net.IP {
 	return nil
 }
 
-// getPublicIp6 returns the first non-private IPv6 address of all active interfaces.
+// getPublicIP6 returns the first non-private IPv6 address of all active interfaces.
 // It returns nil if no suitable address is found.
 //
 //nolint:unused // Reserved for debugging public IP addresses
-func getPublicIp6() net.IP {
+func getPublicIP6() net.IP {
 	ifaces, err := anet.Interfaces()
 	if err != nil {
 		log.TLogln("Error get public IPv6:", err)

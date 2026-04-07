@@ -20,7 +20,7 @@ type DiskPiece struct {
 }
 
 func NewDiskPiece(p *Piece) *DiskPiece {
-	name := filepath.Join(settings.BTsets.TorrentsSavePath, p.cache.hash.HexString(), strconv.Itoa(p.Id))
+	name := filepath.Join(settings.BTsets.TorrentsSavePath, p.cache.hash.HexString(), strconv.Itoa(p.ID))
 
 	ff, err := os.Stat(name)
 	if err == nil {
@@ -32,7 +32,7 @@ func NewDiskPiece(p *Piece) *DiskPiece {
 	return &DiskPiece{piece: p, name: name}
 }
 
-func (p *DiskPiece) WriteAt(b []byte, off int64) (n int, err error) {
+func (p *DiskPiece) WriteAt(data []byte, off int64) (n int, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -45,7 +45,7 @@ func (p *DiskPiece) WriteAt(b []byte, off int64) (n int, err error) {
 
 	defer func() { _ = ff.Close() }()
 
-	n, err = ff.WriteAt(b, off)
+	n, err = ff.WriteAt(data, off)
 
 	p.piece.Size.Add(int64(n))
 

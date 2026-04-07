@@ -68,8 +68,6 @@ func (d *CategoryDir) Name() string { return d.info.Name() }
 func (d *CategoryDir) IsDir() bool  { return true }
 func (d *CategoryDir) Type() fs.FileMode {
 	return d.info.Mode()
-
-	
 }
 func (d *CategoryDir) Info() (fs.FileInfo, error) { return d.info, nil }
 

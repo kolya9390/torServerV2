@@ -16,7 +16,7 @@ import (
 
 var bts *BTServer
 
-func InitApiHelper(bt *BTServer) {
+func InitAPIHelper(bt *BTServer) {
 	bts = bt
 }
 
@@ -139,9 +139,9 @@ func GetTorrent(hashHex string) *Torrent {
 func SetTorrent(hashHex, title, poster, category string, data string) *Torrent {
 	hash := metainfo.NewHashFromHex(hashHex)
 	torr := bts.GetTorrent(hash)
-	torrDb := GetTorrentDB(hash)
+	torrDB := GetTorrentDB(hash)
 
-	if title == "" && torr == nil && torrDb != nil {
+	if title == "" && torr == nil && torrDB != nil {
 		torr = GetTorrent(hashHex)
 		torr.GotInfo()
 
@@ -164,23 +164,23 @@ func SetTorrent(hashHex, title, poster, category string, data string) *Torrent {
 		}
 	}
 	// update torrent data in DB
-	if torrDb != nil {
-		torrDb.Title = title
-		torrDb.Poster = poster
-		torrDb.Category = category
+	if torrDB != nil {
+		torrDB.Title = title
+		torrDB.Poster = poster
+		torrDB.Category = category
 
 		if data != "" {
-			torrDb.Data = data
+			torrDB.Data = data
 		}
 
-		AddTorrentDB(torrDb)
+		AddTorrentDB(torrDB)
 	}
 
 	if torr != nil {
 		return torr
-	} else {
-		return torrDb
 	}
+
+	return torrDB
 }
 
 func RemTorrent(hashHex string) {
@@ -233,9 +233,9 @@ func ListTorrent() []*Torrent {
 	sort.Slice(ret, func(i, j int) bool {
 		if ret[i].Timestamp != ret[j].Timestamp {
 			return ret[i].Timestamp > ret[j].Timestamp
-		} else {
-			return ret[i].Title > ret[j].Title
 		}
+
+		return ret[i].Title > ret[j].Title
 	})
 
 	return ret
