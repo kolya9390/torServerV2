@@ -103,7 +103,7 @@ func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
 
 	userAgent := "qBittorrent/4.3.9"
 	peerID := "-qB4390-"
-	upnpID := "TorrServer/" + version.Version
+	upnpID := "TorrServer/" + version.Version()
 	cliVers := userAgent
 
 	config.Debug = settings.GetSettings().EnableDebug

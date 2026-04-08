@@ -142,7 +142,7 @@ GO
 }
 
 start_server() {
-  (cd "${ROOT_DIR}" && GOCACHE=/tmp/go-build-cache go run ./cmd -p "${PORT}" -d "${RUNTIME_DIR}") > "${SERVER_LOG}" 2>&1 &
+  (cd "${ROOT_DIR}" && GOCACHE=/tmp/go-build-cache go run ./cmd --port "${PORT}" --path "${RUNTIME_DIR}" --torrentsdir "${RUNTIME_DIR}") > "${SERVER_LOG}" 2>&1 &
   SERVER_PID=$!
   wait_for_server
 }

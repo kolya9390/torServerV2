@@ -11,6 +11,13 @@
 
 Этот проект основан на [YouROK/TorrServer](https://github.com/YouROK/TorrServer) — оригинальной реализации сервера для стриминга торрентов.
 
+**Рекомендуемый клиент:**
+Для удобного управления сервером, добавления торрентов и выбора плеера используйте **[TorrServe](https://github.com/YouROK/TorrServe)** для Android.
+Он позволяет:
+- Управлять настройками сервера.
+- Добавлять торренты и управлять кэшем.
+- Выбирать плеер для воспроизведения.
+
 **Совместимость:**
 - ✅ **Полностью совместим** с клиентом [YouROK/TorrServe](https://github.com/YouROK/TorrServe)
 - ✅ **Протестирован** для просмотра торрентов и стриминга
@@ -34,16 +41,23 @@
 - HTTP API для автоматизации
 - FUSE/WebDAV для монтирования
 
-**Что НЕ умеет:**
-- ❌ Веб-интерфейс
-- ❌ Поиск торрентов
-- ❌ Мультипользовательский режим
-
 ---
 
 ## 🚀 Быстрый старт
 
-### Docker
+### 1. Бинарный файл (Linux / macOS / Windows)
+Скачайте файл с [страницы релизов](https://github.com/kolya9390/torServerV2/releases) и запустите:
+
+```bash
+# Запуск сервера (по умолчанию порт 8090)
+./torrserver
+
+# Запуск с настройками
+./torrserver --port 8090 --path ./config --torrentsdir ./torrents
+```
+*(Для Windows используйте `torrserver.exe`)*
+
+### 2. Docker (Рекомендуется)
 
 ```bash
 docker run -d \
@@ -52,10 +66,14 @@ docker run -d \
   -p 9080:9080 \
   -v ./config:/opt/ts/config \
   -v ./torrents:/opt/ts/torrents \
-  yourok/torrserver:latest
+  ghcr.io/kolya9390/torServerV2:latest
 ```
 
-**Порты:** `8090` — HTTP API, `9080` — DLNA
+### 3. Docker Compose
+Если вы склонировали репозиторий:
+```bash
+docker compose -f docker-compose.yml up -d
+```
 
 ---
 
@@ -111,11 +129,24 @@ docker build -t torrserver .
 
 ## ⚙️ Конфигурация
 
+### Флаги запуска
+
+| Флаг | По умолчанию | Описание |
+|------|--------------|----------|
+| `--port` | `8090` | Порт веб-интерфейса и API |
+| `--path` | `./` | Путь к папке с конфигурацией (`config.yml` и БД) |
+| `--torrentsdir` | `./` | Папка для хранения торрент-файлов и кэша |
+| `--logpath` | `./` | Путь для сохранения логов |
+| `--httpauth` | `false` | Включить защиту паролем (файл `accs.db`) |
+
+### Переменные окружения (для Docker)
+
 | Переменная | По умолчанию | Описание |
 |------------|--------------|----------|
 | `TS_PORT` | `8090` | HTTP порт |
 | `TS_DLN` | `1` | DLNA (1/0) |
-| `TS_CONF_PATH` | `/opt/ts/config` | Путь к конфигy |
+| `TS_CONF_PATH` | `/opt/ts/config` | Путь к конфигу |
+| `TS_TORR_DIR` | `/opt/ts/torrents` | Путь к торрентам |
 | `TS_CACHE_SIZE` | `67108864` | Кэш (64 MB) |
 
 ---
