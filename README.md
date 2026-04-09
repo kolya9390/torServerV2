@@ -11,17 +11,15 @@
 
 Этот проект основан на [YouROK/TorrServer](https://github.com/YouROK/TorrServer) — оригинальной реализации сервера для стриминга торрентов.
 
-**Рекомендуемый клиент:**
-Для удобного управления сервером, добавления торрентов и выбора плеера используйте **[TorrServe](https://github.com/YouROK/TorrServe)** для Android.
-Он позволяет:
-- Управлять настройками сервера.
-- Добавлять торренты и управлять кэшем.
-- Выбирать плеер для воспроизведения.
+**Рекомендуемые клиенты для просмотра:**
+
+- **[TorrServe](https://github.com/YouROK/TorrServe)** — Android-клиент для управления сервером, поиска торрентов, добавления и выбора плеера.
+- **[Lampa](https://github.com/yumata/lampa-source)** — приложение для Smart TV (WebOS, Tizen, Android TV). Подключается к TorrServer через плагин и позволяет искать и смотреть торренты прямо на телевизоре.
 
 **Совместимость:**
-- ✅ **Полностью совместим** с клиентом [YouROK/TorrServe](https://github.com/YouROK/TorrServe)
-- ✅ **Протестирован** для просмотра торрентов и стриминга
-- ✅ **API совместим** с оригинальной версией
+- ✅ **Протестирован** с TorrServe, Lampa, VLC, MPV, Kodi
+- ✅ **API совместим** с оригинальной версией YouROK/TorrServer
+- ✅ **DLNA** работает с любыми DLNA-клиентами (TV, плееры)
 
 ---
 
@@ -79,30 +77,118 @@ docker compose -f docker-compose.yml up -d
 
 ## 📺 Как смотреть
 
-### Вариант 1: DLNA (TV)
+### Шаг 1: Добавить торрент
 
-1. Открыть Kodi/VLC на TV
-2. Найти "TorrServer" в DLNA
-3. Выбрать торрент → Play
+**Через magnet-ссылку:**
+```bash
+curl -X POST http://localhost:8090/torrents \
+  -H "Content-Type: application/json" \
+  -d '{"action": "add", "link": "magnet:?xt=urn:btih:HASH&dn=Title"}'
+```
 
-### Вариант 2: M3U плейлист
+**Через .torrent файл (надёжнее):**
+```bash
+curl -X POST http://localhost:8090/torrents \
+  -H "Content-Type: application/json" \
+  -d '{"action": "add", "link": "file:///path/to/file.torrent"}'
+```
 
+### Шаг 2: Проверить статус
+
+```bash
+curl -X POST http://localhost:8090/torrents \
+  -H "Content-Type: application/json" \
+  -d '{"action": "list"}'
+```
+
+Дождитесь статуса **`Working`** (код 3). Пока статус `Torrent added` (код 0) — сервер ищет пиров.
+
+### Шаг 3: Запустить просмотр
+
+**Через MPV:**
+```bash
+mpv --no-ytdl 'http://localhost:8090/streams/play?link=HASH&index=1'
+```
+
+**Через VLC:**
+```bash
+open -a VLC 'http://localhost:8090/streams/play?link=HASH&index=1'
+```
+
+> **Важно:** `--no-ytdl` для MPV обязателен — отключает youtube-dl, который вызывает зависания.
+
+---
+
+## 📡 API Examples
+
+Base URL: `http://localhost:8090`
+
+### Torrent Management
+
+**List all torrents:**
+```bash
+curl -X POST http://localhost:8090/torrents \
+  -H "Content-Type: application/json" \
+  -d '{"action": "list"}'
+```
+
+**Add a torrent (magnet):**
+```bash
+curl -X POST http://localhost:8090/torrents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "add",
+    "link": "magnet:?xt=urn:btih:HASH&dn=Title"
+  }'
+```
+
+**Add a torrent (.torrent file):**
+```bash
+curl -X POST http://localhost:8090/torrents \
+  -H "Content-Type: application/json" \
+  -d '{"action": "add", "link": "file:///path/to/file.torrent"}'
+```
+
+**Remove a torrent:**
+```bash
+curl -X POST http://localhost:8090/torrents \
+  -H "Content-Type: application/json" \
+  -d '{"action": "rem", "hash": "HASH"}'
+```
+
+**Remove all torrents:**
+```bash
+curl -X POST http://localhost:8090/torrents \
+  -H "Content-Type: application/json" \
+  -d '{"action": "wipe"}'
+```
+
+### Streaming
+
+**Play specific file (recommended):**
+```bash
+mpv --no-ytdl 'http://localhost:8090/streams/play?link=HASH&index=1'
+```
+
+**M3U Playlist:**
 ```bash
 curl http://localhost:8090/playlistall/all.m3u
 ```
 
-Открыть URL в VLC/Kodi.
+### Settings
 
-### Вариант 3: HTTP API
-
+**Get settings:**
 ```bash
-# Добавить торрент
-curl -X POST http://localhost:8090/torrents \
+curl -X POST http://localhost:8090/settings \
   -H "Content-Type: application/json" \
-  -d '{"action": "add", "link": "magnet:?xt=urn:btih:..."}'
+  -d '{"action": "get"}'
+```
 
-# Стриминг
-vlc "http://localhost:8090/stream?link=magnet:?xt=urn:btih:..."
+**Update settings:**
+```bash
+curl -X POST http://localhost:8090/settings \
+  -H "Content-Type: application/json" \
+  -d '{"action": "set", "sets": {"CacheSize": 134217728}}'
 ```
 
 ---

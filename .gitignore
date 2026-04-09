@@ -185,3 +185,6 @@ go.work.sum
 
 # Local settings file
 settings.json
+
+# Local config database
+config.db

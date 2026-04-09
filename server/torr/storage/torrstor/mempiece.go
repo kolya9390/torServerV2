@@ -7,55 +7,10 @@ import (
 	"server/log"
 )
 
-// memPieceBufPool reuses byte slices for piece buffers.
-// Buffers are sized to common torrent piece lengths (16KB–4MB).
-// Get() returns a buffer >= requested size; Put() returns it to the pool.
-var memPieceBufPool = sync.Pool{
-	New: func() any {
-		return new([]byte)
-	},
-}
-
-// getBuffer obtains a reusable byte slice of at least the requested size.
-// If the pool returns an unexpected type, a new buffer is created as fallback.
-func getBuffer(size int) []byte {
-	ptr, ok := memPieceBufPool.Get().(*[]byte)
-	if !ok {
-		// Pool returned unexpected type — create new buffer
-		return make([]byte, size)
-	}
-
-	buf := *ptr
-	if cap(buf) < size {
-		// Grow buffer to avoid reallocation on every write
-		buf = make([]byte, size)
-	}
-
-	return buf[:size]
-}
-
-// putBuffer returns a byte slice to the pool for reuse.
-// Buffers smaller than 4KB are discarded to avoid pooling overhead.
-func putBuffer(buf []byte) {
-	// Don't pool tiny buffers — not worth the GC overhead
-	if cap(buf) < 4096 {
-		return
-	}
-
-	ptr, ok := memPieceBufPool.Get().(*[]byte)
-	if !ok {
-		// Pool corrupted — discard this buffer
-		return
-	}
-
-	if cap(buf) > cap(*ptr) {
-		// Replace pooled buffer with larger one
-		*ptr = buf
-	}
-
-	memPieceBufPool.Put(ptr)
-}
-
+// MemPiece holds an in-memory buffer for a single torrent piece.
+// We avoid sync.Pool here because torrent pieces are large (16KB–4MB)
+// and have a long lifecycle per piece. Direct allocation + GC is more
+// predictable and prevents memory retention after cache cleanup.
 type MemPiece struct {
 	piece *Piece
 
@@ -83,11 +38,10 @@ func (p *MemPiece) WriteAt(b []byte, off int64) (n int, err error) {
 		}()
 
 		pieceLen := int(p.piece.cache.pieceLength)
-		p.buffer = getBuffer(pieceLen)
+		p.buffer = make([]byte, pieceLen)
 	}
 
-	n = copy(p.buffer[off:], b[:])
-
+	n = copy(p.buffer[off:], b)
 	p.piece.Size.Add(int64(n))
 
 	if p.piece.Size.Load() > p.piece.cache.pieceLength {
@@ -103,6 +57,10 @@ func (p *MemPiece) ReadAt(b []byte, off int64) (n int, err error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
+	if p.buffer == nil {
+		return 0, io.EOF
+	}
+
 	size := len(b)
 	if size+int(off) > len(p.buffer) {
 		size = max(len(p.buffer)-int(off), 0)
@@ -112,7 +70,7 @@ func (p *MemPiece) ReadAt(b []byte, off int64) (n int, err error) {
 		return 0, io.EOF
 	}
 
-	n = copy(b, p.buffer[int(off) : int(off)+size][:])
+	n = copy(b, p.buffer[int(off):int(off)+size])
 	p.piece.markAccessed()
 
 	if int64(len(b))+off >= p.piece.Size.Load() {
@@ -131,7 +89,8 @@ func (p *MemPiece) Release() {
 	defer p.mu.Unlock()
 
 	if p.buffer != nil {
-		putBuffer(p.buffer)
+		// Directly nil out the buffer. Go's runtime will reclaim the
+		// underlying memory on the next GC cycle without pooling overhead.
 		p.buffer = nil
 	}
 

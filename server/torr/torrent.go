@@ -315,6 +315,12 @@ func (t *Torrent) Close() bool {
 		t.bt.mu.Lock()
 		delete(t.bt.torrents, t.Hash())
 		t.bt.mu.Unlock()
+
+		// Release cache to free memory after torrent is removed from active list.
+		// Without this, cached piece data stays in RAM indefinitely.
+		if torrstor, ok := t.bt.storage.(*torrstor.Storage); ok {
+			torrstor.CloseHash(t.Hash())
+		}
 	}
 
 	t.drop()
