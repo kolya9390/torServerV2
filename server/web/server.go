@@ -13,6 +13,8 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/location/v2"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"server/log"
 	"server/metrics"
@@ -82,6 +84,10 @@ func (s *Server) Start() error {
 
 	route := setupMiddleware(s)
 	registerDebugRoutes(route)
+
+	// Swagger UI (accessible at /swagger/index.html)
+	route.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	registerAppRoutes(route)
 
 	if err := s.startHTTPSServer(route, ips); err != nil {

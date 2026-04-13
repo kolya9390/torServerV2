@@ -1,15 +1,13 @@
-.PHONY: build build-all build-prometheus test lint lint-strict lint-fix e2e docker docker-build docker-push clean help web web-dev generate-mocks
+.PHONY: build build-all test lint lint-fix e2e docker docker-build docker-push clean help generate-mocks swagger
 
 # Go parameters
 GOCMD=go
 GOBUILD=$(GOCMD) build
 GOTEST=$(GOCMD) test
-GOMOD=$(GOCMD) mod
 GOCLEAN=$(GOCMD) clean
 
 # Linter
 GOLANGCI_LINT=golangci-lint
-LINT_CONFIG=server/.golangci-strict.yml
 
 # Binary name
 BINARY_NAME=torrserver
@@ -23,9 +21,8 @@ LDFLAGS=-ldflags '-w -s'
 
 all: build
 
-## build: Build the server binary (default, no Prometheus)
+## build: Build the server binary (includes CLI)
 build:
-	@echo "Building $(BINARY_NAME)"
 	@mkdir -p $(BINARY_DIR)
 	cd server && $(GOBUILD) $(LDFLAGS) -o ../$(BINARY_DIR)/$(BINARY_NAME) ./cmd
 
@@ -34,6 +31,11 @@ build-all:
 	@echo "Building for all platforms..."
 	@bash ./build-all.sh
 
+## swagger: Generate Swagger API documentation
+swagger:
+	@echo "Generating Swagger docs..."
+	cd server && swag init -g cmd/main.go --parseDependency
+	@echo "Done! Open http://localhost:8090/swagger/index.html"
 
 ## test: Run tests
 test:
@@ -57,11 +59,6 @@ lint-fix:
 	@echo "Running linter (auto-fix)..."
 	cd server && $(GOLANGCI_LINT) run --fix ./...
 
-## lint-legacy: Run legacy linter script (deprecated)
-lint-legacy:
-	@echo "Running legacy linter script..."
-	cd server && ./scripts/lint.sh
-
 ## e2e: Run E2E smoke tests
 e2e:
 	@echo "Running E2E smoke tests..."
@@ -70,27 +67,27 @@ e2e:
 ## docker-build: Build Docker image for current platform
 docker-build:
 	@echo "Building Docker image..."
-	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+	docker build -t $(BINARY_NAME):$(DOCKER_TAG) .
 
 ## docker-build-multiarch: Build Docker image for multiple architectures
 docker-build-multiarch:
 	@echo "Building multi-arch Docker image..."
-	docker buildx build --platform linux/amd64,linux/arm64 -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+	docker buildx build --platform linux/amd64,linux/arm64 -t $(BINARY_NAME):$(DOCKER_TAG) .
 
 ## docker-push: Build and push multi-arch Docker image
 docker-push:
 	@echo "Building and pushing multi-arch Docker image..."
-	docker buildx build --platform linux/amd64,linux/arm64 -t $(DOCKER_IMAGE):$(DOCKER_TAG) --push .
+	docker buildx build --platform linux/amd64,linux/arm64 -t $(BINARY_NAME):$(DOCKER_TAG) --push .
 
 ## docker-run: Run Docker container locally
 docker-run:
 	@echo "Running Docker container..."
-	docker run --rm -d --name torrserver -p 8090:8090 $(DOCKER_IMAGE):$(DOCKER_TAG)
+	docker run --rm -d --name $(BINARY_NAME) -p 8090:8090 $(BINARY_NAME):$(DOCKER_TAG)
 
 ## docker-stop: Stop running Docker container
 docker-stop:
 	@echo "Stopping Docker container..."
-	docker stop torrserver 2>/dev/null || true
+	docker stop $(BINARY_NAME) 2>/dev/null || true
 
 ## clean: Clean build artifacts
 clean:

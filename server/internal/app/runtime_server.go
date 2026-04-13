@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"os"
 	"server/config"
 	"server/internal/app/apiservices"
 	"server/internal/startup"
@@ -9,6 +10,7 @@ import (
 	"server/settings"
 	"server/web"
 	"server/web/api"
+	"strings"
 )
 
 type webRuntime interface {
@@ -33,7 +35,7 @@ var defaultServerRuntimeDeps = serverRuntimeDeps{
 		return web.NewServer()
 	},
 	closeSettings:  settings.CloseDB,
-	setShutdown:    nil,
+	setShutdown:    api.SetShutdownHook,
 	setAPIServices: api.SetServices,
 }
 
@@ -90,6 +92,9 @@ func (r *serverRuntime) Start() error {
 	if r.cfg != nil {
 		r.applyConfig()
 	}
+
+	mode, token := resolveShutdownConfig(args, r.cfg)
+	api.ConfigureShutdown(mode, token)
 
 	if err := r.web.Start(); err != nil {
 		return err
@@ -155,4 +160,22 @@ func newServerRuntime(deps serverRuntimeDeps, cfg *config.Config) Runtime {
 		cfg:         cfg,
 		apiServices: apiServices,
 	}
+}
+
+func resolveShutdownConfig(args *settings.ExecArgs, cfg *config.Config) (string, string) {
+	mode := strings.TrimSpace(args.ShutdownMode)
+	if mode == "" {
+		mode = strings.TrimSpace(os.Getenv("TS_SHUTDOWN_MODE"))
+	}
+
+	if mode == "" && cfg != nil {
+		mode = strings.TrimSpace(cfg.Server.ShutdownMode)
+	}
+
+	token := strings.TrimSpace(args.ShutdownToken)
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("TS_SHUTDOWN_TOKEN"))
+	}
+
+	return mode, token
 }

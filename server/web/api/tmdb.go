@@ -12,7 +12,7 @@ import (
 //	@Tags			API
 //
 //	@Produce		json
-//	@Success		200	{object}	sets.TMDBConfig	"TMDB settings"
+//	@Success		200	{object}	object	"TMDB settings"
 //	@Router			/tmdb/settings [get]
 func tmdbSettings(c *gin.Context) {
 	cfg, ok := getServices().Settings.TMDBConfig()

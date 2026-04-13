@@ -11,6 +11,7 @@ server:
   
   # Authentication
   http_auth: false
+  shutdown_mode: "local"  # local|public
   # search_wa: false  # Allow search without auth (deprecated, use torznab settings)
 
 # DLNA

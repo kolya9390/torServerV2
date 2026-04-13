@@ -99,9 +99,12 @@ func TestOsExitOnlyInMain(t *testing.T) {
 				return true
 			}
 
+			// Allow os.Exit in cmd/main.go (server mode) and cmd/cli/ (CLI mode)
 			mainPath := filepath.Join(projectRoot(t), "cmd", "main.go")
-			if filepath.Clean(path) != filepath.Clean(mainPath) {
-				t.Errorf("os.Exit is only allowed in cmd/main.go, found in %s", path)
+			cliDir := filepath.Join(projectRoot(t), "cmd", "cli")
+			isCLI := strings.HasPrefix(filepath.Clean(path), filepath.Clean(cliDir))
+			if filepath.Clean(path) != filepath.Clean(mainPath) && !isCLI {
+				t.Errorf("os.Exit is only allowed in cmd/main.go or cmd/cli/, found in %s", path)
 			}
 
 			return true

@@ -159,14 +159,14 @@
     },
     {
       "path": "/shutdown",
-      "methods": ["GET"],
+      "methods": ["GET", "POST"],
       "auth": "required",
       "status": "compatible",
       "notes": "Shutdown endpoint"
     },
     {
       "path": "/shutdown/*reason",
-      "methods": ["GET"],
+      "methods": ["GET", "POST"],
       "auth": "required",
       "status": "compatible",
       "notes": "Shutdown with reason"

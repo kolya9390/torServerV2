@@ -27,6 +27,8 @@ func registerAPIRoutes(route gin.IRouter) {
 
 	authorized.GET("/shutdown", shutdown)
 	authorized.GET("/shutdown/*reason", shutdown)
+	authorized.POST("/shutdown", shutdown)
+	authorized.POST("/shutdown/*reason", shutdown)
 
 	authorized.POST("/settings", settings)
 	authorized.POST("/torznab/test", torznabTest)

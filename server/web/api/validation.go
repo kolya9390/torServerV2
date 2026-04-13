@@ -44,6 +44,14 @@ func newUnauthorizedError(message string) error {
 	}
 }
 
+func newForbiddenError(message string) error {
+	return APIError{
+		Type:    "forbidden",
+		Message: message,
+		Status:  http.StatusForbidden,
+	}
+}
+
 func newNotFoundError(message string) error {
 	return APIError{
 		Type:    "not_found",

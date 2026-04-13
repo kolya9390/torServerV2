@@ -95,7 +95,7 @@ func processUploadFile(
 //	@Accept			multipart/form-data
 //
 //	@Produce		json
-//	@Success		200	{object}	state.TorrentStatus	"Torrent status"
+//	@Success		200	{object}	object	"Torrent status"
 //	@Router			/torrent/upload [post]
 func torrentUpload(c *gin.Context) {
 	svc := getServices()

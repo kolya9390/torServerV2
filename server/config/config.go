@@ -28,13 +28,14 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port     string `yaml:"port"`
-	SSL      bool   `yaml:"ssl"`
-	SSLPort  string `yaml:"ssl_port"`
-	SSLCert  string `yaml:"ssl_cert"`
-	SSLKey   string `yaml:"ssl_key"`
-	HTTPAuth bool   `yaml:"http_auth"`
-	SearchWA bool   `yaml:"search_wa"`
+	Port         string `yaml:"port"`
+	SSL          bool   `yaml:"ssl"`
+	SSLPort      string `yaml:"ssl_port"`
+	SSLCert      string `yaml:"ssl_cert"`
+	SSLKey       string `yaml:"ssl_key"`
+	HTTPAuth     bool   `yaml:"http_auth"`
+	SearchWA     bool   `yaml:"search_wa"`
+	ShutdownMode string `yaml:"shutdown_mode"`
 }
 
 type DLNAConfig struct {
@@ -199,6 +200,10 @@ func applyDefaults(cfg *Config) {
 
 	if cfg.Server.SSLPort == "" {
 		cfg.Server.SSLPort = "8091"
+	}
+
+	if cfg.Server.ShutdownMode == "" {
+		cfg.Server.ShutdownMode = "local"
 	}
 
 	if cfg.Cache.SizeMB == 0 {

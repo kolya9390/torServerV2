@@ -1,3 +1,10 @@
+// @title TorrServer API
+// @version 1.0
+// @description Minimalist torrent streaming server API.
+// @host localhost:8090
+// @BasePath /
+// @schemes http
+
 package main
 
 import (
@@ -6,12 +13,16 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
+
+	_ "server/docs"
 
 	"github.com/alexflint/go-arg"
 
 	"server/bootstrap"
+	"server/cmd/cli"
 	"server/config"
 	"server/log"
 	"server/settings"
@@ -20,7 +31,23 @@ import (
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
+	// Determine mode: CLI or Server
+	// If args exist and the first one does NOT start with '-', it's a CLI command.
+	// If no args or starts with '-', it's Server mode (pass flags to go-arg).
+	isCli := len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-")
+
+	if isCli {
+		cli.Execute()
+
+		return
+	}
+
+	runServer()
+}
+
+func runServer() {
 	args, err := parseArgs(os.Args[1:])
+
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(2)
@@ -32,11 +59,13 @@ func main() {
 	defer log.Close()
 
 	cfg, err := loadConfig(args)
+
 	if err != nil {
 		log.TLogln("Failed to load config:", err)
 	}
 
 	app, err := bootstrap.New(args, cfg)
+
 	if err != nil {
 		log.TLogln("Failed to initialize:", err)
 
@@ -62,6 +91,9 @@ func main() {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	shouldStop := true
+
 	select {
 	case sig := <-quit:
 		log.TLogln("Received signal:", sig.String())
@@ -70,7 +102,13 @@ func main() {
 			log.TLogln("Runtime exited with error:", err)
 		} else {
 			log.TLogln("Runtime exited")
+
+			shouldStop = false
 		}
+	}
+
+	if !shouldStop {
+		return
 	}
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -95,11 +133,13 @@ func parseArgs(_ []string) (*settings.ExecArgs, error) {
 
 func loadConfig(args *settings.ExecArgs) (*config.Config, error) {
 	configPath := os.Getenv("TS_CONFIG")
+
 	if configPath == "" && args.Path != "" {
 		configPath = args.Path + "/config.yml"
 	}
 
 	cfg, err := config.Load(configPath)
+
 	if err != nil {
 		return nil, err
 	}

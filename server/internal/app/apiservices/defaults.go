@@ -334,6 +334,10 @@ func (d viewedService) ListViewed(hash string) []*sets.Viewed {
 }
 
 func (d systemService) Shutdown() {
+	if api.RequestShutdown() {
+		return
+	}
+
 	torr.Shutdown()
 }
 
