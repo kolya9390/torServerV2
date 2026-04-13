@@ -7,4 +7,5 @@ type TorrServerDB interface {
 	List(xPath string) []string
 	Rem(xPath, name string)
 	Clear(xPath string)
+	GetRawDB() any
 }

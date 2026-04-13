@@ -89,6 +89,8 @@ func (d *testDB) Clear(xPath string) {
 	delete(d.data, xPath)
 }
 
+func (d *testDB) GetRawDB() any { return nil }
+
 func mustJSON(t *testing.T, v any) []byte {
 	t.Helper()
 

@@ -46,6 +46,8 @@ func NewDBReadCache(db TorrServerDB) TorrServerDB {
 	return cdb
 }
 
+func (v *DBReadCache) GetRawDB() any { return nil }
+
 func (v *DBReadCache) CloseDB() {
 	v.db.CloseDB()
 	v.db = nil

@@ -10,6 +10,7 @@ import (
 	"server/settings"
 	"server/web"
 	"server/web/api"
+	"server/web/auth"
 	"strings"
 )
 
@@ -175,6 +176,13 @@ func resolveShutdownConfig(args *settings.ExecArgs, cfg *config.Config) (string,
 	token := strings.TrimSpace(args.ShutdownToken)
 	if token == "" {
 		token = strings.TrimSpace(os.Getenv("TS_SHUTDOWN_TOKEN"))
+	}
+
+	// Check BBolt-stored token (SEC4: secure storage)
+	if token == "" {
+		if dbToken, err := auth.GetShutdownToken(); err == nil && dbToken != "" {
+			token = dbToken
+		}
 	}
 
 	return mode, token

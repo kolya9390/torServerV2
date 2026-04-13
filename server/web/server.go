@@ -120,6 +120,7 @@ func setupMiddleware(s *Server) *gin.Engine {
 		securityHeadersMiddleware(),
 		api.ErrorResponder(),
 	)
+	auth.InitAuth()
 	auth.SetupAuth(route)
 
 	return route

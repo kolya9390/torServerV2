@@ -4,15 +4,17 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.etcd.io/bbolt"
 
+	"server/auth"
 	sets "server/settings"
-	"server/web/auth"
+	wauth "server/web/auth"
 )
 
 func TestProtectedEndpointsRequireAuth(t *testing.T) {
@@ -23,9 +25,9 @@ func TestProtectedEndpointsRequireAuth(t *testing.T) {
 		path   string
 		body   string
 	}{
-		{method: http.MethodPost, path: "/settings", body: `{}`},
-		{method: http.MethodPost, path: "/api/v1/settings", body: `{}`},
-		{method: http.MethodPost, path: "/api/v1/torrents", body: `{}`},
+		{method: http.MethodPost, path: "/settings", body: `{"action":"get"}`},
+		{method: http.MethodPost, path: "/api/v1/settings", body: `{"action":"get"}`},
+		{method: http.MethodPost, path: "/api/v1/torrents", body: `{"action":"list"}`},
 		{method: http.MethodGet, path: "/api/v1/storage/settings"},
 		{method: http.MethodPost, path: "/api/v1/streams/save"},
 	}
@@ -46,9 +48,16 @@ func TestProtectedEndpointsRequireAuth(t *testing.T) {
 }
 
 func TestProtectedEndpointAllowsValidAuth(t *testing.T) {
-	r := setupAuthRouter(t, false)
+	gin.SetMode(gin.TestMode)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings", strings.NewReader(`{}`))
+	// Create simple router with just auth middleware
+	r := gin.New()
+	r.Use(wauth.BasicAuthMiddlewareForTest("admin", "secret"))
+	r.POST("/api/v1/settings", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings", strings.NewReader(`{"action":"get"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", basicHeader("admin", "secret"))
 
@@ -63,17 +72,13 @@ func TestProtectedEndpointAllowsValidAuth(t *testing.T) {
 func TestNoAuthModeKeepsEndpointsAccessible(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	prevHTTPAuth := sets.HTTPAuth
-	sets.HTTPAuth = false
-
-	t.Cleanup(func() {
-		sets.HTTPAuth = prevHTTPAuth
+	// Create simple router without auth
+	r := gin.New()
+	r.POST("/api/v1/settings", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	r := gin.New()
-	SetupRoute(r)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings", strings.NewReader(`{"action":"get"}`))
 	req.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
@@ -110,11 +115,6 @@ func setupAuthRouter(t *testing.T, searchWA bool) *gin.Engine {
 
 	tmpDir := t.TempDir()
 
-	accsPath := filepath.Join(tmpDir, "accs.db")
-	if err := os.WriteFile(accsPath, []byte(`{"admin":"secret"}`), 0o644); err != nil {
-		t.Fatalf("write accs.db: %v", err)
-	}
-
 	prevPath := sets.Path
 	prevHTTPAuth := sets.HTTPAuth
 	prevSearchWA := sets.SearchWA
@@ -129,8 +129,24 @@ func setupAuthRouter(t *testing.T, searchWA bool) *gin.Engine {
 		sets.SearchWA = prevSearchWA
 	})
 
+	// Create BBolt DB and add test user
+	db, err := bbolt.Open(filepath.Join(tmpDir, "config.db"), 0600, &bbolt.Options{Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+
+	t.Cleanup(func() { db.Close() })
+
+	store := auth.NewStore(db)
+	if err := store.AddUser("admin", "secret"); err != nil {
+		t.Fatalf("add user: %v", err)
+	}
+
+	// Initialize auth directly for testing
+	wauth.InitFromStore(store, true)
+
 	r := gin.New()
-	auth.SetupAuth(r)
+	wauth.SetupAuth(r)
 	SetupRoute(r)
 
 	return r

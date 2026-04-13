@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // Execute runs the CLI with the given arguments.
@@ -57,6 +58,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newTorrentsCmd(opts))
 	root.AddCommand(newURLCmd(opts))
 	root.AddCommand(newSettingsCmd(opts))
+	root.AddCommand(newAuthCmd(opts))
 	root.AddCommand(newShutdownCmd(opts))
 
 	return root
@@ -463,6 +465,64 @@ func newURLCmd(opts *globalOptions) *cobra.Command {
 	return urlCmd
 }
 
+
+func newAuthCmd(opts *globalOptions) *cobra.Command {
+	authCmd := &cobra.Command{
+		Use:   "auth",
+		Short: "Управление пользователями сервера",
+		Long:  `Управление учетными записями для авторизации на сервере.`,
+	}
+
+	authCmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "Показать список пользователей",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
+				return cmdAuthList(cli, resolved)
+			})
+		},
+	})
+
+	var newPassword string
+
+	addCmd := &cobra.Command{
+		Use:   "add [USERNAME]",
+		Short: "Добавить нового пользователя",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
+				return cmdAuthAdd(cli, resolved, args[0], newPassword)
+			})
+		},
+	}
+	addCmd.Flags().StringVar(&newPassword, "password", "", "password for new user (prompts interactively if omitted)")
+	authCmd.AddCommand(addCmd)
+
+	authCmd.AddCommand(&cobra.Command{
+		Use:   "remove [USERNAME]",
+		Short: "Удалить пользователя",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
+				return cmdAuthRemove(cli, resolved, args[0])
+			})
+		},
+	})
+
+	return authCmd
+}
+
+// readPasswordInteractive prompts for password without echoing (SEC5).
+func readPasswordInteractive() (string, error) {
+	fmt.Print("Password: ")
+	pass, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	if err != nil {
+		return "", fmt.Errorf("read password: %w", err)
+	}
+	return string(pass), nil
+}
+
 func runWithClient(cmd *cobra.Command, opts *globalOptions, fn func(*apiClient, globalOptions) error) error {
 	if opts == nil {
 		return errors.New("global options are not initialized")
@@ -478,6 +538,30 @@ func runWithClient(cmd *cobra.Command, opts *globalOptions, fn func(*apiClient, 
 
 	if resolved.Timeout <= 0 {
 		return fmt.Errorf("invalid --timeout value: %s", resolved.Timeout)
+	}
+
+	// SEC5: Support env vars for secure credential handling
+	if resolved.User == "" {
+		resolved.User = os.Getenv("TS_USER")
+	}
+
+	if resolved.Pass == "" {
+		resolved.Pass = os.Getenv("TS_PASSWORD")
+	}
+
+	// Warn if password is passed via command line (visible in ps)
+	if isFlagChanged(cmd, "pass") {
+		fmt.Fprintln(os.Stderr, "Warning: --pass is visible in process list. Use TS_PASSWORD env var for security.")
+	}
+
+	// Prompt for password interactively if user is set but password is not
+	if resolved.User != "" && resolved.Pass == "" && !isFlagChanged(cmd, "pass") {
+		pass, err := readPasswordInteractive()
+		if err != nil {
+			return err
+		}
+
+		resolved.Pass = pass
 	}
 
 	resolved, err := applyContextToOptions(resolved)

@@ -38,6 +38,7 @@
 - M3U плейлисты
 - HTTP API для автоматизации
 - CLI для управления сервером
+- Управление пользователями (авторизация)
 
 ---
 
@@ -154,6 +155,21 @@ mpv "$(./torrserver url 1)"
 vlc "$(./torrserver url "Beef")"
 ```
 
+**Управление пользователями:**
+```bash
+# Показать список пользователей
+./torrserver auth list
+
+# Добавить нового пользователя (запросит пароль интерактивно)
+./torrserver auth add admin
+
+# Добавить пользователя с указанием пароля (для скриптов)
+./torrserver auth add admin --password MySecretPass123
+
+# Удалить пользователя
+./torrserver auth remove admin
+```
+
 **Настройки:**
 ```bash
 # Показать все настройки
@@ -168,6 +184,64 @@ vlc "$(./torrserver url "Beef")"
 
 # Сбросить настройки
 ./torrserver settings def
+```
+
+**Управление сервером:**
+```bash
+# Статус сервера
+./torrserver status
+
+# Безопасная остановка сервера
+./torrserver shutdown
+
+# Остановка удалённого сервера (с токеном)
+./torrserver shutdown --mode public --token my_secret_token
+```
+
+---
+
+## 🔒 Безопасность и авторизация
+
+### Включение защиты паролем
+
+Запустите сервер с флагом `--httpauth`:
+```bash
+./torrserver --httpauth
+```
+
+Первый пользователь создаётся через CLI:
+```bash
+./torrserver auth add admin
+# Введите пароль (будет запрошен скрытно)
+```
+
+### Авторизация при обращении к серверу
+
+CLI автоматически запросит пароль, если вы указали `--user`, но не указали `--pass`:
+```bash
+./torrserver --user admin torrents list
+# Password: <ввод скрыт>
+```
+
+**Для скриптов и CI/CD** используйте переменные окружения:
+```bash
+export TS_USER=admin
+export TS_PASSWORD=MySecretPass123
+
+./torrserver torrents list  # Без запроса пароля
+```
+
+> ⚠️ **Важно:** Не передавайте пароль через флаг `--pass` — он виден в списке процессов (`ps aux`). Используйте `TS_PASSWORD`.
+
+### Shutdown Token
+
+Для защиты от случайного выключения сервера:
+```bash
+# Сгенерировать и сохранить токен
+./torrserver config generate-shutdown-token
+
+# Остановить сервер с токеном
+./torrserver shutdown --mode public --token <ваш_токен>
 ```
 
 ---
@@ -229,6 +303,7 @@ vlc "$(./torrserver url "Beef")"
 make build          # Бинарник
 make test           # Тесты
 make generate-mocks # Моки через mockgen
+make swagger        # Обновить документацию API
 docker build -t torrserver .  # Docker
 ```
 
@@ -246,6 +321,7 @@ docker build -t torrserver .  # Docker
 | `--path` | `./` | Путь к конфигурации (`config.yml` и БД) |
 | `--torrentsdir` | `./` | Папка для торрент-файлов и кэша |
 | `--logpath` | `./` | Путь для логов |
+| `--httpauth` | `false` | Включить защиту паролем |
 
 ### Переменные окружения (Docker)
 
@@ -256,6 +332,9 @@ docker build -t torrserver .  # Docker
 | `TS_CONF_PATH` | `/opt/ts/config` | Путь к конфигу |
 | `TS_TORR_DIR` | `/opt/ts/torrents` | Путь к торрентам |
 | `TS_CACHE_SIZE` | `67108864` | Кэш (64 MB) |
+| `TS_USER` | `` | Логин для авторизации |
+| `TS_PASSWORD` | `` | Пароль для авторизации |
+| `TS_SHUTDOWN_TOKEN` | `` | Токен для shutdown (public mode) |
 
 ---
 

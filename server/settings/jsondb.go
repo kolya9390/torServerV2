@@ -45,6 +45,8 @@ func NewJSONDB() TorrServerDB {
 	return globalJSONDB
 }
 
+func (v *JSONDB) GetRawDB() any { return nil }
+
 func (v *JSONDB) CloseDB() {
 	// Not necessary
 }

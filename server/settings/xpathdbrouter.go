@@ -29,6 +29,8 @@ func NewXPathDBRouter() *XPathDBRouter {
 	return router
 }
 
+func (r *XPathDBRouter) GetRawDB() any { return nil }
+
 func (v *XPathDBRouter) RegisterRoute(db TorrServerDB, xPath string) error {
 	newRoute := v.xPathToRoute(xPath)
 

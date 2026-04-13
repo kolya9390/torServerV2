@@ -2,6 +2,7 @@ package api
 
 import (
 	sets "server/settings"
+	authapi "server/web/api/auth"
 	"server/web/auth"
 
 	"github.com/gin-gonic/gin"
@@ -81,4 +82,7 @@ func registerAPIRoutes(route gin.IRouter) {
 	authorized.GET("/tmdb/settings", tmdbSettings)
 
 	authorized.GET("/ffp/:hash/:id", ffp)
+
+	// Auth management API (requires existing auth)
+	authapi.RegisterAuthRoutes(authorized)
 }

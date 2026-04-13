@@ -42,6 +42,11 @@ func NewTDB() TorrServerDB {
 	return globalBboltDB
 }
 
+// GetRawDB returns the underlying *bolt.DB for direct access (used by auth package).
+func (v *TDB) GetRawDB() any {
+	return v.db
+}
+
 func (v *TDB) CloseDB() {
 	if v.db != nil {
 		if err := v.db.Close(); err != nil {
