@@ -465,7 +465,6 @@ func newURLCmd(opts *globalOptions) *cobra.Command {
 	return urlCmd
 }
 
-
 func newAuthCmd(opts *globalOptions) *cobra.Command {
 	authCmd := &cobra.Command{
 		Use:   "auth",
@@ -515,11 +514,15 @@ func newAuthCmd(opts *globalOptions) *cobra.Command {
 // readPasswordInteractive prompts for password without echoing (SEC5).
 func readPasswordInteractive() (string, error) {
 	fmt.Print("Password: ")
+
 	pass, err := term.ReadPassword(int(os.Stdin.Fd()))
+
 	fmt.Println()
+
 	if err != nil {
 		return "", fmt.Errorf("read password: %w", err)
 	}
+
 	return string(pass), nil
 }
 

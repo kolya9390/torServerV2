@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -20,21 +21,26 @@ import (
 	"server/web/sslcerts"
 )
 
+// CORSConfig is an alias for gin-contrib cors configuration.
 type CORSConfig = cors.Config
 
+// CORSService defines the interface for building CORS configuration.
 type CORSService interface {
 	BuildConfig() CORSConfig
 	GetAllowedOrigins() []string
 }
 
+// SSLService defines the interface for managing SSL certificates and HTTPS server.
 type SSLService interface {
 	PrepareCertificates(ips []string) error
 	VerifyOrRegenerateCerts(ips []string) error
 	Server(addr string, handler http.Handler) *http.Server
 }
 
+// corsService implements CORSService.
 type corsService struct{}
 
+// sslService implements SSLService.
 type sslService struct {
 	mu   sync.Mutex
 	cert string
@@ -42,26 +48,48 @@ type sslService struct {
 	srv  *http.Server
 }
 
+// NewCORSService creates a new instance of CORSService.
 func NewCORSService() CORSService {
 	return &corsService{}
 }
 
+// NewSSLService creates a new instance of SSLService.
 func NewSSLService() SSLService {
 	return &sslService{}
 }
 
+// BuildConfig constructs the CORS configuration based on environment variables and smart defaults.
 func (c *corsService) BuildConfig() CORSConfig {
 	corsCfg := cors.DefaultConfig()
 	corsCfg.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "X-Requested-With", "Accept", "Authorization"}
 	corsCfg.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}
+	corsCfg.AllowCredentials = true
 
-	if os.Getenv("TS_CORS_ALLOW_ALL") == "1" {
+	// 1. Check if strict origin list is configured (Best for VPS/Internet exposed servers)
+	if os.Getenv("TS_CORS_ALLOW_ORIGINS") != "" {
+		corsCfg.AllowOriginFunc = func(origin string) bool {
+			if origin == "" {
+				return true
+			}
+
+			for _, allowed := range c.GetAllowedOrigins() {
+				if allowed == origin {
+					return true
+				}
+			}
+			// Also allow local network origins automatically
+			return isLocalOrigin(origin)
+		}
+
+		log.TLogln("CORS mode: strict (configured origins + local network)")
+	} else {
+		// 2. Allow all origins by default (Standard for Home Media Servers)
+		// This ensures 100% compatibility with Smart TVs (Lampa, Kodi, etc.) which often
+		// send non-standard Origin headers (file://, app://, null, etc.).
+		// Real security is handled by IP Blocker (wip.txt) and HTTP Auth.
 		corsCfg.AllowAllOrigins = true
 
-		log.TLogln("CORS mode: allow-all (TS_CORS_ALLOW_ALL=1)")
-	} else {
-		corsCfg.AllowOrigins = c.GetAllowedOrigins()
-		log.TLogln("CORS mode: allowlist", corsCfg.AllowOrigins)
+		log.TLogln("CORS mode: allow-all (compatible with Smart TV apps)")
 	}
 
 	if os.Getenv("TS_CORS_ALLOW_PRIVATE_NETWORK") == "1" {
@@ -73,6 +101,33 @@ func (c *corsService) BuildConfig() CORSConfig {
 	return corsCfg
 }
 
+// isLocalOrigin checks if the origin belongs to a private or loopback IP range.
+func isLocalOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	host := u.Hostname()
+
+	// 1. Explicitly allow common local hostnames (net.ParseIP does not resolve 'localhost')
+	if host == "localhost" || host == "127.0.0.1" {
+		return true
+	}
+
+	// 2. Allow local file origins (common for Smart TV apps like Lampa)
+	// This covers "file://", "null" origin, or "capacitor://localhost"
+	if host == "" || strings.ToLower(u.Scheme) == "capacitor" {
+		return true
+	}
+
+	// 3. Check for private/loopback IPs (192.168.x.x, 10.x.x.x)
+	ip := net.ParseIP(host)
+
+	return ip != nil && (ip.IsPrivate() || ip.IsLoopback())
+}
+
+// GetAllowedOrigins returns the list of explicitly allowed origins from env vars or settings.
 func (c *corsService) GetAllowedOrigins() []string {
 	if raw := strings.TrimSpace(os.Getenv("TS_CORS_ALLOW_ORIGINS")); raw != "" {
 		parts := strings.Split(raw, ",")
@@ -97,6 +152,7 @@ func (c *corsService) GetAllowedOrigins() []string {
 		}
 	}
 
+	// Add localhost and configured IP to the allowlist
 	add("http://127.0.0.1:" + settings.Port)
 	add("http://localhost:" + settings.Port)
 
@@ -123,6 +179,7 @@ func (c *corsService) GetAllowedOrigins() []string {
 	return origins
 }
 
+// PrepareCertificates generates or retrieves SSL certificates for the given IPs.
 func (s *sslService) PrepareCertificates(ips []string) error {
 	if !settings.Ssl {
 		return nil
@@ -149,6 +206,7 @@ func (s *sslService) PrepareCertificates(ips []string) error {
 	return nil
 }
 
+// VerifyOrRegenerateCerts checks if current certificates are valid and regenerates them if needed.
 func (s *sslService) VerifyOrRegenerateCerts(ips []string) error {
 	if !settings.Ssl {
 		return nil
@@ -178,6 +236,7 @@ func (s *sslService) VerifyOrRegenerateCerts(ips []string) error {
 	return nil
 }
 
+// Server creates or returns a cached HTTPS server instance.
 func (s *sslService) Server(addr string, handler http.Handler) *http.Server {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -198,6 +257,7 @@ func (s *sslService) Server(addr string, handler http.Handler) *http.Server {
 	return s.srv
 }
 
+// GetLocalIps returns a list of non-loopback, non-link-local IP addresses for this host.
 func GetLocalIps() []string {
 	ifaces, err := anet.Interfaces()
 	if err != nil {
@@ -236,6 +296,7 @@ func GetLocalIps() []string {
 	return list
 }
 
+// CheckTrustedProxies returns the list of trusted proxy IPs, defaulting to localhost.
 func CheckTrustedProxies() []string {
 	trustedProxies := []string{"127.0.0.1", "::1"}
 
@@ -257,6 +318,7 @@ func CheckTrustedProxies() []string {
 	return trustedProxies
 }
 
+// SetTrustedProxies configures the trusted proxies for the given router.
 func SetTrustedProxies(route interface{ SetTrustedProxies(proxies []string) error }, proxies []string) error {
 	return route.SetTrustedProxies(proxies)
 }

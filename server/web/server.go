@@ -127,7 +127,17 @@ func setupMiddleware(s *Server) *gin.Engine {
 }
 
 // registerDebugRoutes registers health check, echo, and pprof/debug endpoints.
+// RootHandler returns a simple status for root requests (used by clients like Lampa for detection).
+func rootHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"server":  "TorrServer",
+		"version": "v1",
+		"status":  "ok",
+	})
+}
+
 func registerDebugRoutes(route *gin.Engine) {
+	route.GET("/", rootHandler)
 	route.GET("/echo", echo)
 	route.GET("/healthz", healthz)
 	route.GET("/readyz", readyz)

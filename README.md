@@ -17,7 +17,8 @@
 - **[Lampa](https://github.com/yumata/lampa-source)** — приложение для Smart TV (WebOS, Tizen, Android TV). Подключается к TorrServer через плагин и позволяет искать и смотреть торренты прямо на телевизоре.
 
 **Совместимость:**
-- ✅ **Протестирован** с TorrServe, Lampa, VLC, MPV, Kodi
+- ✅ **[Lampa](https://github.com/lampa-app/LAMPA): Полная совместимость подтверждена.** Сервер успешно протестирован с приложением Lampa на Smart TV (WebOS, Tizen, Android TV).
+- ✅ **Протестирован** с TorrServe, VLC, MPV
 - ✅ **API совместим** с оригинальной версией YouROK/TorrServer
 - ✅ **DLNA** работает с любыми DLNA-клиентами (TV, плееры)
 

@@ -31,36 +31,36 @@ func NewXPathDBRouter() *XPathDBRouter {
 
 func (r *XPathDBRouter) GetRawDB() any { return nil }
 
-func (v *XPathDBRouter) RegisterRoute(db TorrServerDB, xPath string) error {
-	newRoute := v.xPathToRoute(xPath)
+func (r *XPathDBRouter) RegisterRoute(db TorrServerDB, xPath string) error {
+	newRoute := r.xPathToRoute(xPath)
 
-	if slices.Contains(v.routes, newRoute) {
+	if slices.Contains(r.routes, newRoute) {
 		return fmt.Errorf("route \"%s\" already in routing table", newRoute)
 	}
 
 	// First DB becomes Default DB with default route
-	if len(v.dbs) == 0 && len(newRoute) != 0 {
-		if err := v.RegisterRoute(db, ""); err != nil {
+	if len(r.dbs) == 0 && len(newRoute) != 0 {
+		if err := r.RegisterRoute(db, ""); err != nil {
 			return err
 		}
 	}
 
-	if !slices.Contains(v.dbs, db) {
-		v.dbs = append(v.dbs, db)
-		v.dbNames[db] = reflect.TypeOf(db).Elem().Name()
-		v.log(fmt.Sprintf("Registered new DB \"%s\", total %d DBs registered", v.getDBName(db), len(v.dbs)))
+	if !slices.Contains(r.dbs, db) {
+		r.dbs = append(r.dbs, db)
+		r.dbNames[db] = reflect.TypeOf(db).Elem().Name()
+		r.log(fmt.Sprintf("Registered new DB \"%s\", total %d DBs registered", r.getDBName(db), len(r.dbs)))
 	}
 
-	v.route2db[newRoute] = db
-	v.routes = append(v.routes, newRoute)
+	r.route2db[newRoute] = db
+	r.routes = append(r.routes, newRoute)
 
 	// Sort routes by length descending.
 	//   It is important later to help selecting
 	//   most suitable route in getDBForXPath(xPath)
-	sort.Slice(v.routes, func(iLeft, iRight int) bool {
-		return len(v.routes[iLeft]) > len(v.routes[iRight])
+	sort.Slice(r.routes, func(iLeft, iRight int) bool {
+		return len(r.routes[iLeft]) > len(r.routes[iRight])
 	})
-	v.log(fmt.Sprintf("Registered new route \"%s\" for DB \"%s\", total %d routes", getDefaultRoureName(newRoute), v.getDBName(db), len(v.routes)))
+	r.log(fmt.Sprintf("Registered new route \"%s\" for DB \"%s\", total %d routes", getDefaultRoureName(newRoute), r.getDBName(db), len(r.routes)))
 
 	return nil
 }
@@ -73,22 +73,22 @@ func getDefaultRoureName(route string) string {
 	return "default"
 }
 
-func (v *XPathDBRouter) xPathToRoute(xPath string) string {
+func (r *XPathDBRouter) xPathToRoute(xPath string) string {
 	return strings.ToLower(strings.TrimSpace(xPath))
 }
 
-func (v *XPathDBRouter) getDBForXPath(xPath string) TorrServerDB {
-	if len(v.dbs) == 0 {
+func (r *XPathDBRouter) getDBForXPath(xPath string) TorrServerDB {
+	if len(r.dbs) == 0 {
 		return nil
 	}
 
-	lookupRoute := v.xPathToRoute(xPath)
+	lookupRoute := r.xPathToRoute(xPath)
 
 	var db TorrServerDB = nil
 
-	for _, routePrefix := range v.routes {
+	for _, routePrefix := range r.routes {
 		if strings.HasPrefix(lookupRoute, routePrefix) {
-			db = v.route2db[routePrefix]
+			db = r.route2db[routePrefix]
 
 			break
 		}
@@ -97,12 +97,12 @@ func (v *XPathDBRouter) getDBForXPath(xPath string) TorrServerDB {
 	return db
 }
 
-func (v *XPathDBRouter) Get(xPath, name string) []byte {
-	if v == nil {
+func (r *XPathDBRouter) Get(xPath, name string) []byte {
+	if r == nil {
 		return nil
 	}
 
-	db := v.getDBForXPath(xPath)
+	db := r.getDBForXPath(xPath)
 	if db == nil {
 		return nil
 	}
@@ -110,12 +110,12 @@ func (v *XPathDBRouter) Get(xPath, name string) []byte {
 	return db.Get(xPath, name)
 }
 
-func (v *XPathDBRouter) Set(xPath, name string, value []byte) {
-	if v == nil {
+func (r *XPathDBRouter) Set(xPath, name string, value []byte) {
+	if r == nil {
 		return
 	}
 
-	db := v.getDBForXPath(xPath)
+	db := r.getDBForXPath(xPath)
 	if db == nil {
 		return
 	}
@@ -123,12 +123,12 @@ func (v *XPathDBRouter) Set(xPath, name string, value []byte) {
 	db.Set(xPath, name, value)
 }
 
-func (v *XPathDBRouter) List(xPath string) []string {
-	if v == nil {
+func (r *XPathDBRouter) List(xPath string) []string {
+	if r == nil {
 		return nil
 	}
 
-	db := v.getDBForXPath(xPath)
+	db := r.getDBForXPath(xPath)
 	if db == nil {
 		return nil
 	}
@@ -136,12 +136,12 @@ func (v *XPathDBRouter) List(xPath string) []string {
 	return db.List(xPath)
 }
 
-func (v *XPathDBRouter) Rem(xPath, name string) {
-	if v == nil {
+func (r *XPathDBRouter) Rem(xPath, name string) {
+	if r == nil {
 		return
 	}
 
-	db := v.getDBForXPath(xPath)
+	db := r.getDBForXPath(xPath)
 	if db == nil {
 		return
 	}
@@ -149,12 +149,12 @@ func (v *XPathDBRouter) Rem(xPath, name string) {
 	db.Rem(xPath, name)
 }
 
-func (v *XPathDBRouter) Clear(xPath string) {
-	if v == nil {
+func (r *XPathDBRouter) Clear(xPath string) {
+	if r == nil {
 		return
 	}
 
-	db := v.getDBForXPath(xPath)
+	db := r.getDBForXPath(xPath)
 	if db == nil {
 		return
 	}
@@ -162,22 +162,22 @@ func (v *XPathDBRouter) Clear(xPath string) {
 	db.Clear(xPath)
 }
 
-func (v *XPathDBRouter) CloseDB() {
-	for _, db := range v.dbs {
+func (r *XPathDBRouter) CloseDB() {
+	for _, db := range r.dbs {
 		db.CloseDB()
 	}
 
-	v.dbs = nil
-	v.routes = nil
-	v.route2db = nil
-	v.dbNames = nil
+	r.dbs = nil
+	r.routes = nil
+	r.route2db = nil
+	r.dbNames = nil
 }
 
-func (v *XPathDBRouter) getDBName(db TorrServerDB) string {
-	return v.dbNames[db]
+func (r *XPathDBRouter) getDBName(db TorrServerDB) string {
+	return r.dbNames[db]
 }
 
-func (v *XPathDBRouter) log(s string, params ...any) {
+func (r *XPathDBRouter) log(s string, params ...any) {
 	if len(params) > 0 {
 		log.TLogln(fmt.Sprintf("XPathDBRouter: %s: %s", s, fmt.Sprint(params...)))
 	} else {
