@@ -25,7 +25,6 @@ func reportCacheMetrics(hits, misses uint64) {
 }
 
 var (
-	activeStreams  atomic.Int64
 	cacheHits      atomic.Uint64
 	cacheMisses    atomic.Uint64
 	peersConnected atomic.Int64
@@ -40,7 +39,7 @@ var (
 func Init() {
 	metricsOnce.Do(func() {
 		expvar.Publish("active_streams", expvar.Func(func() any {
-			return activeStreams.Load()
+			return torr.GetActiveStreams()
 		}))
 		expvar.Publish("cache_hits", expvar.Func(func() any {
 			return cacheHits.Load()
@@ -115,11 +114,11 @@ func updateRuntimeMetrics() {
 		var totalDownload, totalUpload int64
 
 		for _, t := range torrents {
-			st := t.Status()
-			if st != nil {
-				totalPeers += int64(st.ActivePeers)
-				totalDownload += int64(st.DownloadSpeed)
-				totalUpload += int64(st.UploadSpeed)
+			activePeers, downloadSpeed, uploadSpeed, ok := t.RuntimeSnapshot()
+			if ok {
+				totalPeers += int64(activePeers)
+				totalDownload += downloadSpeed
+				totalUpload += uploadSpeed
 			}
 		}
 
@@ -127,16 +126,6 @@ func updateRuntimeMetrics() {
 		downloadBytes.Store(totalDownload)
 		uploadBytes.Store(totalUpload)
 	}
-}
-
-// IncActiveStreams increments active stream counter.
-func IncActiveStreams() {
-	activeStreams.Add(1)
-}
-
-// DecActiveStreams decrements active stream counter.
-func DecActiveStreams() {
-	activeStreams.Add(-1)
 }
 
 // IncCacheHits increments cache hit counter.

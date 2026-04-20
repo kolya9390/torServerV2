@@ -186,25 +186,29 @@ func detectPublicIPv4(ctx context.Context, config *torrent.ClientConfig) {
 
 // detectPublicIPv6 detects the public IPv6 address for the torrent client.
 // It first checks the configured setting, then falls back to external discovery.
-func detectPublicIPv6(ctx context.Context, config *torrent.ClientConfig, enableIPv6 bool) {
+func detectPublicIPv6(ctx context.Context, config *torrent.ClientConfig, enableIPv6 bool) bool {
+	if !enableIPv6 {
+		return false
+	}
+
 	if settings.PubIPv6 != "" {
 		if ip6 := net.ParseIP(settings.PubIPv6); ip6.To16() != nil && ip6.To4() == nil && !isPrivateIP(ip6) {
 			config.PublicIp6 = ip6
 
-			return
+			return true
 		}
 	}
 
-	if config.PublicIp6 == nil && enableIPv6 {
+	if config.PublicIp6 == nil {
 		ip, err := publicip.Get6(ctx)
 		if err != nil {
 			log.TLogln("Error getting public ipv6 address:", err)
 
-			return
+			return false
 		}
 		// Ensure it's valid IPv6
 		if ip.To16() == nil {
-			return
+			return false
 		}
 
 		config.PublicIp6 = ip
@@ -212,7 +216,11 @@ func detectPublicIPv6(ctx context.Context, config *torrent.ClientConfig, enableI
 
 	if config.PublicIp6 != nil {
 		log.TLogln("PublicIp6:", config.PublicIp6)
+
+		return true
 	}
+
+	return false
 }
 
 func (bt *BTServer) configure(ctx context.Context) {
@@ -227,7 +235,10 @@ func (bt *BTServer) configure(ctx context.Context) {
 
 	// Detect public IP addresses
 	detectPublicIPv4(ctx, bt.config)
-	detectPublicIPv6(ctx, bt.config, settings.GetSettings().EnableIPv6)
+	if !detectPublicIPv6(ctx, bt.config, settings.GetSettings().EnableIPv6) && settings.GetSettings().EnableIPv6 {
+		bt.config.DisableIPv6 = true
+		log.TLogln("IPv6 disabled: public IPv6 is unavailable")
+	}
 }
 
 func (bt *BTServer) configureProxy() error {

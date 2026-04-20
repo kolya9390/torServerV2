@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"runtime"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -32,15 +33,42 @@ type streamAdmission struct {
 	waitDuration time.Duration
 }
 
-var admission = &streamAdmission{
-	maxStreams:   int32(maxInt(1, runtime.GOMAXPROCS(0))),
-	waitDuration: 3 * time.Second,
+func currentAdmission() streamAdmission {
+	maxStreams := sets.GetSettings().MaxConcurrentStreams
+	if maxStreams <= 0 {
+		maxStreams = maxInt(1, runtime.GOMAXPROCS(0)*2)
+	}
+
+	waitSec := sets.GetSettings().StreamQueueWaitSec
+	if waitSec <= 0 {
+		waitSec = 3
+	}
+
+	return streamAdmission{
+		maxStreams:   int32(maxStreams),
+		waitDuration: time.Duration(waitSec) * time.Second,
+	}
+}
+
+func acquireStreamSlot(maxStreams int32) bool {
+	for {
+		current := atomic.LoadInt32(&activeStreams)
+		if current >= maxStreams {
+			return false
+		}
+
+		if atomic.CompareAndSwapInt32(&activeStreams, current, current+1) {
+			return true
+		}
+	}
 }
 
 // tryAcquireStream attempts to acquire a streaming slot.
 // It returns a release function and an error if the limit is exceeded.
 func tryAcquireStream(ctx context.Context) (func(), error) {
-	if atomic.LoadInt32(&activeStreams) >= admission.maxStreams {
+	admission := currentAdmission()
+
+	if !acquireStreamSlot(admission.maxStreams) {
 		// Try to wait for a slot with timeout
 		deadline := time.After(admission.waitDuration)
 
@@ -56,17 +84,17 @@ func tryAcquireStream(ctx context.Context) (func(), error) {
 			case <-deadline:
 				return nil, errors.New("stream limit exceeded, try again later")
 			case <-ticker.C:
-				if atomic.LoadInt32(&activeStreams) < admission.maxStreams {
+				if acquireStreamSlot(admission.maxStreams) {
 					break waitLoop
 				}
 			}
 		}
 	}
 
-	atomic.AddInt32(&activeStreams, 1)
-
 	release := func() {
-		atomic.AddInt32(&activeStreams, -1)
+		if atomic.AddInt32(&activeStreams, -1) < 0 {
+			atomic.StoreInt32(&activeStreams, 0)
+		}
 	}
 
 	return release, nil
@@ -133,27 +161,32 @@ func setStreamHeaders(resp http.ResponseWriter, file *torrent.File, t *Torrent, 
 	}
 }
 
-// newReaderWithTimeout creates a torrent reader and sets up disconnect monitoring.
-// Returns the reader and a cancel function for the monitoring goroutine.
-func (t *Torrent) newReaderWithTimeout(file *torrent.File, streamTimeout int, req *http.Request) (*torrstor.Reader, context.CancelFunc) {
+// newReaderForRequest creates a torrent reader and closes it when the HTTP client disconnects.
+// The configured torrent disconnect timeout is an idle/lifecycle timeout, not a hard stream duration limit.
+func (t *Torrent) newReaderForRequest(file *torrent.File, req *http.Request) (*torrstor.Reader, func(), context.CancelFunc) {
 	reader := t.NewReader(file)
+	if reader == nil {
+		return nil, func() {}, func() {}
+	}
 
-	if reader != nil && sets.BTsets.ResponsiveMode {
+	if sets.BTsets.ResponsiveMode {
 		reader.SetResponsive()
 	}
 
 	ctx, cancel := context.WithCancel(req.Context())
+	var closeOnce sync.Once
+	closeReader := func() {
+		closeOnce.Do(func() {
+			t.CloseReader(reader)
+		})
+	}
 
 	go func() {
-		select {
-		case <-ctx.Done():
-			t.CloseReader(reader)
-		case <-time.After(time.Duration(streamTimeout) * time.Second):
-			t.CloseReader(reader)
-		}
+		<-ctx.Done()
+		closeReader()
 	}()
 
-	return reader, cancel
+	return reader, closeReader, cancel
 }
 
 // Stream serves a torrent file over HTTP with DLNA support and range requests.
@@ -165,7 +198,7 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 
 	release, err := tryAcquireStream(req.Context())
 	if err != nil {
-		retrySec := int(admission.waitDuration.Seconds())
+		retrySec := int(currentAdmission().waitDuration.Seconds())
 		resp.Header().Set("Retry-After", strconv.Itoa(retrySec))
 		http.Error(resp, "Too many active streams", http.StatusServiceUnavailable)
 
@@ -193,14 +226,14 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 		return fmt.Errorf("file size exceeded max allowed %d bytes", sets.MaxSize)
 	}
 
-	reader, cancel := t.newReaderWithTimeout(file, streamTimeout, req)
+	reader, closeReader, cancel := t.newReaderForRequest(file, req)
 	if reader == nil {
 		cancel()
 
 		return errors.New("cannot create torrent reader")
 	}
 
-	defer t.CloseReader(reader)
+	defer closeReader()
 	defer cancel()
 
 	streamID := atomic.LoadInt32(&activeStreams)

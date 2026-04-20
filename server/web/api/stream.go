@@ -104,13 +104,6 @@ func stream(c *gin.Context) {
 		return
 	}
 
-	// Legacy compat: preload without explicit play means play+preload.
-	if f.preload && !f.stat && !f.m3u && !f.save {
-		streamPlay(c)
-
-		return
-	}
-
 	notAuth := c.GetBool("auth_required") && c.GetString(gin.AuthUserKey) == ""
 	if handleStreamAuth(c, link, notAuth, f.play, f.m3u) {
 		return
@@ -148,16 +141,30 @@ func stream(c *gin.Context) {
 	}
 
 	index, err := parseStreamFileIndex(c, len(tor.Files()))
-	if err != nil && f.play {
+	if err != nil && (f.play || f.preload) {
 		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
 
+	preloadQueued := false
 	if f.preload {
-		if queued := svc.Torrents.EnqueuePreload(tor, index); !queued {
+		preloadQueued = svc.Torrents.EnqueuePreload(tor, index)
+		if !preloadQueued {
 			log.TLogln("preload queue is full, skipping preload")
 		}
+	}
+
+	if f.preload && !f.stat && !f.m3u && !f.play && !f.save {
+		if !preloadQueued {
+			abortAPIError(c, http.StatusServiceUnavailable, newInternalError("preload queue is full", nil))
+
+			return
+		}
+
+		c.JSON(http.StatusAccepted, gin.H{"status": "preload accepted", "hash": tor.Hash().HexString()})
+
+		return
 	}
 
 	if f.stat {

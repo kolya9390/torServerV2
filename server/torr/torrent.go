@@ -59,12 +59,21 @@ type Torrent struct {
 	// fileIndex maps file ID (1-based) to *torrent.File for O(1) lookup.
 	// Built lazily on first access, protected by muTorrent.
 	fileIndex map[int]*torrent.File
+
+	// Cached immutable status data to avoid rebuilding and re-sorting on every Status call.
+	cachedFileStats []*state.TorrentFileStat
+	cachedTorrsHash string
 }
 
 func NewTorrent(spec *torrent.TorrentSpec, bt *BTServer) (*Torrent, error) {
 	// https://github.com/anacrolix/torrent/issues/747
 	if bt == nil || bt.client == nil {
 		return nil, errors.New("BT client not connected")
+	}
+
+	enableIPv6 := settings.GetSettings().EnableIPv6
+	if bt.config != nil && bt.config.DisableIPv6 {
+		enableIPv6 = false
 	}
 
 	switch settings.GetSettings().RetrackersMode {
@@ -80,6 +89,8 @@ func NewTorrent(spec *torrent.TorrentSpec, bt *BTServer) (*Torrent, error) {
 	if len(trackers) > 0 {
 		spec.Trackers = append(spec.Trackers, [][]string{trackers}...)
 	}
+
+	spec.Trackers = utils.NormalizeTrackers(spec.Trackers, enableIPv6, 64)
 
 	goTorrent, _, err := bt.client.AddTorrentSpec(spec)
 	if err != nil {
@@ -207,7 +218,7 @@ func (t *Torrent) progressEvent() {
 		t.BytesWrittenData = st.BytesWritten.Int64()
 
 		if t.cache != nil {
-			t.PreloadedBytes = t.cache.GetState().Filled
+			t.PreloadedBytes = t.cache.Filled()
 		}
 	} else {
 		t.DownloadSpeed = 0
@@ -345,8 +356,9 @@ func (t *Torrent) Status() *state.TorrentStatus {
 
 	t.fillTorrentStatus(st)
 	t.collectPeerStats(st)
+	t.ensureCachedStatusDataLocked(st)
 	t.collectFileStats(st)
-	buildTorrentHash(st, t)
+	st.TorrsHash = t.cachedTorrsHash
 
 	return st
 }
@@ -402,52 +414,65 @@ func (t *Torrent) collectPeerStats(st *state.TorrentStatus) {
 
 // collectFileStats builds the file statistics list from torrent files.
 func (t *Torrent) collectFileStats(st *state.TorrentStatus) {
+	st.FileStats = t.cachedFileStats
+}
+
+func (t *Torrent) ensureCachedStatusDataLocked(st *state.TorrentStatus) {
 	if t.Info() == nil {
 		return
 	}
 
-	st.TorrentSize = t.Torrent.Length()
-
-	files := t.Files()
-	sort.Slice(files, func(i, j int) bool {
-		return utils2.CompareStrings(files[i].Path(), files[j].Path())
-	})
-
-	for i, f := range files {
-		st.FileStats = append(st.FileStats, &state.TorrentFileStat{
-			ID:     i + 1, // in web id 0 is undefined
-			Path:   f.Path(),
-			Length: f.Length(),
+	if t.cachedFileStats == nil {
+		st.TorrentSize = t.Torrent.Length()
+		files := t.Files()
+		sort.Slice(files, func(i, j int) bool {
+			return utils2.CompareStrings(files[i].Path(), files[j].Path())
 		})
+
+		t.cachedFileStats = make([]*state.TorrentFileStat, 0, len(files))
+		for i, f := range files {
+			t.cachedFileStats = append(t.cachedFileStats, &state.TorrentFileStat{
+				ID:     i + 1, // in web id 0 is undefined
+				Path:   f.Path(),
+				Length: f.Length(),
+			})
+		}
+	} else {
+		st.TorrentSize = t.Torrent.Length()
+	}
+
+	if t.cachedTorrsHash == "" && t.TorrentSpec != nil {
+		th := torrshash.New(st.Hash)
+		th.AddField(torrshash.TagTitle, st.Title)
+		th.AddField(torrshash.TagPoster, st.Poster)
+		th.AddField(torrshash.TagCategory, st.Category)
+		th.AddField(torrshash.TagSize, strconv.FormatInt(st.TorrentSize, 10))
+
+		if len(t.Trackers) > 0 && len(t.Trackers[0]) > 0 {
+			for _, tr := range t.Trackers[0] {
+				th.AddField(torrshash.TagTracker, tr)
+			}
+		}
+
+		token, err := torrshash.Pack(th)
+		if err == nil {
+			t.cachedTorrsHash = token
+		}
 	}
 }
 
-// buildTorrentHash constructs the TorrsHash token from torrent metadata.
-func buildTorrentHash(st *state.TorrentStatus, t *Torrent) {
-	if t.Info() == nil {
-		return
+// RuntimeSnapshot returns lightweight metrics needed by periodic collectors.
+func (t *Torrent) RuntimeSnapshot() (activePeers int, downloadSpeed int64, uploadSpeed int64, ok bool) {
+	t.muTorrent.Lock()
+	defer t.muTorrent.Unlock()
+
+	if t.Torrent == nil || t.Info() == nil {
+		return 0, 0, 0, false
 	}
 
-	th := torrshash.New(st.Hash)
-	th.AddField(torrshash.TagTitle, st.Title)
-	th.AddField(torrshash.TagPoster, st.Poster)
-	th.AddField(torrshash.TagCategory, st.Category)
-	th.AddField(torrshash.TagSize, strconv.FormatInt(st.TorrentSize, 10))
+	stats := t.Stats()
 
-	if t.TorrentSpec == nil {
-		return
-	}
-
-	if len(t.Trackers) > 0 && len(t.Trackers[0]) > 0 {
-		for _, tr := range t.Trackers[0] {
-			th.AddField(torrshash.TagTracker, tr)
-		}
-	}
-
-	token, err := torrshash.Pack(th)
-	if err == nil {
-		st.TorrsHash = token
-	}
+	return stats.ActivePeers, int64(t.DownloadSpeed), int64(t.UploadSpeed), true
 }
 
 func (t *Torrent) CacheState() *cacheSt.CacheState {

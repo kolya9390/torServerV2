@@ -280,7 +280,8 @@ func (c *Cache) cleanPieces() {
 			rems--
 		}
 
-		utils.FreeOSMemGC()
+		// Let the Go runtime schedule GC naturally here. Forcing GC during streaming eviction
+		// creates visible CPU spikes and allocation churn under 4K playback.
 	}
 }
 
@@ -531,6 +532,23 @@ func (c *Cache) GetCapacity() int64 {
 	defer c.mu.RUnlock()
 
 	return c.capacity
+}
+
+// Filled returns current cached bytes without constructing a full CacheState snapshot.
+func (c *Cache) Filled() int64 {
+	if c == nil {
+		return 0
+	}
+
+	var fill int64
+
+	c.mu.RLock()
+	for _, p := range c.pieces {
+		fill += p.Size.Load()
+	}
+	c.mu.RUnlock()
+
+	return fill
 }
 
 // RecordHit records a cache hit for metrics.

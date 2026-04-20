@@ -5,6 +5,7 @@ import (
 	"encoding/base32"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,6 +65,67 @@ func GetDefTrackers() []string {
 	}
 
 	return loadedTrackers
+}
+
+func NormalizeTrackers(trackers [][]string, enableIPv6 bool, maxTotal int) [][]string {
+	if len(trackers) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	normalized := make([][]string, 0, len(trackers))
+	total := 0
+
+	for _, tier := range trackers {
+		cleanTier := make([]string, 0, len(tier))
+		for _, tracker := range tier {
+			tracker = strings.TrimSpace(tracker)
+			if tracker == "" {
+				continue
+			}
+
+			if !enableIPv6 && trackerUsesIPv6(tracker) {
+				continue
+			}
+
+			key := strings.ToLower(tracker)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+
+			seen[key] = struct{}{}
+			cleanTier = append(cleanTier, tracker)
+			total++
+
+			if maxTotal > 0 && total >= maxTotal {
+				break
+			}
+		}
+
+		if len(cleanTier) > 0 {
+			normalized = append(normalized, cleanTier)
+		}
+
+		if maxTotal > 0 && total >= maxTotal {
+			break
+		}
+	}
+
+	return normalized
+}
+
+func trackerUsesIPv6(tracker string) bool {
+	lower := strings.ToLower(tracker)
+	if strings.HasPrefix(lower, "udp6://") {
+		return true
+	}
+
+	parsed, err := url.Parse(tracker)
+	if err != nil {
+		return strings.Contains(tracker, "://[")
+	}
+
+	return strings.Contains(parsed.Hostname(), ":")
 }
 
 func loadNewTracker() {
