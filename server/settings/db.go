@@ -20,6 +20,10 @@ var globalBboltDB TorrServerDB
 var globalBboltDBMu sync.Mutex
 
 func NewTDB() TorrServerDB {
+	return NewTDBAtPath(currentRuntimePath())
+}
+
+func NewTDBAtPath(path string) TorrServerDB {
 	globalBboltDBMu.Lock()
 	defer globalBboltDBMu.Unlock()
 
@@ -27,7 +31,10 @@ func NewTDB() TorrServerDB {
 		return globalBboltDB // Return existing instance
 	}
 
-	db, err := bolt.Open(filepath.Join(Path, "config.db"), 0o666, &bolt.Options{Timeout: 5 * time.Second})
+	if path == "" {
+		path = "."
+	}
+	db, err := bolt.Open(filepath.Join(path, "config.db"), 0o666, &bolt.Options{Timeout: 5 * time.Second})
 	if err != nil {
 		log.TLogln(err)
 
@@ -36,7 +43,7 @@ func NewTDB() TorrServerDB {
 
 	tdb := new(TDB)
 	tdb.db = db
-	tdb.Path = Path
+	tdb.Path = path
 	globalBboltDB = tdb
 
 	return globalBboltDB

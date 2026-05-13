@@ -13,6 +13,11 @@ import (
 	"server/torr/storage/torrstor"
 )
 
+type Deps struct {
+	SettingsProvider settings.SettingsProvider
+	TorrentBackend   torr.TorrentService
+}
+
 func init() {
 	// Register callback for cache metrics recording
 	torrstor.CacheMetricsRecorder = reportCacheMetrics
@@ -33,10 +38,20 @@ var (
 	torrentsActive atomic.Int64
 
 	metricsOnce sync.Once
+	defaultDeps = Deps{
+		SettingsProvider: settings.NewNoopSettingsProvider(),
+		TorrentBackend:   torr.NewNoopTorrentService(),
+	}
 )
 
 // Init registers metric collectors with expvar.
 func Init() {
+	InitWithDeps(defaultDeps)
+}
+
+func InitWithDeps(deps Deps) {
+	resolved := resolveMetricsDeps(deps)
+
 	metricsOnce.Do(func() {
 		expvar.Publish("active_streams", expvar.Func(func() any {
 			return torr.GetActiveStreams()
@@ -77,36 +92,35 @@ func Init() {
 			return m.TotalAlloc
 		}))
 		expvar.Publish("cache_config_size_mb", expvar.Func(func() any {
-			if settings.BTsets == nil {
-				return 0
-			}
-
-			return settings.GetSettings().CacheSize / (1024 * 1024)
+			return resolved.SettingsProvider.Get().CacheConfig().SizeBytes / (1024 * 1024)
 		}))
 		expvar.Publish("responsive_mode", expvar.Func(func() any {
-			if settings.BTsets == nil {
-				return false
-			}
-
-			return settings.GetSettings().ResponsiveMode
+			return resolved.SettingsProvider.Get().StreamConfig().ResponsiveMode
 		}))
 
 		// Periodic updater goroutine
-		go updateRuntimeMetrics()
+		go updateRuntimeMetrics(resolved)
 	})
 }
 
-func updateRuntimeMetrics() {
+func resolveMetricsDeps(deps Deps) Deps {
+	if deps.SettingsProvider == nil {
+		deps.SettingsProvider = settings.NewNoopSettingsProvider()
+	}
+
+	if deps.TorrentBackend == nil {
+		deps.TorrentBackend = torr.NewNoopTorrentService()
+	}
+
+	return deps
+}
+
+func updateRuntimeMetrics(deps Deps) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		bts := torr.GetBTServer()
-		if bts == nil {
-			continue
-		}
-
-		torrents := bts.ListTorrents()
+		torrents := deps.TorrentBackend.ListTorrents()
 		torrentsActive.Store(int64(len(torrents)))
 
 		var totalPeers int64

@@ -77,7 +77,7 @@ func saveContextConfig(cfg *contextConfig) error {
 }
 
 func contextConfigPath() (string, error) {
-	if custom := strings.TrimSpace(os.Getenv("TSCTL_CONFIG")); custom != "" {
+	if custom := strings.TrimSpace(os.Getenv(envConfig)); custom != "" {
 		return custom, nil
 	}
 
@@ -91,10 +91,10 @@ func contextConfigPath() (string, error) {
 
 func defaultContextConfig() *contextConfig {
 	return &contextConfig{
-		Current: "local",
+		Current: defaultContextName,
 		Contexts: map[string]contextEntry{
-			"local": {
-				Server: "http://127.0.0.1:8090",
+			defaultContextName: {
+				Server: defaultServerURL,
 			},
 		},
 	}
@@ -105,18 +105,18 @@ func normalizeContextConfig(cfg *contextConfig) {
 		cfg.Contexts = map[string]contextEntry{}
 	}
 
-	if _, ok := cfg.Contexts["local"]; !ok {
-		cfg.Contexts["local"] = contextEntry{
-			Server: "http://127.0.0.1:8090",
+	if _, ok := cfg.Contexts[defaultContextName]; !ok {
+		cfg.Contexts[defaultContextName] = contextEntry{
+			Server: defaultServerURL,
 		}
 	}
 
 	if strings.TrimSpace(cfg.Current) == "" {
-		cfg.Current = "local"
+		cfg.Current = defaultContextName
 	}
 
 	if _, ok := cfg.Contexts[cfg.Current]; !ok {
-		cfg.Current = "local"
+		cfg.Current = defaultContextName
 	}
 }
 
@@ -171,7 +171,7 @@ func applyContextToOptions(opts globalOptions) (globalOptions, error) {
 	}
 
 	if strings.TrimSpace(out.Server) == "" {
-		out.Server = "http://127.0.0.1:8090"
+		out.Server = defaultServerURL
 	}
 
 	return out, nil

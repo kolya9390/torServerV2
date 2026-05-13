@@ -14,7 +14,6 @@ import (
 
 	"server/log"
 	mt "server/mimetype"
-	"server/settings"
 	"server/torr"
 	"server/torr/state"
 )
@@ -31,7 +30,7 @@ func getRoot() (ret []any) {
 	}
 
 	// add Torrents Object
-	vol := len(torr.ListTorrent())
+	vol := len(getCatalog().ListTorrents())
 	cnt := upnpav.Container{Object: tObj, ChildCount: vol}
 	ret = append(ret, cnt)
 
@@ -39,7 +38,7 @@ func getRoot() (ret []any) {
 }
 
 func getTorrents() (ret []any) {
-	torrs := torr.ListTorrent()
+	torrs := getCatalog().ListTorrents()
 	// sort by title as in cds SortCaps
 	sort.Slice(torrs, func(i, j int) bool {
 		return torrs[i].Title < torrs[j].Title
@@ -78,9 +77,9 @@ func getTorrents() (ret []any) {
 	return
 }
 
-func getTorrent(path, host string) (ret []any) {
+func (runtimeCtx dlnaRuntimeContext) getTorrent(path, host string) (ret []any) {
 	// find torrent without load
-	torrs := torr.ListTorrent()
+	torrs := getCatalog().ListTorrents()
 
 	var torr *torr.Torrent
 
@@ -114,12 +113,12 @@ func getTorrent(path, host string) (ret []any) {
 		return
 	}
 
-	ret = loadTorrent(path, host)
+	ret = runtimeCtx.loadTorrent(path, host)
 
 	return
 }
 
-func getTorrentMeta(path, host string) (ret any) {
+func (runtimeCtx dlnaRuntimeContext) getTorrentMeta(path, host string) (ret any) {
 	// Meta object
 	if path == "/" {
 		// root object meta
@@ -146,14 +145,14 @@ func getTorrentMeta(path, host string) (ret any) {
 			Date:       upnpav.Timestamp{Time: time.Now()},
 			Class:      "object.container.storageFolder",
 		}
-		torrs := torr.ListTorrent()
+		torrs := getCatalog().ListTorrents()
 		vol := len(torrs)
 		meta := upnpav.Container{Object: trObj, ChildCount: vol}
 
 		return meta
 	} else if isHashPath(path) {
 		// find torrent without load
-		torrs := torr.ListTorrent()
+		torrs := getCatalog().ListTorrents()
 
 		var torr *torr.Torrent
 
@@ -212,7 +211,7 @@ func getTorrentMeta(path, host string) (ret any) {
 	}
 }
 
-func loadTorrent(path, host string) (ret []any) {
+func (runtimeCtx dlnaRuntimeContext) loadTorrent(path, host string) (ret []any) {
 	hash := filepath.Base(filepath.Dir(path))
 	if hash == "/" || hash == "\\" {
 		hash = filepath.Base(path)
@@ -222,7 +221,7 @@ func loadTorrent(path, host string) (ret []any) {
 		return
 	}
 
-	tor := torr.GetTorrent(hash)
+	tor := getCatalog().GetTorrent(hash)
 	if tor == nil {
 		log.TLogln("Dlna error get info from torrent", hash)
 
@@ -235,7 +234,7 @@ func loadTorrent(path, host string) (ret []any) {
 		timeout := time.Now().Add(time.Second * 60)
 
 		for {
-			tor = torr.GetTorrent(hash)
+			tor = getCatalog().GetTorrent(hash)
 			if len(tor.Files()) > 0 {
 				break
 			}
@@ -257,7 +256,7 @@ func loadTorrent(path, host string) (ret []any) {
 	files := tor.Status().FileStats
 
 	for _, f := range files {
-		obj := getObjFromTorrent(path, parent, host, tor, f)
+		obj := runtimeCtx.getObjFromTorrent(path, parent, host, tor, f)
 		if obj != nil {
 			ret = append(ret, obj)
 		}
@@ -266,7 +265,7 @@ func loadTorrent(path, host string) (ret []any) {
 	return
 }
 
-func getLink(host, path string) string {
+func (runtimeCtx dlnaRuntimeContext) getLink(host, path string) string {
 	if !strings.HasPrefix(host, "http") {
 		host = "http://" + host
 	}
@@ -276,13 +275,19 @@ func getLink(host, path string) string {
 		host = host[:pos]
 	}
 
-	return host + ":" + settings.Port + "/" + path
+	args := runtimeCtx.currentArgs()
+	port := ""
+	if args != nil {
+		port = args.Port
+	}
+
+	return host + ":" + port + "/" + path
 }
 
-func getObjFromTorrent(path, parent, host string, torr *torr.Torrent, file *state.TorrentFileStat) (ret any) {
+func (runtimeCtx dlnaRuntimeContext) getObjFromTorrent(path, parent, host string, torr *torr.Torrent, file *state.TorrentFileStat) (ret any) {
 	mime, err := mt.MimeTypeByPath(file.Path)
 	if err != nil {
-		if settings.GetSettings().EnableDebug {
+		if runtimeCtx.currentSettings().DebugConfig().EnableDebug {
 			log.TLogln("Can't detect mime type", err)
 		}
 
@@ -293,7 +298,7 @@ func getObjFromTorrent(path, parent, host string, torr *torr.Torrent, file *stat
 		return
 	}
 
-	if settings.GetSettings().EnableDebug {
+	if runtimeCtx.currentSettings().DebugConfig().EnableDebug {
 		log.TLogln("mime type", mime.String(), file.Path)
 	}
 
@@ -313,7 +318,7 @@ func getObjFromTorrent(path, parent, host string, torr *torr.Torrent, file *stat
 
 	pathPlay := "play/" + torr.TorrentSpec.InfoHash.HexString() + "/" + strconv.Itoa(file.ID)
 	item.Res = append(item.Res, upnpav.Resource{
-		URL: getLink(host, pathPlay),
+		URL: runtimeCtx.getLink(host, pathPlay),
 		ProtocolInfo: fmt.Sprintf("http-get:*:%s:%s", mime, dlna.ContentFeatures{
 			SupportRange:    true,
 			SupportTimeSeek: true,

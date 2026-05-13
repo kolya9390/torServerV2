@@ -27,6 +27,10 @@ var jsonDBLocks = make(map[string]*sync.Mutex)
 var jsonDBLocksMutex sync.Mutex
 
 func NewJSONDB() TorrServerDB {
+	return NewJSONDBAtPath(currentRuntimePath())
+}
+
+func NewJSONDBAtPath(path string) TorrServerDB {
 	globalJSONDBMu.Lock()
 	defer globalJSONDBMu.Unlock()
 
@@ -34,8 +38,12 @@ func NewJSONDB() TorrServerDB {
 		return globalJSONDB
 	}
 
+	if path == "" {
+		path = "."
+	}
+
 	globalJSONDB = &JSONDB{
-		Path:              Path,
+		Path:              path,
 		filenameDelimiter: ".",
 		filenameExtension: ".json",
 		fileMode:          fs.FileMode(0o666),

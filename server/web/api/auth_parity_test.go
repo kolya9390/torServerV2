@@ -115,18 +115,14 @@ func setupAuthRouter(t *testing.T, searchWA bool) *gin.Engine {
 
 	tmpDir := t.TempDir()
 
-	prevPath := sets.Path
-	prevHTTPAuth := sets.HTTPAuth
-	prevSearchWA := sets.SearchWA
-
-	sets.Path = tmpDir
-	sets.HTTPAuth = true
-	sets.SearchWA = searchWA
+	restoreRuntime := sets.ReplaceRuntimeStateForTests(sets.RuntimeState{
+		Path:     tmpDir,
+		HTTPAuth: true,
+		SearchWA: searchWA,
+	})
 
 	t.Cleanup(func() {
-		sets.Path = prevPath
-		sets.HTTPAuth = prevHTTPAuth
-		sets.SearchWA = prevSearchWA
+		restoreRuntime()
 	})
 
 	// Create BBolt DB and add test user
@@ -147,7 +143,7 @@ func setupAuthRouter(t *testing.T, searchWA bool) *gin.Engine {
 
 	r := gin.New()
 	wauth.SetupAuth(r)
-	SetupRoute(r)
+	SetupRouteWithRuntimeState(r, sets.GetRuntimeState)
 
 	return r
 }

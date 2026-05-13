@@ -94,7 +94,7 @@ func (v *DBReadCache) Set(xPath, name string, value []byte) {
 		return
 	}
 
-	if ReadOnly {
+	if IsReadOnlyMode() {
 		if IsDebug() {
 			log.TLogln("DBReadCache.Set: Read-only DB mode!", name)
 		}
@@ -162,7 +162,7 @@ func (v *DBReadCache) Rem(xPath, name string) {
 		return
 	}
 
-	if ReadOnly {
+	if IsReadOnlyMode() {
 		if IsDebug() {
 			log.TLogln("DBReadCache.Rem: Read-only DB mode!", name)
 		}
@@ -198,7 +198,7 @@ func (v *DBReadCache) Clear(xPath string) {
 		return
 	}
 
-	if ReadOnly {
+	if IsReadOnlyMode() {
 		if IsDebug() {
 			log.TLogln("DBReadCache.Clear: Read-only DB mode!", xPath)
 		}

@@ -12,19 +12,23 @@ type requestI struct {
 	Action string `json:"action,omitempty"`
 }
 
-func SetupRoute(route gin.IRouter) {
+func SetupRouteWithRuntimeState(route gin.IRouter, runtimeState func() sets.RuntimeState) {
 	route.GET("/api/version", apiVersion)
 	route.GET("/api/v1/version", apiVersion)
 
 	legacy := route.Group("/", legacyDeprecationHeaders())
-	registerAPIRoutes(legacy)
+	registerAPIRoutes(legacy, runtimeState)
 
 	v1 := route.Group("/api/v1")
-	registerAPIRoutes(v1)
+	registerAPIRoutes(v1, runtimeState)
 }
 
-func registerAPIRoutes(route gin.IRouter) {
+func registerAPIRoutes(route gin.IRouter, runtimeState func() sets.RuntimeState) {
 	authorized := route.Group("/", auth.CheckAuth())
+	if runtimeState == nil {
+		runtimeState = func() sets.RuntimeState { return sets.RuntimeState{} }
+	}
+	authCfg := runtimeState().AuthConfig()
 
 	authorized.GET("/shutdown", shutdown)
 	authorized.GET("/shutdown/*reason", shutdown)
@@ -68,7 +72,7 @@ func registerAPIRoutes(route gin.IRouter) {
 	authorized.GET("/download/:size", download)
 
 	// Torznab search only (Rutor removed)
-	if sets.SearchWA {
+	if authCfg.SearchWA {
 		route.GET("/torznab/search/*query", torznabSearch)
 	} else {
 		authorized.GET("/torznab/search/*query", torznabSearch)

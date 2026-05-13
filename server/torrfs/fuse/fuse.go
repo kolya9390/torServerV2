@@ -31,6 +31,7 @@ type FuseFS struct {
 
 	mountPath string
 	server    *fuse.Server
+	runtime   fuseRuntimeContext
 
 	mu      sync.RWMutex
 	enabled bool
@@ -47,9 +48,14 @@ var (
 func NewFuseFS() *FuseFS { return &FuseFS{enabled: false} }
 
 func FuseAutoMount() error {
-	args := settings.GetArgs()
+	return FuseAutoMountWithProviders(nil, nil)
+}
+
+func FuseAutoMountWithProviders(provider settings.SettingsProvider, argsProvider settings.ArgsProvider) error {
+	runtimeCtx := newFuseRuntimeContext(provider, argsProvider)
+	args := runtimeCtx.currentArgs()
 	if args != nil && args.FusePath != "" {
-		ffs := GetFuseFS()
+		ffs := GetFuseFSWithProviders(provider, argsProvider)
 		if !ffs.enabled {
 			log.TLogln("FUSE mount")
 
@@ -73,12 +79,18 @@ func FuseCleanup() {
 }
 
 func GetFuseFS() *FuseFS {
+	return GetFuseFSWithProviders(nil, nil)
+}
+
+func GetFuseFSWithProviders(provider settings.SettingsProvider, argsProvider settings.ArgsProvider) *FuseFS {
 	fuseMutex.Lock()
 	defer fuseMutex.Unlock()
 
 	if globalFuseFS == nil {
 		globalFuseFS = NewFuseFS()
 	}
+
+	globalFuseFS.runtime = newFuseRuntimeContext(provider, argsProvider)
 
 	return globalFuseFS
 }
@@ -105,7 +117,7 @@ func (ffs *FuseFS) Mount(mountPath string) error {
 	}
 
 	ffs.mountPath = mountPath
-	ffs.tfs = torrfs.AsFS(torrfs.New())
+	ffs.tfs = torrfs.AsFS(torrfs.NewWithProvider(ffs.runtime.settingsProvider))
 	ffs.p = "."
 
 	entryTimeout := time.Second
@@ -116,7 +128,7 @@ func (ffs *FuseFS) Mount(mountPath string) error {
 			AllowOther: true,
 			Name:       "torrserver",
 			FsName:     "torrserver-fuse",
-			Debug:      settings.GetSettings().EnableDebug,
+			Debug:      ffs.runtime.currentSettings().EnableDebug,
 		},
 		EntryTimeout: &entryTimeout,
 		AttrTimeout:  &attrTimeout,

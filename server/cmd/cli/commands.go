@@ -523,7 +523,7 @@ func cmdShutdown(cli *apiClient, opts globalOptions, args []string) error {
 	fs.SetOutput(os.Stderr)
 
 	mode := fs.String("mode", "local", "shutdown mode: local|public")
-	reason := fs.String("reason", "tsctl", "shutdown reason")
+	reason := fs.String("reason", defaultReason, "shutdown reason")
 
 	if err := fs.Parse(args); err != nil {
 		return err

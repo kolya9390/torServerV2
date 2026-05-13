@@ -13,15 +13,21 @@ import (
 type TorrDir struct {
 	parent INode
 
-	info fs.FileInfo
+	info     fs.FileInfo
+	provider settings.SettingsProvider
 
 	torr *torr.Torrent
 }
 
-func NewTorrDir(parent INode, name string, torrent *torr.Torrent) *TorrDir {
+func NewTorrDir(parent INode, name string, torrent *torr.Torrent, provider settings.SettingsProvider) *TorrDir {
+	if provider == nil {
+		provider = settings.NewNoopSettingsProvider()
+	}
+
 	d := &TorrDir{
-		parent: parent,
-		torr:   torrent,
+		parent:   parent,
+		torr:     torrent,
+		provider: provider,
 		info: info{
 			name:  name,
 			size:  4096,
@@ -41,8 +47,8 @@ func (d *TorrDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	// соединяемся с торрентом при чтении директории торрента
 	if !d.Torrent().GotInfo() {
 		hash := d.Torrent().Hash().String()
-		for range settings.GetSettings().TorrentDisconnectTimeout * 2 {
-			tor := torr.GetTorrent(hash)
+		for range d.provider.Get().PlaybackConfig().DisconnectTimeoutSec * 2 {
+			tor := getCatalog().GetTorrent(hash)
 			if tor.GotInfo() {
 				d.SetTorrent(tor)
 
@@ -91,7 +97,7 @@ func (d *TorrDir) ReadDir(n int) ([]fs.DirEntry, error) {
 		if len(arr) == 1 {
 			nodes[name] = NewTorrFile(d, name, file)
 		} else if _, ok := nodes[name]; !ok {
-			nodes[name] = NewTorrDir(d, name, d.Torrent())
+			nodes[name] = NewTorrDir(d, name, d.Torrent(), d.provider)
 		}
 	}
 

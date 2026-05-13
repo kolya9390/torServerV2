@@ -32,17 +32,17 @@ func New(args *settings.ExecArgs, cfg *config.Config) (*Bootstrap, error) {
 
 	settings.SetArgs(args)
 
-	container := internalapp.NewContainerWithConfig(cfg)
+	runtime := internalapp.NewRuntimeWithConfig(cfg)
 
-	return newWithContainer(container)
+	return newWithRuntime(runtime)
 }
 
-func newWithContainer(container *internalapp.Container) (*Bootstrap, error) {
-	if container == nil || container.Runtime == nil {
-		return nil, errors.New("runtime container is not initialized")
+func newWithRuntime(runtime internalapp.Runtime) (*Bootstrap, error) {
+	if runtime == nil {
+		return nil, errors.New("runtime is not initialized")
 	}
 
-	app := internalapp.New(container.Runtime, defaultStopTimeout)
+	app := internalapp.New(runtime, defaultStopTimeout)
 
 	return &Bootstrap{app: app}, nil
 }

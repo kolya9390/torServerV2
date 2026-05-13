@@ -2,7 +2,6 @@ package api
 
 import (
 	"errors"
-	"sync"
 
 	"github.com/anacrolix/torrent"
 	goffprobe "gopkg.in/vansante/go-ffprobe.v2"
@@ -168,13 +167,8 @@ type noopModulesService struct{}
 type noopStreamService struct{}
 type noopPlaybackService struct{}
 
-var (
-	apiServicesMu sync.RWMutex
-	apiServices   *APIServices
-)
-
 func (noopTorrentService) Add(spec *torrent.TorrentSpec, title, poster, data, category string) (*torr.Torrent, error) {
-	return nil, nil
+	return nil, torr.ErrRuntimeUnavailable
 }
 func (noopTorrentService) Get(hash string) *torr.Torrent { return nil }
 func (noopTorrentService) Set(hash, title, poster, category, data string) *torr.Torrent {
@@ -259,38 +253,17 @@ func newNoopServices() *APIServices {
 
 // SetServices injects API services from composition root.
 func SetServices(s *APIServices) {
-	if s == nil {
-		return
-	}
-
-	s = withNoopFallbacks(s)
-
-	apiServicesMu.Lock()
-	apiServices = s
-	apiServicesMu.Unlock()
+	defaultServicesRegistry.Set(s)
 }
 
 func getServices() *APIServices {
-	apiServicesMu.RLock()
-	s := apiServices
-	apiServicesMu.RUnlock()
+	return defaultServicesRegistry.Get()
+}
 
-	if s != nil {
-		return withNoopFallbacks(s)
-	}
-
-	noop := newNoopServices()
-
-	apiServicesMu.Lock()
-	if apiServices == nil {
-		apiServices = noop
-	} else {
-		noop = withNoopFallbacks(apiServices)
-		apiServices = noop
-	}
-	apiServicesMu.Unlock()
-
-	return noop
+// ReplaceServicesForTests swaps the default service registry and returns a restore function.
+// It is intended for tests that need deterministic service wiring without touching shared globals directly.
+func ReplaceServicesForTests(s *APIServices) func() {
+	return defaultServicesRegistry.ReplaceForTests(s)
 }
 
 func withNoopFallbacks(s *APIServices) *APIServices {

@@ -14,15 +14,7 @@ type ExecArgs struct {
 	WebLogPath    string
 	RDB           bool
 	HTTPAuth      bool
-	DontKill      bool
-	UI            bool
-	TorrentsDir   string
-	TorrentAddr   string
-	PubIPv4       string
-	PubIPv6       string
 	SearchWA      bool
-	MaxSize       string
-	TGToken       string
 	FusePath      string
 	WebDAV        bool
 	ProxyURL      string

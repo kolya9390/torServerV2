@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"server/log"
-	"server/settings"
 )
 
 type DiskPiece struct {
@@ -20,12 +19,18 @@ type DiskPiece struct {
 }
 
 func NewDiskPiece(p *Piece) *DiskPiece {
-	name := filepath.Join(settings.GetSettings().TorrentsSavePath, p.cache.hash.HexString(), strconv.Itoa(p.ID))
+	name := filepath.Join(p.cache.currentCacheConfig().SavePath, p.cache.hash.HexString(), strconv.Itoa(p.ID))
 
 	ff, err := os.Stat(name)
 	if err == nil {
-		p.Size.Store(ff.Size())
-		p.Complete = ff.Size() == p.cache.pieceLength
+		size := ff.Size()
+		if size > p.cache.pieceLength {
+			size = p.cache.pieceLength
+		}
+
+		p.Size.Store(size)
+		p.cache.addFilled(size)
+		p.Complete = size == p.cache.pieceLength
 		p.Accessed = ff.ModTime().Unix()
 	}
 
@@ -45,15 +50,30 @@ func (p *DiskPiece) WriteAt(data []byte, off int64) (n int, err error) {
 
 	defer func() { _ = ff.Close() }()
 
+	// Check if this is first write (file is new/empty)
+	stat, _ := ff.Stat()
+	isFirstWrite := stat == nil || stat.Size() == 0
+
 	n, err = ff.WriteAt(data, off)
+	if n > 0 {
+		oldSize := p.piece.Size.Load()
 
-	p.piece.Size.Add(int64(n))
+		newSize := oldSize + int64(n)
+		if newSize > p.piece.cache.pieceLength {
+			newSize = p.piece.cache.pieceLength
+		}
 
-	if p.piece.Size.Load() > p.piece.cache.pieceLength {
-		p.piece.Size.Store(p.piece.cache.pieceLength)
+		p.piece.Size.Store(newSize)
+		p.piece.cache.addFilled(newSize - oldSize)
 	}
 
-	p.piece.markAccessed()
+	// Synchronous cleanup for immediate eviction on first write
+	if isFirstWrite && err == nil {
+		p.piece.markAccessed()
+		p.piece.cache.CleanPieces()
+	} else {
+		p.piece.markAccessed()
+	}
 
 	return
 }
@@ -80,7 +100,7 @@ func (p *DiskPiece) ReadAt(b []byte, off int64) (n int, err error) {
 	p.piece.markAccessed()
 
 	if int64(len(b))+off >= p.piece.Size.Load() {
-		go p.piece.cache.cleanPieces()
+		p.piece.cache.queueCleanPieces()
 	}
 
 	return n, nil
@@ -90,7 +110,8 @@ func (p *DiskPiece) Release() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.piece.Size.Store(0)
+	prev := p.piece.Size.Swap(0)
+	p.piece.cache.addFilled(-prev)
 	p.piece.Complete = false
 
 	_ = os.Remove(p.name)

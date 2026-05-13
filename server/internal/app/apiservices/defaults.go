@@ -21,95 +21,243 @@ import (
 	"server/web/api/utils"
 )
 
-type torrentService struct{}
-type settingsService struct{}
-type viewedService struct{}
-type systemService struct{}
-type searchService struct{}
-type mediaService struct{}
-type modulesService struct{}
+type DefaultDeps struct {
+	TorrentBackend    torr.TorrentService
+	SettingsProvider  sets.SettingsProvider
+	RuntimeSignals    torr.RuntimeSignals
+	RuntimeController torr.RuntimeController
+	RuntimeState      func() sets.RuntimeState
+	ArgsProvider      sets.ArgsProvider
+	SetViewed         func(*sets.Viewed)
+	RemoveViewed      func(*sets.Viewed)
+	ListViewed        func(string) []*sets.Viewed
+}
+
+type torrentService struct {
+	backend        torr.TorrentService
+	runtimeSignals torr.RuntimeSignals
+}
+type settingsService struct {
+	provider          sets.SettingsProvider
+	runtimeController torr.RuntimeController
+	runtimeState      func() sets.RuntimeState
+}
+type viewedService struct {
+	setViewed    func(*sets.Viewed)
+	removeViewed func(*sets.Viewed)
+	listViewed   func(string) []*sets.Viewed
+}
+type systemService struct {
+	runtimeController torr.RuntimeController
+}
+type searchService struct {
+	provider sets.SettingsProvider
+}
+type mediaService struct {
+	runtimeState func() sets.RuntimeState
+}
+type modulesService struct {
+	provider     sets.SettingsProvider
+	argsProvider sets.ArgsProvider
+}
 type streamService struct{}
 type playbackService struct{}
 
 // NewDefault constructs the default API application services using runtime adapters.
 func NewDefault() *api.APIServices {
+	return NewDefaultWithDeps(DefaultDeps{})
+}
+
+func NewDefaultWithDeps(deps DefaultDeps) *api.APIServices {
+	resolved := resolveDefaultDeps(deps)
+
 	return &api.APIServices{
-		Torrents: torrentService{},
-		Settings: settingsService{},
-		Viewed:   viewedService{},
-		System:   systemService{},
-		Search:   searchService{},
-		Media:    mediaService{},
-		Modules:  modulesService{},
+		Torrents: torrentService{
+			backend:        resolved.TorrentBackend,
+			runtimeSignals: resolved.RuntimeSignals,
+		},
+		Settings: settingsService{
+			provider:          resolved.SettingsProvider,
+			runtimeController: resolved.RuntimeController,
+			runtimeState:      resolved.RuntimeState,
+		},
+		Viewed: viewedService{
+			setViewed:    resolved.SetViewed,
+			removeViewed: resolved.RemoveViewed,
+			listViewed:   resolved.ListViewed,
+		},
+		System: systemService{runtimeController: resolved.RuntimeController},
+		Search: searchService{provider: resolved.SettingsProvider},
+		Media:  mediaService{runtimeState: resolved.RuntimeState},
+		Modules: modulesService{
+			provider:     resolved.SettingsProvider,
+			argsProvider: resolved.ArgsProvider,
+		},
 		Streams:  streamService{},
 		Playback: playbackService{},
 	}
 }
 
+func resolveDefaultDeps(deps DefaultDeps) DefaultDeps {
+	if deps.TorrentBackend == nil {
+		deps.TorrentBackend = torr.NewNoopTorrentService()
+	}
+
+	if deps.SettingsProvider == nil {
+		deps.SettingsProvider = sets.NewNoopSettingsProvider()
+	}
+
+	if deps.RuntimeSignals == nil {
+		deps.RuntimeSignals = torr.NewNoopRuntimeSignals()
+	}
+
+	if deps.RuntimeController == nil {
+		deps.RuntimeController = torr.NewNoopRuntimeController()
+	}
+
+	if deps.RuntimeState == nil {
+		deps.RuntimeState = func() sets.RuntimeState { return sets.RuntimeState{} }
+	}
+
+	if deps.ArgsProvider == nil {
+		deps.ArgsProvider = sets.NewNoopArgsProvider()
+	}
+
+	if deps.SetViewed == nil {
+		deps.SetViewed = sets.SetViewed
+	}
+
+	if deps.RemoveViewed == nil {
+		deps.RemoveViewed = sets.RemViewed
+	}
+
+	if deps.ListViewed == nil {
+		deps.ListViewed = sets.ListViewed
+	}
+
+	return deps
+}
+
 func (d torrentService) Add(spec *torrent.TorrentSpec, title, poster, data, category string) (*torr.Torrent, error) {
-	return torr.AddTorrent(spec, title, poster, data, category)
+	return d.backend.AddTorrent(spec, title, poster, data, category)
 }
 
 func (d torrentService) Get(hash string) *torr.Torrent {
-	return torr.GetTorrent(hash)
+	return d.backend.GetTorrent(hash)
 }
 
 func (d torrentService) Set(hash, title, poster, category, data string) *torr.Torrent {
-	return torr.SetTorrent(hash, title, poster, category, data)
+	return d.backend.SetTorrent(hash, title, poster, category, data)
 }
 
 func (d torrentService) SaveToDB(tor *torr.Torrent) {
-	torr.SaveTorrentToDB(tor)
+	d.backend.SaveTorrentDB(tor)
 }
 
 func (d torrentService) Remove(hash string) {
-	torr.RemTorrent(hash)
+	d.backend.RemoveTorrent(hash)
 }
 
 func (d torrentService) List() []*torr.Torrent {
-	return torr.ListTorrent()
+	return d.backend.ListTorrents()
 }
 
 func (d torrentService) Drop(hash string) {
-	torr.DropTorrent(hash)
+	d.backend.DropTorrent(hash)
 }
 
 func (d torrentService) EnqueuePreload(tor *torr.Torrent, index int) bool {
-	torr.Preload(tor, index)
+	if tor == nil {
+		return false
+	}
+
+	if signals := d.runtimeSignals; signals != nil {
+		if signals.ActivePlaybackTorrents() > 1 {
+			log.TLogln("EnqueuePreload: skip under multi-playback load")
+
+			return false
+		}
+
+		if !signals.HasRuntimeBackend() && signals.ActiveStreams() > 1 {
+			log.TLogln("EnqueuePreload: skip under multi-stream load", "active_streams=", signals.ActiveStreams())
+
+			return false
+		}
+	}
+
+	go tor.PreloadWithSettings(index, nil)
 
 	return true
 }
 
 func (d torrentService) EnqueueMetadataFinalize(tor *torr.Torrent, spec *torrent.TorrentSpec, saveToDB bool) bool {
 	if saveToDB {
-		torr.SaveTorrentToDB(tor)
+		d.backend.SaveTorrentDB(tor)
 	}
 
 	return true
 }
 
 func (d torrentService) LoadFromDB(tor *torr.Torrent) *torr.Torrent {
-	return torr.LoadTorrent(tor)
+	return d.backend.LoadTorrent(tor)
 }
 
 func (d settingsService) Current() *sets.BTSets {
-	return sets.BTsets
+	return d.provider.Get()
+}
+
+func (d settingsService) currentSettings() *sets.BTSets {
+	return d.provider.Get()
+}
+
+func (d settingsService) currentSearchConfig() sets.SearchConfig {
+	return d.currentSettings().SearchConfig()
+}
+
+func (d settingsService) currentNetworkConfig() sets.NetworkConfig {
+	return d.currentSettings().NetworkConfig()
+}
+
+func (d settingsService) currentCacheConfig() sets.CacheConfig {
+	return d.currentSettings().CacheConfig()
+}
+
+func (d settingsService) currentProxyConfig() sets.ProxyConfig {
+	return d.currentSettings().ProxyConfig()
+}
+
+func (d settingsService) currentDLNAConfig() sets.DLNAConfig {
+	return d.currentSettings().DLNAConfig()
+}
+
+func (d settingsService) currentTLSConfig() sets.TLSConfig {
+	return d.currentSettings().TLSConfig()
 }
 
 func (d settingsService) Set(v *sets.BTSets) {
-	torr.SetSettings(v)
+	if d.runtimeController != nil {
+		d.runtimeController.ApplySettings(v)
+	}
 }
 
 func (d settingsService) SetDefault() {
-	torr.SetDefSettings()
+	if d.runtimeController != nil {
+		d.runtimeController.ResetDefaultSettings()
+	}
+}
+
+func (d systemService) Shutdown() {
+	if d.runtimeController != nil {
+		d.runtimeController.Shutdown()
+	}
 }
 
 func (d settingsService) ReadOnly() bool {
-	return sets.ReadOnly
+	return d.provider.ReadOnly()
 }
 
 func (d settingsService) GetStoragePreferences() map[string]any {
-	return sets.GetStoragePreferences()
+	return d.provider.GetStoragePreferences()
 }
 
 func (d settingsService) SetStoragePreferences(prefs map[string]any) error {
@@ -117,236 +265,169 @@ func (d settingsService) SetStoragePreferences(prefs map[string]any) error {
 }
 
 func (d settingsService) TMDBConfig() (sets.TMDBConfig, bool) {
-	if sets.BTsets == nil {
-		return sets.TMDBConfig{}, false
-	}
-
-	return sets.BTsets.TMDBSettings, true
+	return d.currentSettings().TMDBSettings, true
 }
 
 func (d settingsService) BuildPlayURL(hash, fileID string) string {
-	link := fmt.Sprintf("http://127.0.0.1:%s/play/%s/%s", sets.Port, hash, fileID)
-	if sets.Ssl {
-		link = fmt.Sprintf("https://127.0.0.1:%s/play/%s/%s", sets.SslPort, hash, fileID)
+	serverCfg := d.runtimeState().ServerConfig()
+	link := fmt.Sprintf("http://127.0.0.1:%s/play/%s/%s", serverCfg.Port, hash, fileID)
+	if serverCfg.SSL {
+		link = fmt.Sprintf("https://127.0.0.1:%s/play/%s/%s", serverCfg.SSLPort, hash, fileID)
 	}
 
 	return link
 }
 
 func (d settingsService) EnableDLNA() bool {
-	return sets.BTsets != nil && sets.BTsets.EnableDLNA
+	return d.currentDLNAConfig().Enabled
 }
 
 func (d settingsService) EnableDebug() bool {
-	return sets.BTsets != nil && sets.BTsets.EnableDebug
+	return d.currentSettings().DebugConfig().EnableDebug
 }
 
 func (d settingsService) EnableIPv6() bool {
-	return sets.BTsets == nil || sets.BTsets.EnableIPv6
+	return d.currentNetworkConfig().EnableIPv6
 }
 
 func (d settingsService) DisableTCP() bool {
-	return sets.BTsets != nil && sets.BTsets.DisableTCP
+	return d.currentNetworkConfig().DisableTCP
 }
 
 func (d settingsService) DisableUTP() bool {
-	return sets.BTsets != nil && sets.BTsets.DisableUTP
+	return d.currentNetworkConfig().DisableUTP
 }
 
 func (d settingsService) DisableUPNP() bool {
-	return sets.BTsets != nil && sets.BTsets.DisableUPNP
+	return d.currentNetworkConfig().DisableUPNP
 }
 
 func (d settingsService) DisableDHT() bool {
-	return sets.BTsets != nil && sets.BTsets.DisableDHT
+	return d.currentNetworkConfig().DisableDHT
 }
 
 func (d settingsService) DisablePEX() bool {
-	return sets.BTsets != nil && sets.BTsets.DisablePEX
+	return d.currentNetworkConfig().DisablePEX
 }
 
 func (d settingsService) DisableUpload() bool {
-	return sets.BTsets != nil && sets.BTsets.DisableUpload
+	return d.currentNetworkConfig().DisableUpload
 }
 
 func (d settingsService) ForceEncrypt() bool {
-	return sets.BTsets != nil && sets.BTsets.ForceEncrypt
+	return d.currentNetworkConfig().ForceEncrypt
 }
 
 func (d settingsService) RetrackersMode() int {
-	if sets.BTsets == nil {
-		return 1
-	}
-
-	return sets.BTsets.RetrackersMode
+	return d.currentNetworkConfig().RetrackersMode
 }
 
 func (d settingsService) DownloadRateLimit() int {
-	if sets.BTsets == nil {
-		return 0
-	}
-
-	return sets.BTsets.DownloadRateLimit
+	return d.currentNetworkConfig().DownloadRateLimitKB
 }
 
 func (d settingsService) UploadRateLimit() int {
-	if sets.BTsets == nil {
-		return 0
-	}
-
-	return sets.BTsets.UploadRateLimit
+	return d.currentNetworkConfig().UploadRateLimitKB
 }
 
 func (d settingsService) ConnectionsLimit() int {
-	if sets.BTsets == nil {
-		return 25
-	}
-
-	return sets.BTsets.ConnectionsLimit
+	return d.currentNetworkConfig().ConnectionsLimit
 }
 
 func (d settingsService) PeersListenPort() int {
-	if sets.BTsets == nil {
-		return 0
-	}
-
-	return sets.BTsets.PeersListenPort
+	return d.currentNetworkConfig().PeersListenPort
 }
 
 func (d settingsService) CacheSize() int64 {
-	if sets.BTsets == nil {
-		return 64 * 1024 * 1024
-	}
-
-	return sets.BTsets.CacheSize
+	return d.currentCacheConfig().SizeBytes
 }
 
 func (d settingsService) PreloadCache() int {
-	if sets.BTsets == nil {
-		return 50
-	}
-
-	return sets.BTsets.PreloadCache
+	return d.currentCacheConfig().PreloadPct
 }
 
 func (d settingsService) UseDisk() bool {
-	return sets.BTsets != nil && sets.BTsets.UseDisk
+	return d.currentCacheConfig().UseDisk
 }
 
 func (d settingsService) TorrentsSavePath() string {
-	if sets.BTsets == nil {
-		return ""
-	}
-
-	return sets.BTsets.TorrentsSavePath
+	return d.currentCacheConfig().SavePath
 }
 
 func (d settingsService) EnableRutorSearch() bool {
-	return sets.BTsets != nil && sets.BTsets.EnableRutorSearch
+	return d.currentSearchConfig().EnableRutor
 }
 
 func (d settingsService) EnableTorznabSearch() bool {
-	return sets.BTsets != nil && sets.BTsets.EnableTorznabSearch
+	return d.currentSearchConfig().EnableTorznab
 }
 
 func (d settingsService) TorznabURLs() []sets.TorznabConfig {
-	if sets.BTsets == nil {
-		return nil
-	}
-
-	return sets.BTsets.TorznabUrls
+	return d.currentSearchConfig().TorznabURLs
 }
 
 func (d settingsService) EnableProxy() bool {
-	return sets.BTsets != nil && sets.BTsets.EnableProxy
+	return d.currentProxyConfig().Enabled
 }
 
 func (d settingsService) ProxyHosts() []string {
-	if sets.BTsets == nil {
-		return nil
-	}
-
-	return sets.BTsets.ProxyHosts
+	return d.currentProxyConfig().Hosts
 }
 
 func (d settingsService) SslCert() string {
-	if sets.BTsets == nil {
-		return ""
-	}
-
-	return sets.BTsets.SslCert
+	return d.currentTLSConfig().Cert
 }
 
 func (d settingsService) SslKey() string {
-	if sets.BTsets == nil {
-		return ""
-	}
-
-	return sets.BTsets.SslKey
+	return d.currentTLSConfig().Key
 }
 
 func (d settingsService) SslPort() int {
-	if sets.BTsets == nil {
-		return 0
-	}
-
-	return sets.BTsets.SslPort
+	return d.currentTLSConfig().Port
 }
 
 func (d settingsService) FriendlyName() string {
-	if sets.BTsets == nil {
-		return "TorrServer"
-	}
-
-	return sets.BTsets.FriendlyName
+	return d.currentDLNAConfig().FriendlyName
 }
 
 func (d settingsService) ShowFSActiveTorr() bool {
-	return sets.BTsets == nil || sets.BTsets.ShowFSActiveTorr
+	return d.currentDLNAConfig().ShowFSActiveTorr
 }
 
 func (d settingsService) TorrentDisconnectTimeout() int {
-	if sets.BTsets == nil {
-		return 30
-	}
-
-	return sets.BTsets.TorrentDisconnectTimeout
+	return d.currentSettings().PlaybackConfig().DisconnectTimeoutSec
 }
 
 func (d settingsService) TorrentsDir() string {
-	return sets.Path
+	return d.runtimeState().PathConfig().Path
 }
 
 func (d viewedService) SetViewed(v *sets.Viewed) {
-	sets.SetViewed(v)
+	d.setViewed(v)
 }
 
 func (d viewedService) RemoveViewed(v *sets.Viewed) {
-	sets.RemViewed(v)
+	d.removeViewed(v)
 }
 
 func (d viewedService) ListViewed(hash string) []*sets.Viewed {
-	log.TLogln("viewedService.ListViewed: calling sets.ListViewed with hash:", hash)
-	result := sets.ListViewed(hash)
+	log.TLogln("viewedService.ListViewed: calling backend with hash:", hash)
+	result := d.listViewed(hash)
 	log.TLogln("viewedService.ListViewed: got result:", result)
 
 	return result
 }
 
-func (d systemService) Shutdown() {
-	if api.RequestShutdown() {
-		return
+func (d searchService) EnableTorznabSearch() bool {
+	if d.provider == nil {
+		return false
 	}
 
-	torr.Shutdown()
-}
-
-func (d searchService) EnableTorznabSearch() bool {
-	return sets.BTsets != nil && sets.BTsets.EnableTorznabSearch
+	return d.provider.Get().SearchConfig().EnableTorznab
 }
 
 func (d searchService) TorznabSearch(query string, index int) []*torznab.TorrentDetails {
-	return torznab.Search(query, index)
+	return torznab.SearchWithProvider(query, index, d.provider)
 }
 
 func (d searchService) TorznabTest(host, key string) error {
@@ -354,13 +435,17 @@ func (d searchService) TorznabTest(host, key string) error {
 }
 
 func (d mediaService) ProbePlayURL(hash, fileID string) (*goffprobe.ProbeData, error) {
-	link := settingsService{}.BuildPlayURL(hash, fileID)
+	serverCfg := d.runtimeState().ServerConfig()
+	link := fmt.Sprintf("http://127.0.0.1:%s/play/%s/%s", serverCfg.Port, hash, fileID)
+	if serverCfg.SSL {
+		link = fmt.Sprintf("https://127.0.0.1:%s/play/%s/%s", serverCfg.SSLPort, hash, fileID)
+	}
 
 	return ffprobe.ProbeURL(link)
 }
 
 func (d modulesService) RestartDLNA(enable bool) error {
-	return modules.RestartDLNA(enable)
+	return modules.RestartDLNAWithProviders(enable, d.provider, d.argsProvider)
 }
 
 func (d modulesService) StopDLNA() {
@@ -434,44 +519,62 @@ func (d streamService) ParseLink(link, title, poster, category string) (*torrent
 }
 
 func (d streamService) EnsureTorrent(torrents api.TorrentService, spec *torrent.TorrentSpec, meta api.StreamMeta, allowCreate bool) (*torr.Torrent, error) {
-	log.TLogln("[DEBUG] EnsureTorrent: starting, hash=", spec.InfoHash.HexString())
-	log.TLogln("[DEBUG] EnsureTorrent: about to call torrents.Get")
+	log.Debug("EnsureTorrent: starting", "hash", spec.InfoHash.HexString())
+	log.Debug("EnsureTorrent: about to call torrents.Get")
 
 	tor := torrents.Get(spec.InfoHash.HexString())
-	log.TLogln("[DEBUG] EnsureTorrent: torrents.Get returned, tor=", tor != nil)
+	log.Debug("EnsureTorrent: torrents.Get returned", "tor", tor != nil)
 
 	if tor != nil {
 		torStat := tor.Stat
-		log.TLogln("[DEBUG] EnsureTorrent: found existing torrent, stat=", torStat)
+		log.Debug("EnsureTorrent: found existing torrent", "stat", torStat)
 
+		tMeta := tor.Metadata()
 		if meta.Title == "" {
-			meta.Title = tor.Title
+			meta.Title = tMeta.Title
 		}
 
 		if meta.Poster == "" {
-			meta.Poster = tor.Poster
+			meta.Poster = tMeta.Poster
 		}
 
 		if meta.Category == "" {
-			meta.Category = tor.Category
+			meta.Category = tMeta.Category
 		}
 
-		meta.Data = tor.Data
+		meta.Data = tMeta.Data
 		// Torrent already in memory and working/preloading — skip GotInfo() to avoid deadlock.
 		// The streaming layer (tor.Stream) will call GotInfo() internally if needed.
 		if torStat == state.TorrentWorking || torStat == state.TorrentPreload {
-			log.TLogln("[DEBUG] EnsureTorrent: torrent already working/preloading, skipping GotInfo")
+			log.Debug("EnsureTorrent: torrent already working/preloading, skipping GotInfo")
 
-			if tor.Title == "" {
-				tor.Title = tor.Name()
-			}
+			tor.EnsureTitleFromInfo()
 
 			return tor, nil
+		}
+
+		if torStat == state.TorrentInDB {
+			if !allowCreate {
+				return nil, api.ErrStreamUnauthorized
+			}
+
+			log.Debug("EnsureTorrent: activating torrent from DB metadata")
+
+			tor = torrents.LoadFromDB(tor)
+			if tor == nil {
+				return nil, api.ErrStreamConnectionTimeout
+			}
+
+			if tor.Stat == state.TorrentWorking || tor.Stat == state.TorrentPreload {
+				tor.EnsureTitleFromInfo()
+
+				return tor, nil
+			}
 		}
 	}
 
 	if tor == nil {
-		log.TLogln("[DEBUG] EnsureTorrent: need to add torrent")
+		log.Debug("EnsureTorrent: need to add torrent")
 
 		if !allowCreate {
 			return nil, api.ErrStreamUnauthorized
@@ -481,27 +584,25 @@ func (d streamService) EnsureTorrent(torrents api.TorrentService, spec *torrent.
 
 		tor, err = torrents.Add(spec, meta.Title, meta.Poster, meta.Data, meta.Category)
 		if err != nil {
-			log.TLogln("[DEBUG] EnsureTorrent: Add error:", err)
+			log.Debug("EnsureTorrent: Add error", "error", err)
 
 			return nil, err
 		}
 
-		log.TLogln("[DEBUG] EnsureTorrent: Add succeeded, tor=", tor)
+		log.Debug("EnsureTorrent: Add succeeded", "tor", tor)
 	}
 
-	log.TLogln("[DEBUG] EnsureTorrent: calling GotInfo")
+	log.Debug("EnsureTorrent: calling GotInfo")
 
 	if !tor.GotInfo() {
-		log.TLogln("[DEBUG] EnsureTorrent: no GotInfo, returning connection timeout")
+		log.Debug("EnsureTorrent: no GotInfo, returning connection timeout")
 
 		return nil, api.ErrStreamConnectionTimeout
 	}
 
-	log.TLogln("[DEBUG] EnsureTorrent: GotInfo succeeded")
+	log.Debug("EnsureTorrent: GotInfo succeeded")
 
-	if tor.Title == "" {
-		tor.Title = tor.Name()
-	}
+	tor.EnsureTitleFromInfo()
 
 	return tor, nil
 }

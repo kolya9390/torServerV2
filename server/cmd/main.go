@@ -53,8 +53,6 @@ func runServer() {
 		os.Exit(2)
 	}
 
-	settings.SetArgs(args)
-
 	log.Init(args.LogPath, args.WebLogPath)
 	defer log.Close()
 
@@ -132,11 +130,9 @@ func parseArgs(_ []string) (*settings.ExecArgs, error) {
 }
 
 func loadConfig(args *settings.ExecArgs) (*config.Config, error) {
+	// Priority: env TS_CONFIG > default search via config.Load()
+	// Note: args.Path is for data directory, not config location
 	configPath := os.Getenv("TS_CONFIG")
-
-	if configPath == "" && args.Path != "" {
-		configPath = args.Path + "/config.yml"
-	}
 
 	cfg, err := config.Load(configPath)
 

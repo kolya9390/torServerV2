@@ -15,20 +15,17 @@ func (f fakeListener) Close() error              { return nil }
 func (f fakeListener) Addr() net.Addr            { return &net.TCPAddr{} }
 
 func TestPrepareNetworkDefaultHTTPPort(t *testing.T) {
-	prevBT := settings.BTsets
 	prevListen := listenTCP
-	settings.BTsets = &settings.BTSets{}
 	listenTCP = func(network, address string) (net.Listener, error) {
 		return fakeListener{}, nil
 	}
 
 	t.Cleanup(func() {
-		settings.BTsets = prevBT
 		listenTCP = prevListen
 	})
 
 	args := &settings.ExecArgs{IP: "127.0.0.1", Port: ""}
-	if err := PrepareNetwork(args); err != nil {
+	if err := PrepareNetworkWithProvider(args, settings.NewNoopSettingsProvider()); err != nil {
 		t.Fatalf("PrepareNetwork returned error: %v", err)
 	}
 
@@ -38,39 +35,34 @@ func TestPrepareNetworkDefaultHTTPPort(t *testing.T) {
 }
 
 func TestPrepareNetworkDetectsBusyHTTPPort(t *testing.T) {
-	prevBT := settings.BTsets
 	prevListen := listenTCP
-	settings.BTsets = &settings.BTSets{}
 	listenTCP = func(network, address string) (net.Listener, error) {
 		return nil, errors.New("busy")
 	}
 
 	t.Cleanup(func() {
-		settings.BTsets = prevBT
 		listenTCP = prevListen
 	})
 
 	args := &settings.ExecArgs{IP: "127.0.0.1", Port: "18090"}
-	if err := PrepareNetwork(args); err == nil {
+	if err := PrepareNetworkWithProvider(args, settings.NewNoopSettingsProvider()); err == nil {
 		t.Fatal("expected error for busy http port")
 	}
 }
 
 func TestPrepareNetworkResolvesSSLPortFromSettings(t *testing.T) {
-	prevBT := settings.BTsets
 	prevListen := listenTCP
-	settings.BTsets = &settings.BTSets{SslPort: 18443}
 	listenTCP = func(network, address string) (net.Listener, error) {
 		return fakeListener{}, nil
 	}
 
 	t.Cleanup(func() {
-		settings.BTsets = prevBT
 		listenTCP = prevListen
 	})
 
 	args := &settings.ExecArgs{IP: "127.0.0.1", Port: "18090", Ssl: true}
-	if err := PrepareNetwork(args); err != nil {
+	provider := staticStartupSettingsProvider{cfg: &settings.BTSets{SslPort: 18443}}
+	if err := PrepareNetworkWithProvider(args, provider); err != nil {
 		t.Fatalf("PrepareNetwork returned error: %v", err)
 	}
 
@@ -80,24 +72,44 @@ func TestPrepareNetworkResolvesSSLPortFromSettings(t *testing.T) {
 }
 
 func TestPrepareNetworkUsesDefaultSSLPortWhenSettingsEmpty(t *testing.T) {
-	prevBT := settings.BTsets
 	prevListen := listenTCP
-	settings.BTsets = &settings.BTSets{SslPort: 0}
 	listenTCP = func(network, address string) (net.Listener, error) {
 		return fakeListener{}, nil
 	}
 
 	t.Cleanup(func() {
-		settings.BTsets = prevBT
 		listenTCP = prevListen
 	})
 
 	args := &settings.ExecArgs{IP: "127.0.0.1", Port: "18090", Ssl: true}
-	if err := PrepareNetwork(args); err != nil {
+	provider := staticStartupSettingsProvider{cfg: &settings.BTSets{SslPort: 0}}
+	if err := PrepareNetworkWithProvider(args, provider); err != nil {
 		t.Fatalf("PrepareNetwork returned error: %v", err)
 	}
 
 	if args.SslPort != defaultHTTPSPort {
 		t.Fatalf("expected default ssl port %s, got %s", defaultHTTPSPort, args.SslPort)
 	}
+}
+
+type staticStartupSettingsProvider struct {
+	cfg *settings.BTSets
+}
+
+func (p staticStartupSettingsProvider) Get() *settings.BTSets {
+	return p.cfg
+}
+
+func (staticStartupSettingsProvider) Set(*settings.BTSets) {}
+
+func (staticStartupSettingsProvider) ReadOnly() bool {
+	return true
+}
+
+func (staticStartupSettingsProvider) GetStaticConfig() settings.StaticConfig {
+	return settings.StaticConfig{}
+}
+
+func (staticStartupSettingsProvider) GetStoragePreferences() map[string]any {
+	return map[string]any{}
 }

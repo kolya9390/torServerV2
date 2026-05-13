@@ -7,8 +7,8 @@ import (
 
 func TestStoragePreferencesConcurrentAccess(t *testing.T) {
 	tmp := t.TempDir()
-	Path = tmp
-	ReadOnly = false
+	restoreRuntime := ReplaceRuntimeStateForTests(RuntimeState{Path: tmp})
+	restoreReadOnly := ReplaceReadOnlyForTests(false)
 
 	globalBboltDBMu.Lock()
 	globalBboltDB = nil
@@ -22,6 +22,8 @@ func TestStoragePreferencesConcurrentAccess(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
+		restoreRuntime()
+		restoreReadOnly()
 		CloseDB()
 		globalBboltDBMu.Lock()
 		globalBboltDB = nil
@@ -30,7 +32,7 @@ func TestStoragePreferencesConcurrentAccess(t *testing.T) {
 		globalJSONDB = nil
 		globalJSONDBMu.Unlock()
 
-		BTsets = nil
+		defaultBTsetsStore.set(nil)
 	})
 
 	var wg sync.WaitGroup

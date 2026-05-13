@@ -38,24 +38,89 @@ type SSLService interface {
 }
 
 // corsService implements CORSService.
-type corsService struct{}
+type corsService struct {
+	argsProvider settings.ArgsProvider
+}
 
 // sslService implements SSLService.
 type sslService struct {
-	mu   sync.Mutex
-	cert string
-	key  string
-	srv  *http.Server
+	provider settings.SettingsProvider
+	args     settings.ArgsProvider
+	runtime  func() settings.RuntimeState
+	mu       sync.Mutex
+	cert     string
+	key      string
+	srv      *http.Server
 }
 
 // NewCORSService creates a new instance of CORSService.
 func NewCORSService() CORSService {
-	return &corsService{}
+	return NewCORSServiceWithProviders(settings.DefaultArgsProvider)
+}
+
+func NewCORSServiceWithProviders(argsProvider settings.ArgsProvider) CORSService {
+	return &corsService{argsProvider: argsProvider}
 }
 
 // NewSSLService creates a new instance of SSLService.
 func NewSSLService() SSLService {
-	return &sslService{}
+	return NewSSLServiceWithProvidersAndRuntime(settings.DefaultSettingsProvider, settings.DefaultArgsProvider, settings.GetRuntimeState)
+}
+
+func NewSSLServiceWithProviders(provider settings.SettingsProvider, argsProvider settings.ArgsProvider) SSLService {
+	return NewSSLServiceWithProvidersAndRuntime(provider, argsProvider, settings.GetRuntimeState)
+}
+
+func NewSSLServiceWithProvidersAndRuntime(provider settings.SettingsProvider, argsProvider settings.ArgsProvider, runtimeState func() settings.RuntimeState) SSLService {
+	if runtimeState == nil {
+		runtimeState = func() settings.RuntimeState { return settings.RuntimeState{} }
+	}
+
+	return &sslService{provider: provider, args: argsProvider, runtime: runtimeState}
+}
+
+func (s *sslService) currentSettings() *settings.BTSets {
+	if s != nil && s.provider != nil {
+		return s.provider.Get()
+	}
+
+	return nil
+}
+
+func (s *sslService) setCurrentSettings(sets *settings.BTSets) {
+	if sets == nil {
+		return
+	}
+
+	if s != nil && s.provider != nil {
+		s.provider.Set(sets)
+
+		return
+	}
+}
+
+func (s *sslService) currentArgs() *settings.ExecArgs {
+	if s != nil && s.args != nil {
+		return s.args.Get()
+	}
+
+	return nil
+}
+
+func (s *sslService) currentRuntimeState() settings.RuntimeState {
+	if s != nil && s.runtime != nil {
+		return s.runtime()
+	}
+
+	return settings.RuntimeState{}
+}
+
+func (c *corsService) currentArgs() *settings.ExecArgs {
+	if c != nil && c.argsProvider != nil {
+		return c.argsProvider.Get()
+	}
+
+	return nil
 }
 
 // BuildConfig constructs the CORS configuration based on environment variables and smart defaults.
@@ -145,6 +210,11 @@ func (c *corsService) GetAllowedOrigins() []string {
 		}
 	}
 
+	args := c.currentArgs()
+	if args == nil {
+		return nil
+	}
+
 	uniq := make(map[string]struct{})
 	add := func(origin string) {
 		if origin != "" {
@@ -153,19 +223,19 @@ func (c *corsService) GetAllowedOrigins() []string {
 	}
 
 	// Add localhost and configured IP to the allowlist
-	add("http://127.0.0.1:" + settings.Port)
-	add("http://localhost:" + settings.Port)
+	add("http://127.0.0.1:" + args.Port)
+	add("http://localhost:" + args.Port)
 
-	if settings.Ssl && settings.SslPort != "" {
-		add("https://127.0.0.1:" + settings.SslPort)
-		add("https://localhost:" + settings.SslPort)
+	if args.Ssl && args.SslPort != "" {
+		add("https://127.0.0.1:" + args.SslPort)
+		add("https://localhost:" + args.SslPort)
 	}
 
-	if settings.IP != "" && settings.IP != "0.0.0.0" && settings.IP != "::" {
-		add(fmt.Sprintf("http://%s:%s", settings.IP, settings.Port))
+	if args.IP != "" && args.IP != "0.0.0.0" && args.IP != "::" {
+		add(fmt.Sprintf("http://%s:%s", args.IP, args.Port))
 
-		if settings.Ssl && settings.SslPort != "" {
-			add(fmt.Sprintf("https://%s:%s", settings.IP, settings.SslPort))
+		if args.Ssl && args.SslPort != "" {
+			add(fmt.Sprintf("https://%s:%s", args.IP, args.SslPort))
 		}
 	}
 
@@ -181,15 +251,18 @@ func (c *corsService) GetAllowedOrigins() []string {
 
 // PrepareCertificates generates or retrieves SSL certificates for the given IPs.
 func (s *sslService) PrepareCertificates(ips []string) error {
-	if !settings.Ssl {
+	args := s.currentArgs()
+	if args == nil || !args.Ssl {
 		return nil
 	}
 
-	if settings.GetSettings().SslCert != "" && settings.GetSettings().SslKey != "" {
+	curSets := s.currentSettings()
+	tlsCfg := curSets.TLSConfig()
+	if tlsCfg.Cert != "" && tlsCfg.Key != "" {
 		return nil
 	}
 
-	cert, key, err := sslcerts.MakeCertKeyFiles(ips)
+	cert, key, err := sslcerts.MakeCertKeyFilesAtPath(ips, s.currentRuntimeState().PathConfig().Path)
 	if err != nil {
 		return fmt.Errorf("unable to generate certificate and key: %w", err)
 	}
@@ -199,27 +272,30 @@ func (s *sslService) PrepareCertificates(ips []string) error {
 	s.key = key
 	s.mu.Unlock()
 
-	settings.GetSettings().SslCert, settings.GetSettings().SslKey = cert, key
-	log.TLogln("Saving path to ssl cert and key in db", settings.GetSettings().SslCert, settings.GetSettings().SslKey)
-	settings.SetBTSets(settings.BTsets)
+	curSets.SslCert, curSets.SslKey = cert, key
+	log.TLogln("Saving path to ssl cert and key in db", cert, key)
+	s.setCurrentSettings(curSets)
 
 	return nil
 }
 
 // VerifyOrRegenerateCerts checks if current certificates are valid and regenerates them if needed.
 func (s *sslService) VerifyOrRegenerateCerts(ips []string) error {
-	if !settings.Ssl {
+	args := s.currentArgs()
+	if args == nil || !args.Ssl {
 		return nil
 	}
 
-	err := sslcerts.VerifyCertKeyFiles(settings.GetSettings().SslCert, settings.GetSettings().SslKey, settings.SslPort)
+	curSets := s.currentSettings()
+	tlsCfg := curSets.TLSConfig()
+	err := sslcerts.VerifyCertKeyFiles(tlsCfg.Cert, tlsCfg.Key, args.SslPort)
 	if err == nil {
 		return nil
 	}
 
 	log.TLogln("Error checking certificate and private key files:", err)
 
-	cert, key, certErr := sslcerts.MakeCertKeyFiles(ips)
+	cert, key, certErr := sslcerts.MakeCertKeyFilesAtPath(ips, s.currentRuntimeState().PathConfig().Path)
 	if certErr != nil {
 		return fmt.Errorf("unable to re-generate certificate and key: %w", certErr)
 	}
@@ -229,9 +305,9 @@ func (s *sslService) VerifyOrRegenerateCerts(ips []string) error {
 	s.key = key
 	s.mu.Unlock()
 
-	settings.GetSettings().SslCert, settings.GetSettings().SslKey = cert, key
-	log.TLogln("Saving path to ssl cert and key in db", settings.GetSettings().SslCert, settings.GetSettings().SslKey)
-	settings.SetBTSets(settings.BTsets)
+	curSets.SslCert, curSets.SslKey = cert, key
+	log.TLogln("Saving path to ssl cert and key in db", cert, key)
+	s.setCurrentSettings(curSets)
 
 	return nil
 }

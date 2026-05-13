@@ -5,8 +5,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"server/settings"
-
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/storage"
 )
@@ -17,7 +15,7 @@ type Piece struct {
 
 	ID int `json:"-"`
 
-	// Size is accessed concurrently by WriteAt/ReadAt and cleanPieces.
+	// Size is accessed concurrently by WriteAt/ReadAt and CleanPieces.
 	Size atomic.Int64 `json:"size"`
 
 	Complete bool  `json:"complete"`
@@ -28,7 +26,7 @@ type Piece struct {
 
 	cache *Cache
 
-	// LRU element for O(1) removal from cache LRU list
+	// LRU element for O(1) removal from cache LRU list.
 	lruEl *list.Element
 }
 
@@ -38,7 +36,7 @@ func NewPiece(id int, cache *Cache) *Piece {
 		cache: cache,
 	}
 
-	if !settings.GetSettings().UseDisk {
+	if !p.useDisk() {
 		p.mPiece = NewMemPiece(p)
 	} else {
 		p.dPiece = NewDiskPiece(p)
@@ -48,7 +46,7 @@ func NewPiece(id int, cache *Cache) *Piece {
 }
 
 func (p *Piece) WriteAt(b []byte, off int64) (n int, err error) {
-	if !settings.GetSettings().UseDisk {
+	if !p.useDisk() {
 		return p.mPiece.WriteAt(b, off)
 	}
 
@@ -56,7 +54,7 @@ func (p *Piece) WriteAt(b []byte, off int64) (n int, err error) {
 }
 
 func (p *Piece) ReadAt(b []byte, off int64) (n int, err error) {
-	if !settings.GetSettings().UseDisk {
+	if !p.useDisk() {
 		return p.mPiece.ReadAt(b, off)
 	}
 
@@ -83,7 +81,7 @@ func (p *Piece) Completion() storage.Completion {
 }
 
 func (p *Piece) Release() {
-	if settings.GetSettings().UseDisk {
+	if p.useDisk() {
 		p.dPiece.Release()
 	} else {
 		p.mPiece.Release()
@@ -95,17 +93,12 @@ func (p *Piece) Release() {
 	}
 }
 
+func (p *Piece) useDisk() bool {
+	return p != nil && p.cache != nil && p.cache.currentCacheConfig().UseDisk
+}
+
 // markAccessed updates LRU position and Accessed timestamp.
 // Called from mempiece/diskpiece on read/write.
 func (p *Piece) markAccessed() {
-	if p.cache == nil {
-		return
-	}
-
-	p.cache.lruMu.Lock()
-	p.cache.markUsedLRU(p)
-	p.cache.lruMu.Unlock()
-
-	// Also update Accessed for backward compatibility with sort fallback
 	p.Accessed = time.Now().Unix()
 }

@@ -1,6 +1,7 @@
 package torr
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,35 @@ import (
 
 	"github.com/anacrolix/torrent"
 )
+
+func (t *Torrent) PreloadWithSettings(index int, sets *settings.BTSets) {
+	if t == nil {
+		return
+	}
+
+	if sets == nil {
+		sets = t.currentSettings()
+	}
+
+	if sets == nil {
+		return
+	}
+
+	cacheCfg := sets.CacheConfig()
+	cache := float32(cacheCfg.SizeBytes)
+	preload := float32(cacheCfg.PreloadPct)
+
+	size := int64((cache / 100.0) * preload)
+	if size <= 0 {
+		return
+	}
+
+	if size > cacheCfg.SizeBytes {
+		size = cacheCfg.SizeBytes
+	}
+
+	t.Preload(index, size)
+}
 
 // canPreload checks if the torrent is in a state that allows preloading.
 // Returns true only if the torrent is in TorrentWorking state.
@@ -40,6 +70,12 @@ func isPreloadComplete(t *Torrent) bool {
 // preload progress and updates the expired time. It stops when the
 // provided stop channel is closed or when the torrent state changes.
 func (t *Torrent) monitorPreloadProgress(file *torrent.File, stopChan <-chan struct{}, timeout time.Duration) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Debug("Recovered from panic in monitorPreloadProgress:", r)
+		}
+	}()
+
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -48,20 +84,25 @@ func (t *Torrent) monitorPreloadProgress(file *torrent.File, stopChan <-chan str
 		case <-ticker.C:
 			t.muTorrent.Lock()
 			stat := t.Stat
+			preloadedBytes := t.preload.loadedBytes
+			preloadSize := t.preload.targetBytes
+			downloadSpeed := t.transfer.downloadSpeed
 			t.muTorrent.Unlock()
 
 			if stat != state.TorrentPreload {
 				return
 			}
 
+			// Get stats once to avoid inconsistency
+			stats := file.Torrent().Stats()
 			statStr := fmt.Sprint(file.Torrent().InfoHash().HexString(), " ",
-				utils2.Format(float64(t.PreloadedBytes)), "/",
-				utils2.Format(float64(t.PreloadSize)), " Speed:",
-				utils2.Format(t.DownloadSpeed), " Peers:",
-				t.Torrent.Stats().ActivePeers, "/",
-				t.Torrent.Stats().TotalPeers, " [Seeds:",
-				t.Torrent.Stats().ConnectedSeeders, "]")
-			log.TLogln("Preload:", statStr)
+				utils2.Format(float64(preloadedBytes)), "/",
+				utils2.Format(float64(preloadSize)), " Speed:",
+				utils2.Format(downloadSpeed), " Peers:",
+				stats.ActivePeers, "/",
+				stats.TotalPeers, " [Seeds:",
+				stats.ConnectedSeeders, "]")
+			log.Debug("Preload:", statStr)
 			t.AddExpiredTime(timeout)
 		case <-stopChan:
 			return
@@ -72,7 +113,7 @@ func (t *Torrent) monitorPreloadProgress(file *torrent.File, stopChan <-chan str
 // runPreloadLoop performs the actual preload read operation on the provided reader.
 // It reads from the reader until the specified end position or until the torrent
 // state changes. Returns an error if the read operation fails (excluding EOF).
-func (t *Torrent) runPreloadLoop(reader torrent.Reader, readerEnd int64) error {
+func (t *Torrent) runPreloadLoop(ctx context.Context, reader torrent.Reader, readerEnd int64) error {
 	pieceLength := t.Info().PieceLength
 	readahead := pieceLength * 4
 
@@ -83,11 +124,22 @@ func (t *Torrent) runPreloadLoop(reader torrent.Reader, readerEnd int64) error {
 	reader.SetReadahead(readahead)
 
 	offset := int64(0)
-	tmp := make([]byte, 32768)
+	tmp := make([]byte, 512*1024) // 512KB buffer for faster preload
 
 	for offset+int64(len(tmp)) < readerEnd {
+		// Check for cancellation via context or torrent state change
+		select {
+		case <-ctx.Done():
+			log.Debug("Preload cancelled via context")
+			return nil
+		case <-t.lifecycle.closed:
+			log.Debug("Preload cancelled: torrent closed")
+			return nil
+		default:
+		}
+
 		if !isPreloadComplete(t) {
-			log.TLogln("Preload cancelled")
+			log.Debug("Preload cancelled")
 
 			return nil
 		}
@@ -95,7 +147,7 @@ func (t *Torrent) runPreloadLoop(reader torrent.Reader, readerEnd int64) error {
 		n, err := reader.Read(tmp)
 		if err != nil {
 			if err != io.EOF {
-				log.TLogln("Error preload:", err)
+				log.Error("Error preload:", err)
 
 				return err
 			}
@@ -117,21 +169,34 @@ func (t *Torrent) runPreloadLoop(reader torrent.Reader, readerEnd int64) error {
 
 // runEndRangePreloadLoop performs preload for the end range of a file.
 // This is used to preload the ending portion of a file in parallel.
-func (t *Torrent) runEndRangePreloadLoop(reader torrent.Reader, readerStart, readerEnd int64) error {
+func (t *Torrent) runEndRangePreloadLoop(ctx context.Context, reader torrent.Reader, readerStart, readerEnd int64) error {
 	reader.SetResponsive()
 	reader.SetReadahead(0)
 
 	_, err := reader.Seek(readerStart, io.SeekStart)
 	if err != nil {
-		log.TLogln("Err preload seek:", err)
+		log.Error("Err preload seek:", err)
 
 		return err
 	}
 
 	offset := readerStart
-	tmp := make([]byte, 32768)
+	tmp := make([]byte, 512*1024) // 512KB buffer for faster preload
 
 	for offset+int64(len(tmp)) < readerEnd {
+		// Check for cancellation
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-t.lifecycle.closed:
+			return nil
+		default:
+		}
+
+		if !isPreloadComplete(t) {
+			return nil
+		}
+
 		n, err := reader.Read(tmp)
 		if err != nil {
 			if err != io.EOF {
@@ -144,10 +209,6 @@ func (t *Torrent) runEndRangePreloadLoop(reader torrent.Reader, readerStart, rea
 		}
 
 		offset += int64(n)
-
-		if !isPreloadComplete(t) {
-			return nil
-		}
 	}
 
 	return nil
@@ -160,14 +221,15 @@ func (t *Torrent) probeFileMetadata(index int) {
 		return
 	}
 
-	link := "http://127.0.0.1:" + settings.Port + "/play/" + t.Hash().HexString() + "/" + strconv.Itoa(index)
-	if settings.Ssl {
-		link = "https://127.0.0.1:" + settings.SslPort + "/play/" + t.Hash().HexString() + "/" + strconv.Itoa(index)
+	serverCfg := t.currentRuntimeState().ServerConfig()
+	link := "http://127.0.0.1:" + serverCfg.Port + "/play/" + t.Hash().HexString() + "/" + strconv.Itoa(index)
+	if serverCfg.SSL {
+		link = "https://127.0.0.1:" + serverCfg.SSLPort + "/play/" + t.Hash().HexString() + "/" + strconv.Itoa(index)
 	}
 
 	if data, err := ffprobe.ProbeURL(link); err == nil {
-		t.BitRate = data.Format.BitRate
-		t.DurationSeconds = data.Format.DurationSeconds
+		t.media.bitRate = data.Format.BitRate
+		t.media.durationSeconds = data.Format.DurationSeconds
 	}
 }
 
@@ -223,7 +285,7 @@ func (t *Torrent) setupPreloadReaders(file *torrent.File, size int64) preloadRes
 
 // runEndRangePreload performs the end-range portion of preload in parallel.
 // Only executes if the end range starts after the start range ends.
-func (t *Torrent) runEndRangePreload(result *preloadResult, wg *sync.WaitGroup, preloadErr *error) {
+func (t *Torrent) runEndRangePreload(ctx context.Context, result *preloadResult, wg *sync.WaitGroup, preloadErr *error) {
 	if result.endStartPos <= result.startEndPos {
 		return
 	}
@@ -244,23 +306,27 @@ func (t *Torrent) runEndRangePreload(result *preloadResult, wg *sync.WaitGroup, 
 
 		defer func() { _ = readerEnd.Close() }()
 
-		*preloadErr = errors.Join(*preloadErr, t.runEndRangePreloadLoop(readerEnd, result.endStartPos, result.endEndPos))
+		*preloadErr = errors.Join(*preloadErr, t.runEndRangePreloadLoop(ctx, readerEnd, result.endStartPos, result.endEndPos))
 	})
 }
 
 // runPreloadSequence orchestrates the complete preload operation including readers,
-// parallel end-range preload, metadata probing, and progress monitoring.
+// parallel end-range preload and progress monitoring.
 func (t *Torrent) runPreloadSequence(file *torrent.File, size int64, index int) error {
 	setup := t.setupPreloadReaders(file, size)
 	if setup.err != nil {
-		log.TLogln("End preload:", setup.err)
+		log.Debug("End preload:", setup.err)
 
 		return setup.err
 	}
 
 	defer func() { _ = setup.readerStart.Close() }()
 
-	timeout := min(time.Second*time.Duration(settings.GetSettings().TorrentDisconnectTimeout), time.Minute)
+	timeout := min(time.Second*time.Duration(t.currentSettings().TorrentDisconnectTimeout), time.Minute)
+
+	// Create context for cancellation
+	ctx, cancel := context.WithTimeout(context.Background(), timeout*2)
+	defer cancel()
 
 	// Create a stop channel for the logging goroutine
 	logStopChan := make(chan struct{})
@@ -269,12 +335,9 @@ func (t *Torrent) runPreloadSequence(file *torrent.File, size int64, index int) 
 	// Start progress monitoring in background
 	go t.monitorPreloadProgress(file, logStopChan, timeout)
 
-	// Probe file metadata
-	t.probeFileMetadata(index)
-
 	// Check if torrent was closed
 	if !isPreloadComplete(t) {
-		log.TLogln("End preload: torrent closed")
+		log.Debug("End preload: torrent closed")
 
 		return nil
 	}
@@ -284,25 +347,26 @@ func (t *Torrent) runPreloadSequence(file *torrent.File, size int64, index int) 
 	var preloadErr error
 
 	// Start end range preload if needed
-	t.runEndRangePreload(&setup, &wg, &preloadErr)
+	t.runEndRangePreload(ctx, &setup, &wg, &preloadErr)
 
 	// Main preload section
-	preloadErr = errors.Join(preloadErr, t.runPreloadLoop(setup.readerStart, setup.startEndPos))
+	preloadErr = errors.Join(preloadErr, t.runPreloadLoop(ctx, setup.readerStart, setup.startEndPos))
 
 	// Wait for end range preload to complete
 	wg.Wait()
 
 	// Check if end range preload failed
 	if preloadErr != nil {
-		log.TLogln("End range preload failed:", preloadErr)
+		log.Debug("End range preload failed:", preloadErr)
 	}
 
 	// Final log
 	if isPreloadComplete(t) {
-		log.TLogln("End preload:", file.Torrent().InfoHash().HexString(),
-			"Peers:", t.Torrent.Stats().ActivePeers, "/",
-			t.Torrent.Stats().TotalPeers, "[ Seeds:",
-			t.Torrent.Stats().ConnectedSeeders, "]")
+		stats := file.Torrent().Stats()
+		log.Debug("End preload:", file.Torrent().InfoHash().HexString(),
+			"Peers:", stats.ActivePeers, "/",
+			stats.TotalPeers, "[ Seeds:",
+			stats.ConnectedSeeders, "]")
 	}
 
 	return nil
@@ -316,7 +380,7 @@ func (t *Torrent) Preload(index int, size int64) {
 		return
 	}
 
-	t.PreloadSize = size
+	t.preload.targetBytes = size
 
 	if t.Stat == state.TorrentGettingInfo {
 		if !t.WaitInfo() {
@@ -341,8 +405,8 @@ func (t *Torrent) Preload(index int, size int64) {
 		}
 		t.muTorrent.Unlock()
 		// Clear on preload completion
-		t.BitRate = ""
-		t.DurationSeconds = 0
+		t.media.bitRate = ""
+		t.media.durationSeconds = 0
 	}()
 
 	file := t.findFileIndex(index)

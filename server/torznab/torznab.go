@@ -89,14 +89,23 @@ func getBreaker() *circuitbreaker.CircuitBreaker {
 }
 
 func Search(query string, index int) []*TorrentDetails {
-	if !settings.GetSettings().EnableTorznabSearch || len(settings.GetSettings().TorznabUrls) == 0 {
+	return SearchWithProvider(query, index, settings.DefaultSettingsProvider)
+}
+
+func SearchWithProvider(query string, index int, provider settings.SettingsProvider) []*TorrentDetails {
+	if provider == nil {
+		provider = settings.NewNoopSettingsProvider()
+	}
+
+	searchCfg := provider.Get().SearchConfig()
+	if !searchCfg.EnableTorznab || len(searchCfg.TorznabURLs) == 0 {
 		return nil
 	}
 
 	var allResults []*TorrentDetails
 
-	if index >= 0 && index < len(settings.GetSettings().TorznabUrls) {
-		config := settings.GetSettings().TorznabUrls[index]
+	if index >= 0 && index < len(searchCfg.TorznabURLs) {
+		config := searchCfg.TorznabURLs[index]
 		if config.Host != "" && config.Key != "" {
 			return searchOne(config.Host, config.Key, query)
 		}
@@ -104,7 +113,7 @@ func Search(query string, index int) []*TorrentDetails {
 		return nil
 	}
 
-	for _, config := range settings.GetSettings().TorznabUrls {
+	for _, config := range searchCfg.TorznabURLs {
 		if config.Host == "" || config.Key == "" {
 			continue
 		}

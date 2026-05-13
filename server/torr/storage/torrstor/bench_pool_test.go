@@ -10,11 +10,11 @@ import (
 )
 
 func setupBenchmarkCache(pieceLength int64, pieceCount int) *Cache {
-	settings.BTsets = &settings.BTSets{
+	settings.DefaultSettingsProvider.Set(&settings.BTSets{
 		CacheSize:        pieceLength * int64(pieceCount),
 		UseDisk:          false,
 		TorrentsSavePath: "",
-	}
+	})
 	stor := NewStorage(pieceLength * int64(pieceCount))
 	cache := NewCache(pieceLength*int64(pieceCount), stor)
 

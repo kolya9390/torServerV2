@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -41,16 +40,16 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(
 		&opts.Context,
 		"context",
-		strings.TrimSpace(os.Getenv("TSCTL_CONTEXT")),
+		strings.TrimSpace(os.Getenv(envContext)),
 		"context name",
 	)
 	root.PersistentFlags().StringVar(&opts.Server, "server", "", "base server URL (overrides context)")
 	root.PersistentFlags().StringVar(&opts.User, "user", "", "basic auth username")
 	root.PersistentFlags().StringVar(&opts.Pass, "pass", "", "basic auth password")
 	root.PersistentFlags().StringVar(&opts.Token, "token", "", "shutdown token (for public shutdown mode)")
-	root.PersistentFlags().DurationVar(&opts.Timeout, "timeout", 15*time.Second, "HTTP timeout, e.g. 15s")
+	root.PersistentFlags().DurationVar(&opts.Timeout, "timeout", defaultTimeout, "HTTP timeout, e.g. 15s")
 	root.PersistentFlags().BoolVar(&opts.Insecure, "insecure", false, "skip TLS certificate verification")
-	root.PersistentFlags().StringVar(&opts.Output, "output", "table", "output format: table|json")
+	root.PersistentFlags().StringVar(&opts.Output, "output", defaultOutput, "output format: table|json")
 
 	root.AddCommand(newContextCmd())
 	root.AddCommand(newCompletionCmd())
@@ -206,8 +205,9 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 
 	getCmd := &cobra.Command{
 		Use:   "get [INDEX|NAME|HASH]",
-		Short: "Получить статус торрента по индексу, названию или хэшу",
+		Short: "Получить статус торрента",
 		Long: `Получить информацию о торренте.
+
 Принимает:
   - Числовой индекс (1-based, из списка torrents list)
   - Частичное название (case-insensitive поиск)
@@ -216,7 +216,7 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 Примеры:
   torrserver torrents get 1        # Первый торрент из списка
   torrserver torrents get "Beef"   # Поиск по названию
-  torrserver torrents get HASH     # По хэшу`,
+  torrserver torrents get ef9c...  # По хэшу`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
@@ -238,6 +238,15 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 	addCmd := &cobra.Command{
 		Use:   "add",
 		Short: "Добавить торрент",
+		Long: `Добавить торрент по magnet ссылке, хэшу или TSS.
+
+Примеры:
+  torrserver torrents add --link "magnet:?xt=..."
+  torrserver torrents add --link "d41d8cd98f00b204e9800998ecf8427e"
+  torrserver torrents add --link /path/to/file.torrent --title "My Movie"
+
+Обязательные флаги:
+  --link - magnet URI, хэш или путь к .torrent файлу`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
 				return cmdTorrentsAdd(cli, resolved, []string{
@@ -262,12 +271,13 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 
 	remCmd := &cobra.Command{
 		Use:   "rem [INDEX|NAME|HASH]",
-		Short: "Удалить торрент по индексу, названию или хэшу",
-		Long: `Удалить торрент.
-Принимает:
-  - Числовой индекс (1-based)
-  - Частичное название (case-insensitive)
-  - Полный 40-символьный hash`,
+		Short: "Удалить торрент",
+		Long: `Удалить торрент из базы данных.
+
+Примеры:
+  torrserver torrents rem 1           # По индексу
+  torrserver torrents rem "Beef"      # По названию
+  torrserver torrents rem ef9c...     # По хэшу`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
@@ -279,12 +289,12 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 
 	dropCmd := &cobra.Command{
 		Use:   "drop [INDEX|NAME|HASH]",
-		Short: "Выгрузить торрент из памяти (без удаления из БД)",
-		Long: `Выгрузить торрент из активной памяти.
-Принимает:
-  - Числовой индекс (1-based)
-  - Частичное название (case-insensitive)
-  - Полный 40-символьный hash`,
+		Short: "Выгрузить торрент из памяти",
+		Long: `Выгрузить торрент из активной памяти (без удаления из БД).
+
+Примеры:
+  torrserver torrents drop 1          # По индексу
+  torrserver torrents drop "Beef"     # По названию`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
@@ -412,8 +422,7 @@ func newSettingsCmd(opts *globalOptions) *cobra.Command {
 
 func newShutdownCmd(opts *globalOptions) *cobra.Command {
 	var (
-		mode   string
-		reason string
+		mode string
 	)
 
 	shutdownCmd := &cobra.Command{
@@ -423,14 +432,13 @@ func newShutdownCmd(opts *globalOptions) *cobra.Command {
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
 				return cmdShutdown(cli, resolved, []string{
 					"--mode", mode,
-					"--reason", reason,
+					"--reason", defaultReason,
 				})
 			})
 		},
 	}
 
 	shutdownCmd.Flags().StringVar(&mode, "mode", "local", "shutdown mode: local|public")
-	shutdownCmd.Flags().StringVar(&reason, "reason", "tsctl", "shutdown reason")
 
 	return shutdownCmd
 }
@@ -535,8 +543,8 @@ func runWithClient(cmd *cobra.Command, opts *globalOptions, fn func(*apiClient, 
 	resolved.insecureExplicit = isFlagChanged(cmd, "insecure")
 	resolved.Output = strings.ToLower(strings.TrimSpace(resolved.Output))
 
-	if resolved.Output != "table" && resolved.Output != "json" {
-		return fmt.Errorf("invalid --output value: %s", resolved.Output)
+	if resolved.Output != outputTable && resolved.Output != outputJSON {
+		return fmt.Errorf("invalid --output value: %s (valid: %v)", resolved.Output, ValidOutputFormats())
 	}
 
 	if resolved.Timeout <= 0 {
@@ -545,16 +553,16 @@ func runWithClient(cmd *cobra.Command, opts *globalOptions, fn func(*apiClient, 
 
 	// SEC5: Support env vars for secure credential handling
 	if resolved.User == "" {
-		resolved.User = os.Getenv("TS_USER")
+		resolved.User = os.Getenv(envUser)
 	}
 
 	if resolved.Pass == "" {
-		resolved.Pass = os.Getenv("TS_PASSWORD")
+		resolved.Pass = os.Getenv(envPassword)
 	}
 
 	// Warn if password is passed via command line (visible in ps)
 	if isFlagChanged(cmd, "pass") {
-		fmt.Fprintln(os.Stderr, "Warning: --pass is visible in process list. Use TS_PASSWORD env var for security.")
+		fmt.Fprintln(os.Stderr, "Warning: --pass is visible in process list. Use "+envPassword+" env var for security.")
 	}
 
 	// Prompt for password interactively if user is set but password is not

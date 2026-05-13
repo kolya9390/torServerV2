@@ -27,11 +27,8 @@ var DefaultSettingsProvider SettingsProvider = &btsetsProvider{}
 type btsetsProvider struct{}
 
 func (p *btsetsProvider) Get() *BTSets {
-	btsetsMu.RLock()
-	defer btsetsMu.RUnlock()
-
-	if BTsets != nil {
-		return BTsets
+	if sets := currentStoredSettings(); sets != nil {
+		return sets
 	}
 
 	// Fallback to static config if BTSets is nil
@@ -41,14 +38,11 @@ func (p *btsetsProvider) Get() *BTSets {
 }
 
 func (p *btsetsProvider) Set(sets *BTSets) {
-	btsetsMu.Lock()
-	defer btsetsMu.Unlock()
-
-	BTsets = sets
+	defaultBTsetsStore.set(sets)
 }
 
 func (p *btsetsProvider) ReadOnly() bool {
-	return ReadOnly
+	return IsReadOnlyMode()
 }
 
 func (p *btsetsProvider) GetStaticConfig() StaticConfig {
@@ -56,16 +50,16 @@ func (p *btsetsProvider) GetStaticConfig() StaticConfig {
 }
 
 func (p *btsetsProvider) GetStoragePreferences() map[string]any {
-	btsetsMu.RLock()
-	defer btsetsMu.RUnlock()
-
-	if BTsets == nil {
+	sets := currentStoredSettings()
+	if sets == nil {
 		return map[string]any{}
 	}
 
+	prefs := sets.PersistenceConfig()
+
 	return map[string]any{
-		"settingsInJSON": BTsets.StoreSettingsInJSON,
-		"viewedInJSON":   BTsets.StoreViewedInJSON,
+		"settingsInJSON": prefs.SettingsInJSON,
+		"viewedInJSON":   prefs.ViewedInJSON,
 	}
 }
 

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"server/log"
-	"server/settings"
 )
 
 func generateSelfSignedCert(ips []string) ([]byte, []byte, error) {
@@ -73,12 +72,20 @@ func generateSelfSignedCert(ips []string) ([]byte, []byte, error) {
 }
 
 func MakeCertKeyFiles(ips []string) (string, string, error) {
+	return MakeCertKeyFilesAtPath(ips, "")
+}
+
+func MakeCertKeyFilesAtPath(ips []string, basePath string) (string, string, error) {
 	certPEM, privPEM, err := generateSelfSignedCert(ips)
 	if err != nil {
 		return "", "", err
 	}
 
-	certFile, err := os.Create(filepath.Join(settings.Path, "server.pem"))
+	if basePath == "" {
+		basePath = "."
+	}
+
+	certFile, err := os.Create(filepath.Join(basePath, "server.pem"))
 	if err != nil {
 		return "", "", err
 	}
@@ -89,7 +96,7 @@ func MakeCertKeyFiles(ips []string) (string, string, error) {
 		}
 	}()
 
-	privFile, err := os.Create(filepath.Join(settings.Path, "server.key"))
+	privFile, err := os.Create(filepath.Join(basePath, "server.key"))
 	if err != nil {
 		return "", "", err
 	}

@@ -78,6 +78,10 @@ func settings(c *gin.Context) {
 			return
 		}
 
+		// Block EnableDebug changes via API — only config.yml controls debug mode.
+		// This prevents runtime toggling and ensures debug is set at startup.
+		req.Sets.EnableDebug = false
+
 		svc.Settings.Set(req.Sets)
 
 		if err := svc.Modules.RestartDLNA(req.Sets.EnableDLNA); err != nil {

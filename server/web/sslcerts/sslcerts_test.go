@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"server/settings"
 )
 
 func TestGenerateSelfSignedCert(t *testing.T) {
@@ -123,13 +121,9 @@ func TestVerifyCertKeyFiles_ExpiredCert(t *testing.T) {
 }
 
 func TestMakeCertKeyFiles(t *testing.T) {
-	origPath := settings.Path
 	tmpDir := t.TempDir()
-	settings.Path = tmpDir
 
-	defer func() { settings.Path = origPath }()
-
-	certPath, keyPath, err := MakeCertKeyFiles([]string{"127.0.0.1"})
+	certPath, keyPath, err := MakeCertKeyFilesAtPath([]string{"127.0.0.1"}, tmpDir)
 	if err != nil {
 		t.Fatalf("MakeCertKeyFiles failed: %v", err)
 	}

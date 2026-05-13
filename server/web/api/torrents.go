@@ -2,9 +2,11 @@ package api
 
 import (
 	"net/http"
+	"server/torr"
 	"server/torr/state"
 	"server/torrshash"
 	"strings"
+	"time"
 
 	"server/log"
 	"server/web/api/utils"
@@ -56,6 +58,8 @@ func torrents(c *gin.Context) {
 		return
 	}
 
+	logTorrentsActionRequest(c, req)
+
 	switch req.Action {
 	case "add":
 		addTorrent(svc, req, c)
@@ -74,6 +78,24 @@ func torrents(c *gin.Context) {
 	default:
 		abortAPIError(c, http.StatusBadRequest, newValidationError("action", "must be one of: add, get, set, rem, list, drop, wipe"))
 	}
+}
+
+func logTorrentsActionRequest(c *gin.Context, req torrReqJS) {
+	const maxLinkLogLen = 120
+
+	link := req.Link
+	if len(link) > maxLinkLogLen {
+		link = link[:maxLinkLogLen] + "..."
+	}
+
+	log.TLogln(
+		"[API /torrents] action=", req.Action,
+		" hash=", req.Hash,
+		" save_to_db=", req.SaveToDB,
+		" ip=", c.ClientIP(),
+		" request_id=", c.GetString("request_id"),
+		" link=", link,
+	)
 }
 
 func addTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
@@ -142,7 +164,7 @@ func addTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 		return
 	}
 
-	log.TLogln("[DEBUG] addTorrent: calling Torrents.Add, hash=", hashHex)
+	log.Debug("addTorrent: calling Torrents.Add", "hash", hashHex)
 
 	tor, err := svc.Torrents.Add(torrSpec, req.Title, req.Poster, req.Data, req.Category)
 	if err != nil {
@@ -152,7 +174,7 @@ func addTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 		return
 	}
 
-	log.TLogln("[DEBUG] addTorrent: Torrents.Add succeeded, hash=", hashHex)
+	log.Debug("addTorrent: Torrents.Add succeeded", "hash", hashHex)
 
 	_ = svc.Torrents.EnqueueMetadataFinalize(tor, torrSpec, req.SaveToDB)
 
@@ -223,6 +245,30 @@ func listTorrents(svc *APIServices, c *gin.Context) {
 func dropTorrent(svc *APIServices, req torrReqJS, c *gin.Context) {
 	if req.Hash == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "is required for action=drop"))
+
+		return
+	}
+
+	if tor := svc.Torrents.Get(req.Hash); tor != nil && tor.ActiveReaders() > 0 {
+		log.TLogln("drop skipped: active readers", "hash=", req.Hash, "readers=", tor.ActiveReaders())
+		abortAPIError(c, http.StatusConflict, newValidationError("hash", "torrent has active streams"))
+
+		return
+	}
+
+	// Active stream count is global and catches long-lived responses where
+	// reader count can transiently be zero between range reconnects.
+	if torr.GetActiveStreams() > 0 {
+		log.TLogln("drop skipped: active stream sessions", "hash=", req.Hash, "active_streams=", torr.GetActiveStreams())
+		abortAPIError(c, http.StatusConflict, newValidationError("hash", "stream session is active"))
+
+		return
+	}
+
+	// Protect playback against short reconnect gaps where active readers can momentarily drop to zero.
+	if torr.SinceLastStreamActivity() < 5*time.Second {
+		log.TLogln("drop skipped: recent stream activity", "hash=", req.Hash)
+		abortAPIError(c, http.StatusConflict, newValidationError("hash", "stream reconnect in progress"))
 
 		return
 	}

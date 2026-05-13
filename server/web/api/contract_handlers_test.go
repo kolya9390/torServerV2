@@ -73,12 +73,8 @@ func (s *contractTorrentService) Add(spec *torrent.TorrentSpec, title, poster, d
 func withServices(t *testing.T, s *APIServices) {
 	t.Helper()
 
-	prev := getServices()
-
-	SetServices(s)
-	t.Cleanup(func() {
-		SetServices(prev)
-	})
+	restore := ReplaceServicesForTests(s)
+	t.Cleanup(restore)
 }
 
 func TestSettingsDefLegacyContract(t *testing.T) {

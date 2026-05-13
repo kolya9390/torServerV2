@@ -6,14 +6,20 @@ import (
 	"strings"
 	"time"
 
+	"server/settings"
 	"server/torr"
 )
 
 type RootDir struct {
-	info fs.FileInfo
+	info     fs.FileInfo
+	provider settings.SettingsProvider
 }
 
-func NewRootDir() *RootDir {
+func NewRootDir(provider settings.SettingsProvider) *RootDir {
+	if provider == nil {
+		provider = settings.NewNoopSettingsProvider()
+	}
+
 	return &RootDir{
 		info: info{
 			name:  "/",
@@ -22,6 +28,7 @@ func NewRootDir() *RootDir {
 			mtime: time.Unix(477033600, 0),
 			isDir: true,
 		},
+		provider: provider,
 	}
 }
 
@@ -47,7 +54,7 @@ func (d *RootDir) Stat() (fs.FileInfo, error) {
 }
 
 func (d *RootDir) ReadDir(n int) ([]fs.DirEntry, error) {
-	torrs := torr.ListTorrent()
+	torrs := getCatalog().ListTorrents()
 	cats := map[string]struct{}{}
 	nodes := map[string]INode{}
 
@@ -60,7 +67,7 @@ func (d *RootDir) ReadDir(n int) ([]fs.DirEntry, error) {
 			cat = "other"
 		}
 
-		nodes[cat] = NewCategoryDir(cat)
+		nodes[cat] = NewCategoryDir(cat, d.provider)
 	}
 
 	entries := make([]fs.DirEntry, 0, 8)

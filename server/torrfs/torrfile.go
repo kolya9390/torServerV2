@@ -4,7 +4,6 @@ import (
 	"io/fs"
 	"time"
 
-	sets "server/settings"
 	"server/torr"
 	"server/torr/storage/torrstor"
 
@@ -48,7 +47,7 @@ func (f *TorrFile) Open(name string) (fs.File, error) {
 		return nil, fs.ErrInvalid
 	}
 
-	if sets.BTsets.ResponsiveMode {
+	if f.Torrent().ResponsiveModeEnabled() {
 		r.SetResponsive()
 	}
 

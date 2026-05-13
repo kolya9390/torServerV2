@@ -29,10 +29,15 @@ func InitFromStore(s *auth.Store, enabled bool) {
 	tokenStore = auth.NewTokenStore(nil)
 }
 
-// InitAuth initializes the auth package with the BBolt database.
+// InitAuthWithRuntimeState initializes the auth package with the BBolt database.
 // Performs migration from legacy accs.db if needed.
-func InitAuth() {
-	tdb := settings.NewTDB()
+func InitAuthWithRuntimeState(runtimeState func() settings.RuntimeState) {
+	if runtimeState == nil {
+		runtimeState = func() settings.RuntimeState { return settings.RuntimeState{} }
+	}
+
+	runtimePath := runtimeState().PathConfig().Path
+	tdb := settings.NewTDBAtPath(runtimePath)
 	if tdb == nil {
 		log.TLogln("Auth: failed to get BBolt DB, auth disabled")
 
@@ -50,10 +55,11 @@ func InitAuth() {
 
 	authStore = auth.NewStore(bboltDB)
 	tokenStore = auth.NewTokenStore(bboltDB)
-	authEnabled = settings.HTTPAuth
+	authCfg := runtimeState().AuthConfig()
+	authEnabled = authCfg.HTTPAuth
 
 	// Run migration from legacy accs.db
-	if err := auth.MigrateFromAccsDB(authStore, settings.Path); err != nil {
+	if err := auth.MigrateFromAccsDB(authStore, runtimePath); err != nil {
 		log.TLogln("Auth migration error:", err)
 	}
 

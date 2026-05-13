@@ -1,24 +1,13 @@
 package torr
 
 import (
-	"context"
-	"fmt"
-	"maps"
 	"net"
-	"sync"
 
-	"github.com/anacrolix/publicip"
 	"github.com/anacrolix/torrent"
-	"github.com/anacrolix/torrent/metainfo"
-	"github.com/wlynxg/anet"
 
 	"server/log"
-	"server/proxy"
 	"server/settings"
 	"server/torr/storage"
-	"server/torr/storage/torrstor"
-	"server/torr/utils"
-	"server/version"
 )
 
 type BTServer struct {
@@ -27,27 +16,37 @@ type BTServer struct {
 
 	storage storage.Storage
 
-	torrents map[metainfo.Hash]*Torrent
+	registry *btTorrentRegistry
+	deps     btServerDeps
+}
 
-	mu sync.Mutex
+type btServerDeps struct {
+	settingsProvider settings.SettingsProvider
+	getArgs          func() *settings.ExecArgs
+	runtimeState     func() settings.RuntimeState
+	dbStore          TorrentDBStore
 }
 
 var privateIPBlocks []*net.IPNet
 
+var initPrivateIPBlocks = []string{
+	"127.0.0.0/8",    // IPv4 loopback
+	"10.0.0.0/8",     // RFC1918
+	"172.16.0.0/12",  // RFC1918
+	"192.168.0.0/16", // RFC1918
+	"169.254.0.0/16", // RFC3927 link-local
+	"::1/128",        // IPv6 loopback
+	"fe80::/10",      // IPv6 link-local
+	"fc00::/7",       // IPv6 unique local addr
+}
+
 func init() {
-	for _, cidr := range []string{
-		"127.0.0.0/8",    // IPv4 loopback
-		"10.0.0.0/8",     // RFC1918
-		"172.16.0.0/12",  // RFC1918
-		"192.168.0.0/16", // RFC1918
-		"169.254.0.0/16", // RFC3927 link-local
-		"::1/128",        // IPv6 loopback
-		"fe80::/10",      // IPv6 link-local
-		"fc00::/7",       // IPv6 unique local addr
-	} {
+	for _, cidr := range initPrivateIPBlocks {
 		_, block, err := net.ParseCIDR(cidr)
 		if err != nil {
-			panic(fmt.Errorf("parse error on %q: %v", cidr, err))
+			log.TLogln("Warning: invalid CIDR, skipping", cidr, err)
+
+			continue
 		}
 
 		privateIPBlocks = append(privateIPBlocks, block)
@@ -56,349 +55,86 @@ func init() {
 
 func NewBTS() *BTServer {
 	bts := new(BTServer)
-	bts.torrents = make(map[metainfo.Hash]*Torrent)
+	bts.registry = newBTTorrentRegistry()
+	bts.deps = defaultBTServerDeps()
 
 	return bts
 }
 
-func (bt *BTServer) Connect() error {
-	bt.mu.Lock()
-	defer bt.mu.Unlock()
+func NewBTSWithProvidersRuntimeAndDB(settingsProvider settings.SettingsProvider, argsProvider settings.ArgsProvider, runtimeState func() settings.RuntimeState, dbStore TorrentDBStore) *BTServer {
+	var deps btServerDeps
+	deps.settingsProvider = settingsProvider
+	if argsProvider != nil {
+		deps.getArgs = argsProvider.Get
+	}
+	deps.runtimeState = runtimeState
+	deps.dbStore = dbStore
 
-	var err error
+	bts := &BTServer{
+		registry: newBTTorrentRegistry(),
+		deps:     resolveBTServerDeps(deps),
+	}
 
-	bt.configure(context.TODO())
-	bt.client, err = torrent.NewClient(bt.config)
-	bt.torrents = make(map[metainfo.Hash]*Torrent)
-	InitAPIHelper(bt)
-
-	return err
+	return bts
 }
 
-func (bt *BTServer) Disconnect() {
-	bt.mu.Lock()
-	defer bt.mu.Unlock()
-
-	if bt.client != nil {
-		bt.client.Close()
-		bt.client = nil
-
-		utils.FreeOSMemGC()
-	}
-}
-
-// buildClientConfig creates and configures the torrent client configuration
-// based on current application settings.
-func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
-	blocklist, err := utils.ReadBlockedIP()
-	if err != nil {
-		log.TLogln("Error reading blocked IPs:", err)
-	}
-
-	config := torrent.NewDefaultClientConfig()
-
-	storage := torrstor.NewStorage(settings.GetSettings().CacheSize)
-	bt.storage = storage
-	config.DefaultStorage = storage
-
-	userAgent := "qBittorrent/4.3.9"
-	peerID := "-qB4390-"
-	upnpID := "TorrServer/" + version.Version()
-	cliVers := userAgent
-
-	config.Debug = settings.GetSettings().EnableDebug
-	config.DisableIPv6 = !settings.GetSettings().EnableIPv6
-	config.DisableTCP = settings.GetSettings().DisableTCP
-	config.DisableUTP = settings.GetSettings().DisableUTP
-	config.NoDefaultPortForwarding = settings.GetSettings().DisableUPNP
-	config.NoDHT = settings.GetSettings().DisableDHT
-	config.DisablePEX = settings.GetSettings().DisablePEX
-	config.NoUpload = settings.GetSettings().DisableUpload
-	config.IPBlocklist = blocklist
-	config.Bep20 = peerID
-	config.PeerID = utils.PeerIDRandom(peerID)
-	config.UpnpID = upnpID
-	config.HTTPUserAgent = userAgent
-	config.ExtendedHandshakeClientVersion = cliVers
-	config.EstablishedConnsPerTorrent = settings.GetSettings().ConnectionsLimit
-
-	if settings.GetSettings().ForceEncrypt {
-		config.HeaderObfuscationPolicy = torrent.HeaderObfuscationPolicy{
-			RequirePreferred: true,
-			Preferred:        true,
-		}
-	}
-
-	if settings.GetSettings().DownloadRateLimit > 0 {
-		config.DownloadRateLimiter = utils.Limit(settings.GetSettings().DownloadRateLimit * 1024)
-	}
-
-	if settings.GetSettings().UploadRateLimit > 0 {
-		config.Seed = true
-		config.UploadRateLimiter = utils.Limit(settings.GetSettings().UploadRateLimit * 1024)
-	}
-
-	if settings.TorAddr != "" {
-		log.TLogln("Set listen addr", settings.TorAddr)
-		config.SetListenAddr(settings.TorAddr)
-	} else if settings.GetSettings().PeersListenPort > 0 {
-		log.TLogln("Set listen port", settings.GetSettings().PeersListenPort)
-		config.ListenPort = settings.GetSettings().PeersListenPort
-	} else {
-		log.TLogln("Set listen port to random autoselect (0)")
-
-		config.ListenPort = 0
-	}
-
-	return config
-}
-
-// detectPublicIPv4 detects the public IPv4 address for the torrent client.
-// It first checks the configured setting, then falls back to external discovery.
-func detectPublicIPv4(ctx context.Context, config *torrent.ClientConfig) {
-	if settings.PubIPv4 != "" {
-		if ip4 := net.ParseIP(settings.PubIPv4); ip4.To4() != nil && !isPrivateIP(ip4) {
-			config.PublicIp4 = ip4
-
-			return
-		}
-	}
-
-	if config.PublicIp4 == nil {
-		ip, err := publicip.Get4(ctx)
-		if err != nil {
-			log.TLogln("Error getting public ipv4 address:", err)
-
-			return
-		}
-		// publicip.Get4 can return IPv6 in some cases, validate
-		if ip.To4() == nil {
-			return
-		}
-
-		config.PublicIp4 = ip
-	}
-
-	if config.PublicIp4 != nil {
-		log.TLogln("PublicIp4:", config.PublicIp4)
+func defaultBTServerDeps() btServerDeps {
+	return btServerDeps{
+		settingsProvider: settings.DefaultSettingsProvider,
+		getArgs:          settings.DefaultArgsProvider.Get,
+		runtimeState:     settings.GetRuntimeState,
+		dbStore:          NewSettingsTorrentDBStore(),
 	}
 }
 
-// detectPublicIPv6 detects the public IPv6 address for the torrent client.
-// It first checks the configured setting, then falls back to external discovery.
-func detectPublicIPv6(ctx context.Context, config *torrent.ClientConfig, enableIPv6 bool) bool {
-	if !enableIPv6 {
-		return false
+func resolveBTServerDeps(deps btServerDeps) btServerDeps {
+	if deps.settingsProvider == nil {
+		deps.settingsProvider = settings.NewNoopSettingsProvider()
 	}
 
-	if settings.PubIPv6 != "" {
-		if ip6 := net.ParseIP(settings.PubIPv6); ip6.To16() != nil && ip6.To4() == nil && !isPrivateIP(ip6) {
-			config.PublicIp6 = ip6
-
-			return true
-		}
+	if deps.getArgs == nil {
+		deps.getArgs = settings.NewNoopArgsProvider().Get
 	}
 
-	if config.PublicIp6 == nil {
-		ip, err := publicip.Get6(ctx)
-		if err != nil {
-			log.TLogln("Error getting public ipv6 address:", err)
-
-			return false
-		}
-		// Ensure it's valid IPv6
-		if ip.To16() == nil {
-			return false
-		}
-
-		config.PublicIp6 = ip
+	if deps.runtimeState == nil {
+		deps.runtimeState = func() settings.RuntimeState { return settings.RuntimeState{} }
 	}
 
-	if config.PublicIp6 != nil {
-		log.TLogln("PublicIp6:", config.PublicIp6)
-
-		return true
+	if deps.dbStore == nil {
+		deps.dbStore = NewNoopTorrentDBStore()
 	}
 
-	return false
+	return deps
 }
 
-func (bt *BTServer) configure(ctx context.Context) {
-	bt.config = bt.buildClientConfig()
-
-	// Configure proxy if enabled
-	if err := bt.configureProxy(); err != nil {
-		log.TLogln("Proxy configuration error:", err)
-	}
-
-	log.TLogln("Client config:", settings.BTsets)
-
-	// Detect public IP addresses
-	detectPublicIPv4(ctx, bt.config)
-	if !detectPublicIPv6(ctx, bt.config, settings.GetSettings().EnableIPv6) && settings.GetSettings().EnableIPv6 {
-		bt.config.DisableIPv6 = true
-		log.TLogln("IPv6 disabled: public IPv6 is unavailable")
-	}
-}
-
-func (bt *BTServer) configureProxy() error {
-	args := settings.GetArgs()
-	if args == nil {
-		return nil
-	}
-
-	proxyCfg, err := proxy.NewConfig(args.ProxyURL, args.ProxyMode)
-	if err != nil {
-		return err
-	}
-
-	if proxyCfg == nil {
-		return nil // No proxy configured
-	}
-
-	d := proxy.NewDialer(proxyCfg)
-
-	switch proxyCfg.Mode {
-	case proxy.ModeTracker:
-		log.TLogln("Configuring HTTP proxy for tracker requests:", proxyCfg.URL.String())
-
-		bt.config.HTTPProxy = d.HTTPProxy()
-
-		log.TLogln("Proxy configured successfully for HTTP tracker connections only")
-
-	case proxy.ModePeers, proxy.ModeFull:
-		log.TLogln("Configuring proxy for all connections:", proxyCfg.URL.String())
-
-		bt.config.HTTPDialContext = d.DialContext
-		bt.config.HTTPProxy = d.HTTPProxy()
-
-		log.TLogln("Proxy configured successfully for all BitTorrent connections")
-
-	default:
-		// Fallback to tracker mode for unknown modes
-		log.TLogln("Configuring HTTP proxy for tracker requests (default):", proxyCfg.URL.String())
-
-		bt.config.HTTPProxy = d.HTTPProxy()
+func (bt *BTServer) currentSettings() *settings.BTSets {
+	if bt != nil && bt.deps.settingsProvider != nil {
+		return bt.deps.settingsProvider.Get()
 	}
 
 	return nil
 }
 
-func (bt *BTServer) GetTorrent(hash torrent.InfoHash) *Torrent {
-	if torr, ok := bt.torrents[hash]; ok {
-		return torr
+func (bt *BTServer) currentArgs() *settings.ExecArgs {
+	if bt != nil && bt.deps.getArgs != nil {
+		return bt.deps.getArgs()
 	}
 
 	return nil
 }
 
-func (bt *BTServer) ListTorrents() map[metainfo.Hash]*Torrent {
-	list := make(map[metainfo.Hash]*Torrent)
-	maps.Copy(list, bt.torrents)
+func (bt *BTServer) currentRuntimeState() settings.RuntimeState {
+	if bt != nil && bt.deps.runtimeState != nil {
+		return bt.deps.runtimeState()
+	}
 
-	return list
+	return settings.RuntimeState{}
 }
 
-func (bt *BTServer) RemoveTorrent(hash torrent.InfoHash) bool {
-	if torr, ok := bt.torrents[hash]; ok {
-		return torr.Close()
+func (bt *BTServer) currentDBStore() TorrentDBStore {
+	if bt != nil && bt.deps.dbStore != nil {
+		return bt.deps.dbStore
 	}
 
-	return false
-}
-
-func isPrivateIP(ip net.IP) bool {
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-		return true
-	}
-
-	for _, block := range privateIPBlocks {
-		if block.Contains(ip) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// getPublicIP4 returns the first non-private IPv4 address of all active interfaces.
-// It returns nil if no suitable address is found.
-//
-//nolint:unused // Reserved for debugging public IP addresses
-func getPublicIP4() net.IP {
-	ifaces, err := anet.Interfaces()
-	if err != nil {
-		log.TLogln("Error get public IPv4:", err)
-
-		return nil
-	}
-
-	for _, i := range ifaces {
-		addrs, err := anet.InterfaceAddrsByInterface(&i)
-		if err != nil {
-			continue
-		}
-
-		if i.Flags&net.FlagUp == net.FlagUp {
-			for _, addr := range addrs {
-				var ip net.IP
-				switch v := addr.(type) {
-				case *net.IPNet:
-					ip = v.IP
-				case *net.IPAddr:
-					ip = v.IP
-				}
-
-				if !isPrivateIP(ip) && ip.To4() != nil {
-					return ip
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// getPublicIP6 returns the first non-private IPv6 address of all active interfaces.
-// It returns nil if no suitable address is found.
-//
-//nolint:unused // Reserved for debugging public IP addresses
-func getPublicIP6() net.IP {
-	ifaces, err := anet.Interfaces()
-	if err != nil {
-		log.TLogln("Error get public IPv6:", err)
-
-		return nil
-	}
-
-	for _, i := range ifaces {
-		addrs, err := anet.InterfaceAddrsByInterface(&i)
-		if err != nil {
-			continue
-		}
-
-		if i.Flags&net.FlagUp == net.FlagUp {
-			for _, addr := range addrs {
-				var ip net.IP
-				switch v := addr.(type) {
-				case *net.IPNet:
-					ip = v.IP
-				case *net.IPAddr:
-					ip = v.IP
-				}
-
-				if !isPrivateIP(ip) && ip.To16() != nil && ip.To4() == nil {
-					return ip
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// Storage returns the storage implementation.
-// This method implements the StorageProvider interface.
-func (bt *BTServer) Storage() storage.Storage {
-	return bt.storage
+	return NewNoopTorrentDBStore()
 }

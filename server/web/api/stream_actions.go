@@ -132,17 +132,12 @@ func streamM3U(c *gin.Context) {
 func streamPlay(c *gin.Context) {
 	svc := getServices()
 
-	log.TLogln("[DEBUG] streamPlay: starting")
-
 	spec, meta, err := parseStreamLink(c)
 	if err != nil {
-		log.TLogln("[DEBUG] streamPlay: parseStreamLink error:", err)
 		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
-
-	log.TLogln("[DEBUG] streamPlay: spec parsed, calling EnsureTorrent")
 
 	tor, err := svc.Streams.EnsureTorrent(svc.Torrents, spec, StreamMeta{
 		Title:    meta.title,

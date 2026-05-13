@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"server/config"
-	internalapp "server/internal/app"
 	"server/settings"
 )
 
@@ -64,10 +63,10 @@ func TestNewCreatesBootstrap(t *testing.T) {
 	}
 }
 
-func TestNewWithContainerRequiresRuntime(t *testing.T) {
-	_, err := newWithContainer(&internalapp.Container{})
+func TestNewWithRuntimeRequiresRuntime(t *testing.T) {
+	_, err := newWithRuntime(nil)
 	if err == nil {
-		t.Fatal("expected error for nil runtime in container")
+		t.Fatal("expected error for nil runtime")
 	}
 }
 
@@ -95,9 +94,9 @@ func TestBootstrapStartStopWaitLifecycle(t *testing.T) {
 		},
 	}
 
-	b, err := newWithContainer(&internalapp.Container{Runtime: rt})
+	b, err := newWithRuntime(rt)
 	if err != nil {
-		t.Fatalf("newWithContainer error: %v", err)
+		t.Fatalf("newWithRuntime error: %v", err)
 	}
 
 	if err := b.Start(context.Background()); err != nil {
@@ -137,13 +136,11 @@ func TestBootstrapStartStopWaitLifecycle(t *testing.T) {
 func TestBootstrapStartWrapsRuntimeError(t *testing.T) {
 	rtErr := errors.New("boom")
 
-	b, err := newWithContainer(&internalapp.Container{
-		Runtime: &fakeRuntime{
-			startFn: func() error { return rtErr },
-		},
+	b, err := newWithRuntime(&fakeRuntime{
+		startFn: func() error { return rtErr },
 	})
 	if err != nil {
-		t.Fatalf("newWithContainer error: %v", err)
+		t.Fatalf("newWithRuntime error: %v", err)
 	}
 
 	err = b.Start(context.Background())
@@ -175,9 +172,9 @@ func TestBootstrapStopWrapsRuntimeError(t *testing.T) {
 		waitFn:  func() error { return nil },
 	}
 
-	b, err := newWithContainer(&internalapp.Container{Runtime: rt})
+	b, err := newWithRuntime(rt)
 	if err != nil {
-		t.Fatalf("newWithContainer error: %v", err)
+		t.Fatalf("newWithRuntime error: %v", err)
 	}
 
 	if err := b.Start(context.Background()); err != nil {

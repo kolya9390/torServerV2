@@ -22,7 +22,12 @@ import (
 var dmsServer *dms.Server
 
 func Start() error {
+	return StartWithProviders(settings.DefaultSettingsProvider, settings.DefaultArgsProvider)
+}
+
+func StartWithProviders(provider settings.SettingsProvider, argsProvider settings.ArgsProvider) error {
 	logger := log.Default.WithNames("dlna")
+	runtimeCtx := newDLNARuntimeContext(provider, argsProvider)
 
 	var connErr error
 
@@ -47,10 +52,16 @@ func Start() error {
 			return
 		}(),
 		HTTPConn: func() net.Listener {
+			args := runtimeCtx.currentArgs()
+			bindIP := ""
+			if args != nil {
+				bindIP = args.IP
+			}
+
 			port := 9080
 			for {
 				logger.Levelf(log.Info, "Check dlna port %d", port)
-				m, err := net.Listen("tcp", settings.IP+":"+strconv.Itoa(port))
+				m, err := net.Listen("tcp", bindIP+":"+strconv.Itoa(port))
 				if m != nil {
 					_ = m.Close()
 				}
@@ -60,7 +71,7 @@ func Start() error {
 				port++
 			}
 			logger.Levelf(log.Info, "Set dlna port %d", port)
-			conn, err := net.Listen("tcp", settings.IP+":"+strconv.Itoa(port))
+			conn, err := net.Listen("tcp", bindIP+":"+strconv.Itoa(port))
 			if err != nil {
 				logger.Levelf(log.Error, "%v", err)
 				connErr = err
@@ -70,12 +81,12 @@ func Start() error {
 
 			return conn
 		}(),
-		FriendlyName:        getDefaultFriendlyName(),
+		FriendlyName:        runtimeCtx.getDefaultFriendlyName(),
 		NoTranscode:         true,
 		NoProbe:             true,
 		StallEventSubscribe: false,
 		Icons:               []dms.Icon{}, // No icons
-		LogHeaders:          settings.GetSettings().EnableDebug,
+		LogHeaders:          runtimeCtx.currentSettings().DebugConfig().EnableDebug,
 		NotifyInterval:      30 * time.Second,
 		AllowedIpNets: func() []*net.IPNet {
 			nets := make([]*net.IPNet, 0, 2)
@@ -88,8 +99,8 @@ func Start() error {
 
 			return nets
 		}(),
-		OnBrowseDirectChildren: onBrowse,
-		OnBrowseMetadata:       onBrowseMeta,
+		OnBrowseDirectChildren: runtimeCtx.onBrowse,
+		OnBrowseMetadata:       runtimeCtx.onBrowseMeta,
 	}
 
 	if connErr != nil {
@@ -122,7 +133,7 @@ func Stop() {
 	}
 }
 
-func onBrowse(path, rootObjectPath, host, userAgent string) (ret []any, err error) {
+func (runtimeCtx dlnaRuntimeContext) onBrowse(path, rootObjectPath, host, userAgent string) (ret []any, err error) {
 	if path == "/" {
 		ret = getRoot()
 
@@ -132,18 +143,18 @@ func onBrowse(path, rootObjectPath, host, userAgent string) (ret []any, err erro
 
 		return
 	} else if isHashPath(path) {
-		ret = getTorrent(path, host)
+		ret = runtimeCtx.getTorrent(path, host)
 
 		return
 	} else if filepath.Base(path) == "LD" {
-		ret = loadTorrent(path, host)
+		ret = runtimeCtx.loadTorrent(path, host)
 	}
 
 	return
 }
 
-func onBrowseMeta(path string, rootObjectPath string, host, userAgent string) (ret any, err error) {
-	ret = getTorrentMeta(path, host)
+func (runtimeCtx dlnaRuntimeContext) onBrowseMeta(path string, rootObjectPath string, host, userAgent string) (ret any, err error) {
+	ret = runtimeCtx.getTorrentMeta(path, host)
 	if ret == nil {
 		err = errors.New("meta not found")
 	}
@@ -247,11 +258,11 @@ func collectNonLoopbackIPs(ifaces []net.Interface) []string {
 	return ips
 }
 
-func getDefaultFriendlyName() string {
+func (runtimeCtx dlnaRuntimeContext) getDefaultFriendlyName() string {
 	logger := log.Default.WithNames("dlna")
 
-	if settings.GetSettings().FriendlyName != "" {
-		return settings.GetSettings().FriendlyName
+	if runtimeCtx.currentSettings().DLNAConfig().FriendlyName != "" {
+		return runtimeCtx.currentSettings().DLNAConfig().FriendlyName
 	}
 
 	userName := ""

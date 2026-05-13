@@ -1,65 +1,62 @@
 package torrstor
 
 import (
+	"context"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/anacrolix/torrent"
 
 	"server/log"
-	"server/settings"
 )
 
 type Reader struct {
 	torrent.Reader
-	offset    int64
-	readahead int64
+
+	offset    atomic.Int64
+	readahead atomic.Int64
 	file      *torrent.File
 
 	cache    *Cache
-	isClosed bool
+	isClosed atomic.Bool
 
 	///Preload
-	lastAccess int64
-	isUse      bool
+	lastAccess atomic.Int64
+	isUse      atomic.Bool
 	mu         sync.Mutex
 }
 
 func newReader(file *torrent.File, cache *Cache) *Reader {
-	r := new(Reader)
-	r.file = file
+	r := &Reader{
+		file:  file,
+		cache: cache,
+	}
 	r.Reader = file.NewReader()
+	r.isUse.Store(true)
+	cache.readers.active.Add(1)
 
-	r.SetReadahead(0)
-	r.cache = cache
-	r.isUse = true
-
-	cache.muReaders.Lock()
-	cache.readers[r] = struct{}{}
-	cache.muReaders.Unlock()
+	cache.readers.mu.Lock()
+	cache.readers.items[r] = struct{}{}
+	cache.readers.mu.Unlock()
 
 	return r
 }
 
 func (r *Reader) Seek(offset int64, whence int) (n int64, err error) {
-	if r.isClosed {
+	r.mu.Lock()
+	if r.isClosed.Load() {
+		r.mu.Unlock()
+
 		return 0, io.EOF
 	}
 
-	switch whence {
-	case io.SeekStart:
-		r.offset = offset
-	case io.SeekCurrent:
-		r.offset += offset
-	case io.SeekEnd:
-		r.offset = r.file.Length() + offset
-	}
-
-	r.readerOn()
+	r.readerOnLocked()
 	n, err = r.Reader.Seek(offset, whence)
-	r.offset = n
-	r.lastAccess = time.Now().Unix()
+	r.offset.Store(n)
+	r.lastAccess.Store(time.Now().Unix())
+	r.mu.Unlock()
 
 	return
 }
@@ -67,12 +64,15 @@ func (r *Reader) Seek(offset int64, whence int) (n int64, err error) {
 func (r *Reader) Read(p []byte) (n int, err error) {
 	err = io.EOF
 
-	if r.isClosed {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.isClosed.Load() {
 		return
 	}
 
 	if r.file.Torrent() != nil && r.file.Torrent().Info() != nil {
-		r.readerOn()
+		r.readerOnLocked()
 		n, err = r.Reader.Read(p)
 
 		// samsung tv fix xvid/divx
@@ -93,8 +93,8 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 		//	}
 		//}
 
-		r.offset += int64(n)
-		r.lastAccess = time.Now().Unix()
+		r.offset.Add(int64(n))
+		r.lastAccess.Store(time.Now().Unix())
 	} else {
 		log.TLogln("Torrent closed and readed")
 	}
@@ -102,49 +102,109 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 	return
 }
 
-func (r *Reader) SetReadahead(length int64) {
-	if r.cache != nil && length > r.cache.capacity {
-		length = r.cache.capacity
+func (r *Reader) clampReadahead(length int64) int64 {
+	if r.cache != nil && length > r.cache.GetCapacity() {
+		length = r.cache.GetCapacity()
 	}
 
-	if r.isUse {
+	return length
+}
+
+func (r *Reader) SetContext(ctx context.Context) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.isClosed.Load() {
+		return
+	}
+
+	r.Reader.SetContext(ctx)
+}
+
+func (r *Reader) SetResponsive() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.isClosed.Load() {
+		return
+	}
+
+	r.Reader.SetResponsive()
+}
+
+func (r *Reader) SetReadahead(length int64) {
+	length = r.clampReadahead(length)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.readahead.Load() == length {
+		return
+	}
+
+	r.readahead.Store(length)
+
+	if r.isUse.Load() {
 		r.Reader.SetReadahead(length)
 	}
+}
 
-	r.readahead = length
+func (r *Reader) SetIdle() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.isClosed.Load() {
+		return
+	}
+
+	r.readerOffLocked()
 }
 
 func (r *Reader) Offset() int64 {
-	return r.offset
+	return r.offset.Load()
 }
 
 func (r *Reader) Readahead() int64 {
-	return r.readahead
+	return r.readahead.Load()
 }
 
 func (r *Reader) Close() {
 	// file reader close in gotorrent
 	// this struct close in cache
-	r.isClosed = true
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.isClosed.Swap(true) {
+		return
+	}
+
+	if r.isUse.Swap(false) {
+		r.cache.readers.active.Add(-1)
+	}
+
 	if len(r.file.Torrent().Files()) > 0 {
 		_ = r.Reader.Close()
 	}
 
-	go r.cache.getRemPieces()
+	r.cache.queueCleanPieces()
 }
 
 func (r *Reader) getPiecesRange() Range {
-	startOff, endOff := r.getOffsetRange()
+	return r.getPiecesRangeForReaders(r.getUseReaders())
+}
+
+func (r *Reader) getPiecesRangeForReaders(activeReaders int) Range {
+	startOff, endOff := r.getOffsetRangeForReaders(activeReaders)
 
 	return Range{r.getPieceNum(startOff), r.getPieceNum(endOff), r.file}
 }
 
 func (r *Reader) getReaderPiece() int {
-	return r.getPieceNum(r.offset)
+	return r.getPieceNum(r.offset.Load())
 }
 
 func (r *Reader) getReaderRAHPiece() int {
-	return r.getPieceNum(r.offset + r.readahead)
+	return r.getPieceNum(r.offset.Load() + r.readahead.Load())
 }
 
 func (r *Reader) getPieceNum(offset int64) int {
@@ -152,60 +212,76 @@ func (r *Reader) getPieceNum(offset int64) int {
 }
 
 func (r *Reader) getOffsetRange() (int64, int64) {
-	prc := int64(settings.GetSettings().ReaderReadAHead)
+	return r.getOffsetRangeForReaders(r.getUseReaders())
+}
 
-	readers := int64(r.getUseReaders())
+func (r *Reader) getOffsetRangeForReaders(activeReaders int) (int64, int64) {
+	prc := int64(r.cache.currentPlaybackConfig().ReadAheadPct)
+	if prc <= 0 || prc > 100 {
+		prc = 95
+	}
+
+	offset := r.offset.Load()
+
+	readers := int64(activeReaders)
 	if readers == 0 {
 		readers = 1
 	}
 
-	beginOffset := r.offset - (r.cache.capacity/readers)*(100-prc)/100
-	endOffset := r.offset + (r.cache.capacity/readers)*prc/100
+	perReaderWindow := r.cache.capacity / readers
+	beginOffset := offset - perReaderWindow*(100-prc)/100
+	endOffset := offset + perReaderWindow*prc/100
 
 	if beginOffset < 0 {
 		beginOffset = 0
 	}
 
-	if endOffset > r.file.Length() {
+	if r.file != nil && endOffset > r.file.Length() {
 		endOffset = r.file.Length()
 	}
 
 	return beginOffset, endOffset
 }
 
-func (r *Reader) checkReader() {
-	if time.Now().Unix() > r.lastAccess+60 && len(r.cache.readers) > 1 {
-		r.readerOff()
-	} else {
-		r.readerOn()
-	}
-}
-
-func (r *Reader) readerOn() {
+func (r *Reader) checkReader(totalReaders int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if !r.isUse {
+	if time.Now().Unix() > r.lastAccess.Load()+60 && totalReaders > 1 {
+		r.readerOffLocked()
+	} else {
+		r.readerOnLocked()
+	}
+}
+
+func (r *Reader) readerOnLocked() {
+	if !r.isUse.Load() {
 		if pos, err := r.Reader.Seek(0, io.SeekCurrent); err == nil && pos == 0 {
-			if _, err := r.Reader.Seek(r.offset, io.SeekStart); err != nil {
+			if _, err := r.Reader.Seek(r.offset.Load(), io.SeekStart); err != nil {
 				log.TLogln("readerOn seek error:", err)
 			}
 		}
 
-		r.SetReadahead(r.readahead)
-		r.isUse = true
+		r.Reader.SetReadahead(r.readahead.Load())
+		r.isUse.Store(true)
+
+		if r.cache != nil {
+			r.cache.readers.active.Add(1)
+		}
 	}
 }
 
-func (r *Reader) readerOff() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+func (r *Reader) readerOffLocked() {
+	if r.isUse.Load() {
+		r.Reader.SetReadahead(0)
 
-	if r.isUse {
-		r.SetReadahead(0)
+		r.isUse.Store(false)
 
-		r.isUse = false
-		if r.offset > 0 {
+		if r.cache != nil {
+			r.cache.readers.active.Add(-1)
+		}
+
+		if r.offset.Load() > 0 {
 			if _, err := r.Reader.Seek(0, io.SeekStart); err != nil {
 				log.TLogln("readerOff seek error:", err)
 			}
@@ -214,14 +290,13 @@ func (r *Reader) readerOff() {
 }
 
 func (r *Reader) getUseReaders() int {
-	readers := 0
-	if r.cache != nil {
-		for reader := range r.cache.readers {
-			if reader.isUse {
-				readers++
-			}
-		}
+	if r.cache == nil {
+		return 0
 	}
 
-	return readers
+	return r.cache.GetUseReaders()
+}
+
+func (r *Reader) isActive() bool {
+	return r.isUse.Load()
 }

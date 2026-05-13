@@ -109,14 +109,6 @@ func TestAllPlayListUsesPlaybackServiceResult(t *testing.T) {
 
 func setTestServices(t *testing.T, s *APIServices) {
 	t.Helper()
-	apiServicesMu.Lock()
-	prev := apiServices
-	apiServicesMu.Unlock()
-
-	SetServices(s)
-	t.Cleanup(func() {
-		apiServicesMu.Lock()
-		apiServices = prev
-		apiServicesMu.Unlock()
-	})
+	restore := ReplaceServicesForTests(s)
+	t.Cleanup(restore)
 }

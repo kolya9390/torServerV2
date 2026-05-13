@@ -117,6 +117,7 @@ type WorkersConfig struct {
 
 type DebugConfig struct {
 	Enabled          bool `yaml:"enabled"`
+	ServiceOnly      bool `yaml:"service_only"` // Only V2 code debug logs, no library logs
 	ShowFSActiveTorr bool `yaml:"show_fs_active_torr"`
 }
 
@@ -180,6 +181,10 @@ func findConfigFile() string {
 		"config.yml",
 		"./config.yml",
 		"../config.yml",
+		"server/config.yml",
+		"server/config/config.yml",
+		"../server/config.yml",
+		"../server/config/config.yml",
 		"/etc/torrserver/config.yml",
 		os.Getenv("TS_CONFIG"),
 	}
@@ -411,7 +416,16 @@ func applyWorkerSettings(c *Config, sets *settings.BTSets) {
 // applyDebugSettings maps debug config fields to BTSets.
 func applyDebugSettings(c *Config, sets *settings.BTSets) {
 	sets.EnableDebug = c.Debug.Enabled
+	sets.ServiceOnlyDebug = c.Debug.ServiceOnly
 	sets.ShowFSActiveTorr = c.Debug.ShowFSActiveTorr
+
+	// Always enable local V2 debug logs when either mode is enabled.
+	// service_only: true gives you V2 logs without library spam.
+	if c.Debug.Enabled || c.Debug.ServiceOnly {
+		if err := log.SetLevel("debug"); err != nil {
+			log.TLogln("Warning: failed to set debug log level:", err)
+		}
+	}
 }
 
 // applyProxySettings maps proxy config fields to BTSets.

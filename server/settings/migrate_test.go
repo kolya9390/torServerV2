@@ -157,7 +157,7 @@ func TestMigrateAllWithReportVerificationFailure(t *testing.T) {
 
 func TestMigrateAllWithRealBackendsAndDryRun(t *testing.T) {
 	tmp := t.TempDir()
-	Path = tmp
+	restoreRuntime := ReplaceRuntimeStateForTests(RuntimeState{Path: tmp})
 
 	globalBboltDBMu.Lock()
 	globalBboltDB = nil
@@ -177,6 +177,7 @@ func TestMigrateAllWithRealBackendsAndDryRun(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
+		restoreRuntime()
 		bboltDB.CloseDB()
 		globalBboltDBMu.Lock()
 		globalBboltDB = nil

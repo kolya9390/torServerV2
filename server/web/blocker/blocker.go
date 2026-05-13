@@ -16,16 +16,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func Blocker() gin.HandlerFunc {
+func BlockerWithRuntimeState(runtimeState func() settings.RuntimeState) gin.HandlerFunc {
 	emptyFN := func(c *gin.Context) {
 		c.Next()
 	}
 
-	name := filepath.Join(settings.Path, "bip.txt")
+	if runtimeState == nil {
+		runtimeState = func() settings.RuntimeState { return settings.RuntimeState{} }
+	}
+	pathCfg := runtimeState().PathConfig()
+
+	name := filepath.Join(pathCfg.Path, "bip.txt")
 	buf := readIPListFile(name)
 	blackIPList := scanBuf(buf)
 
-	name = filepath.Join(settings.Path, "wip.txt")
+	name = filepath.Join(pathCfg.Path, "wip.txt")
 	buf = readIPListFile(name)
 	whiteIPList := scanBuf(buf)
 

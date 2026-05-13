@@ -8,6 +8,7 @@ import (
 	"server/internal/startup"
 	"server/log"
 	"server/settings"
+	"server/torr"
 	"server/web"
 	"server/web/api"
 	"server/web/auth"
@@ -20,24 +21,60 @@ type webRuntime interface {
 	Stop()
 }
 
+type btServerProvider interface {
+	BTServer() *torr.BTServer
+}
+
 type serverRuntimeDeps struct {
+	argsProvider   settings.ArgsProvider
+	settingsSource settings.SettingsProvider
+	dbStore        torr.TorrentDBStore
 	initSettings   func(readOnly, searchWA bool) error
-	prepareStartup func(args *settings.ExecArgs) error
+	prepareStartup func(args *settings.ExecArgs, provider settings.SettingsProvider) error
 	newWebServer   func() webRuntime
+	newAPIServices func(*torr.BTServer) *api.APIServices
 	closeSettings  func()
 	setShutdown    func(func())
 	setAPIServices func(*api.APIServices)
 }
 
-var defaultServerRuntimeDeps = serverRuntimeDeps{
-	initSettings:   settings.InitSets,
-	prepareStartup: startup.PrepareNetwork,
-	newWebServer: func() webRuntime {
-		return web.NewServer()
-	},
-	closeSettings:  settings.CloseDB,
-	setShutdown:    api.SetShutdownHook,
-	setAPIServices: api.SetServices,
+func defaultServerRuntimeDeps() serverRuntimeDeps {
+	return serverRuntimeDeps{
+		argsProvider:   settings.DefaultArgsProvider,
+		settingsSource: settings.DefaultSettingsProvider,
+		dbStore:        torr.NewSettingsTorrentDBStore(),
+		initSettings:   settings.InitSets,
+		prepareStartup: startup.PrepareNetworkWithProvider,
+		newWebServer: func() webRuntime {
+			return web.NewServerWithDeps(web.ServerDeps{
+				TorrentDBStore:   torr.NewSettingsTorrentDBStore(),
+				SettingsProvider: settings.DefaultSettingsProvider,
+				ArgsProvider:     settings.DefaultArgsProvider,
+				RuntimeState:     settings.GetRuntimeState,
+			})
+		},
+		newAPIServices: func(bt *torr.BTServer) *api.APIServices {
+			return apiservices.NewDefaultWithDeps(apiservices.DefaultDeps{
+				TorrentBackend:    torr.NewTorrentServiceWithBT(bt),
+				SettingsProvider:  settings.DefaultSettingsProvider,
+				RuntimeSignals:    torr.NewRuntimeSignalsWithBT(bt),
+				RuntimeController: torr.NewRuntimeControllerWithBT(bt),
+				RuntimeState:      settings.GetRuntimeState,
+				ArgsProvider:      settings.DefaultArgsProvider,
+				SetViewed:         settings.SetViewed,
+				RemoveViewed:      settings.RemViewed,
+				ListViewed:        settings.ListViewed,
+			})
+		},
+		closeSettings:  settings.CloseDB,
+		setShutdown:    api.SetShutdownHook,
+		setAPIServices: api.SetServices,
+	}
+}
+
+// NewRuntimeWithConfig builds the explicit application runtime with optional config.
+func NewRuntimeWithConfig(cfg *config.Config) Runtime {
+	return newServerRuntime(defaultServerRuntimeDeps(), cfg)
 }
 
 type serverRuntime struct {
@@ -47,16 +84,13 @@ type serverRuntime struct {
 	apiServices *api.APIServices
 }
 
-// NewServerRuntime creates default runtime adapter over startup/settings/web layers.
-func NewServerRuntime() Runtime {
-	return newServerRuntime(defaultServerRuntimeDeps, nil)
-}
-
 func (r *serverRuntime) Start() error {
-	args := settings.GetArgs()
+	args := r.currentArgs()
 	if args == nil {
 		return errors.New("exec args are not initialized")
 	}
+
+	r.applyConfigToArgs(args)
 
 	if r.deps.setShutdown != nil {
 		r.deps.setShutdown(r.Stop)
@@ -72,23 +106,28 @@ func (r *serverRuntime) Start() error {
 		api.SetServices(r.apiServices)
 	}
 
-	if err := r.deps.prepareStartup(args); err != nil {
+	if err := r.deps.prepareStartup(args, r.deps.settingsSource); err != nil {
 		return err
 	}
+	settings.SetArgs(args)
 
-	settings.Ssl = args.Ssl
 	if args.Ssl && args.SslCert != "" && args.SslKey != "" {
-		settings.GetSettings().SslCert = args.SslCert
-		settings.GetSettings().SslKey = args.SslKey
+		curSets := r.currentSettings()
+		curSets.SslCert = args.SslCert
+		curSets.SslKey = args.SslKey
 	}
 
 	log.TLogln("Check web ssl port", args.SslPort)
 	log.TLogln("Check web port", args.Port)
 
-	settings.Port = args.Port
-	settings.SslPort = args.SslPort
-	settings.IP = args.IP
-	settings.HTTPAuth = args.HTTPAuth
+	settings.UpdateRuntimeState(func(runtime *settings.RuntimeState) {
+		runtime.IP = args.IP
+		runtime.Port = args.Port
+		runtime.Ssl = args.Ssl
+		runtime.SslPort = args.SslPort
+		runtime.HTTPAuth = args.HTTPAuth
+		runtime.SearchWA = args.SearchWA
+	})
 
 	if r.cfg != nil {
 		r.applyConfig()
@@ -104,13 +143,52 @@ func (r *serverRuntime) Start() error {
 	return nil
 }
 
-func (r *serverRuntime) applyConfig() {
-	if r.cfg == nil || settings.BTsets == nil {
+func (r *serverRuntime) applyConfigToArgs(args *settings.ExecArgs) {
+	if args == nil || r.cfg == nil {
 		return
 	}
 
-	r.cfg.ApplyToBTSets(settings.BTsets)
-	settings.SetBTSets(settings.BTsets)
+	if args.Port == "" {
+		args.Port = r.cfg.Server.Port
+	}
+
+	if !args.Ssl {
+		args.Ssl = r.cfg.Server.SSL
+	}
+
+	if args.SslPort == "" {
+		args.SslPort = r.cfg.Server.SSLPort
+	}
+
+	if args.SslCert == "" {
+		args.SslCert = r.cfg.Server.SSLCert
+	}
+
+	if args.SslKey == "" {
+		args.SslKey = r.cfg.Server.SSLKey
+	}
+
+	if !args.HTTPAuth {
+		args.HTTPAuth = r.cfg.Server.HTTPAuth
+	}
+
+	if !args.SearchWA {
+		args.SearchWA = r.cfg.Server.SearchWA
+	}
+
+	if args.ShutdownMode == "" {
+		args.ShutdownMode = r.cfg.Server.ShutdownMode
+	}
+}
+
+func (r *serverRuntime) applyConfig() {
+	if r.cfg == nil {
+		return
+	}
+
+	curSets := r.currentSettings()
+	r.cfg.ApplyToBTSets(curSets)
+	r.setCurrentSettings(curSets)
 	log.TLogln("Applied configuration from config.yml")
 }
 
@@ -128,16 +206,34 @@ func (r *serverRuntime) APIServices() *api.APIServices {
 }
 
 func newServerRuntime(deps serverRuntimeDeps, cfg *config.Config) Runtime {
+	if deps.argsProvider == nil {
+		deps.argsProvider = settings.NewNoopArgsProvider()
+	}
+
+	if deps.settingsSource == nil {
+		deps.settingsSource = settings.NewNoopSettingsProvider()
+	}
+
 	if deps.initSettings == nil {
 		deps.initSettings = settings.InitSets
 	}
 
 	if deps.prepareStartup == nil {
-		deps.prepareStartup = startup.PrepareNetwork
+		deps.prepareStartup = startup.PrepareNetworkWithProvider
+	}
+
+	if deps.dbStore == nil {
+		deps.dbStore = torr.NewNoopTorrentDBStore()
 	}
 
 	if deps.newWebServer == nil {
-		deps.newWebServer = func() webRuntime { return web.NewServer() }
+		deps.newWebServer = func() webRuntime { return newDefaultWebRuntime(deps) }
+	}
+
+	if deps.newAPIServices == nil {
+		deps.newAPIServices = func(bt *torr.BTServer) *api.APIServices {
+			return newDefaultAPIServices(deps, bt)
+		}
 	}
 
 	if deps.closeSettings == nil {
@@ -150,16 +246,78 @@ func newServerRuntime(deps serverRuntimeDeps, cfg *config.Config) Runtime {
 
 	runtimeWeb := deps.newWebServer()
 	if runtimeWeb == nil {
-		runtimeWeb = web.NewServer()
+		runtimeWeb = newDefaultWebRuntime(deps)
 	}
 
-	apiServices := apiservices.NewDefault()
+	var bt *torr.BTServer
+	if provider, ok := runtimeWeb.(btServerProvider); ok {
+		bt = provider.BTServer()
+	}
+
+	apiServices := deps.newAPIServices(bt)
+	if apiServices == nil {
+		apiServices = newDefaultAPIServices(deps, bt)
+	}
 
 	return &serverRuntime{
 		deps:        deps,
 		web:         runtimeWeb,
 		cfg:         cfg,
 		apiServices: apiServices,
+	}
+}
+
+func newDefaultWebRuntime(deps serverRuntimeDeps) webRuntime {
+	return web.NewServerWithDeps(web.ServerDeps{
+		TorrentDBStore:   deps.dbStore,
+		SettingsProvider: deps.settingsSource,
+		ArgsProvider:     deps.argsProvider,
+		RuntimeState:     settings.GetRuntimeState,
+	})
+}
+
+func newDefaultAPIServices(deps serverRuntimeDeps, bt *torr.BTServer) *api.APIServices {
+	defaultDeps := apiservices.DefaultDeps{
+		SettingsProvider: deps.settingsSource,
+		RuntimeState:     settings.GetRuntimeState,
+		ArgsProvider:     deps.argsProvider,
+		SetViewed:        settings.SetViewed,
+		RemoveViewed:     settings.RemViewed,
+		ListViewed:       settings.ListViewed,
+	}
+
+	if bt != nil {
+		defaultDeps.TorrentBackend = torr.NewTorrentServiceWithBT(bt)
+		defaultDeps.RuntimeSignals = torr.NewRuntimeSignalsWithBT(bt)
+		defaultDeps.RuntimeController = torr.NewRuntimeControllerWithBT(bt)
+	}
+
+	return apiservices.NewDefaultWithDeps(defaultDeps)
+}
+
+func (r *serverRuntime) currentArgs() *settings.ExecArgs {
+	if r != nil && r.deps.argsProvider != nil {
+		return r.deps.argsProvider.Get()
+	}
+
+	return nil
+}
+
+func (r *serverRuntime) currentSettings() *settings.BTSets {
+	if r != nil && r.deps.settingsSource != nil {
+		return r.deps.settingsSource.Get()
+	}
+
+	return nil
+}
+
+func (r *serverRuntime) setCurrentSettings(sets *settings.BTSets) {
+	if sets == nil {
+		return
+	}
+
+	if r != nil && r.deps.settingsSource != nil {
+		r.deps.settingsSource.Set(sets)
 	}
 }
 

@@ -11,7 +11,6 @@ import (
 	"go.etcd.io/bbolt"
 
 	"server/auth"
-	"server/settings"
 )
 
 func TestAuthMiddlewareIntegration(t *testing.T) {
@@ -105,7 +104,6 @@ func InitAuthFromStore(s *auth.Store, enabled bool) {
 	authStore = s
 	authEnabled = enabled
 	tokenStore = auth.NewTokenStore(nil) // nil for tests
-	_ = settings.Path
 }
 
 // BasicAuthMiddlewareWrapper wraps the auth middleware for gin (for testing).

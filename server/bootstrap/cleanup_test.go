@@ -15,31 +15,25 @@ import (
 )
 
 func TestRunCacheCleanupNoopWhenDiskCacheDisabled(t *testing.T) {
-	reset := stubCleanupDeps(t)
-	defer reset()
-
 	tmp := t.TempDir()
-	prevBT := settings.BTsets
-	settings.BTsets = &settings.BTSets{
-		UseDisk:          false,
-		TorrentsSavePath: tmp,
+	deps := cacheCleanupDeps{
+		settingsProvider: staticSettingsProvider{cfg: &settings.BTSets{
+			UseDisk:          false,
+			TorrentsSavePath: tmp,
+		}},
+		readDir: os.ReadDir,
+		remove:  os.Remove,
+		listTorrents: func() []*settings.TorrentDB {
+			t.Fatal("list torrent should not be called")
+
+			return nil
+		},
 	}
 
-	t.Cleanup(func() { settings.BTsets = prevBT })
-
-	cleanupListTorrent = func() []*settings.TorrentDB {
-		t.Fatal("list torrent should not be called")
-
-		return nil
-	}
-
-	runCacheCleanup(context.Background())
+	runCacheCleanupWithDeps(context.Background(), deps)
 }
 
 func TestRunCacheCleanupRemovesStaleHashDir(t *testing.T) {
-	reset := stubCleanupDeps(t)
-	defer reset()
-
 	tmp := t.TempDir()
 
 	staleDir := filepath.Join(tmp, "0123456789abcdef0123456789abcdef01234567")
@@ -51,18 +45,18 @@ func TestRunCacheCleanupRemovesStaleHashDir(t *testing.T) {
 		t.Fatalf("write stale file: %v", err)
 	}
 
-	prevBT := settings.BTsets
-	settings.BTsets = &settings.BTSets{
-		UseDisk:           true,
-		TorrentsSavePath:  tmp,
-		RemoveCacheOnDrop: false,
+	deps := cacheCleanupDeps{
+		settingsProvider: staticSettingsProvider{cfg: &settings.BTSets{
+			UseDisk:           true,
+			TorrentsSavePath:  tmp,
+			RemoveCacheOnDrop: false,
+		}},
+		readDir:      os.ReadDir,
+		remove:       os.Remove,
+		listTorrents: func() []*settings.TorrentDB { return nil },
 	}
 
-	t.Cleanup(func() { settings.BTsets = prevBT })
-
-	cleanupListTorrent = func() []*settings.TorrentDB { return nil }
-
-	runCacheCleanup(context.Background())
+	runCacheCleanupWithDeps(context.Background(), deps)
 
 	if _, err := os.Stat(staleDir); !os.IsNotExist(err) {
 		t.Fatalf("expected stale dir removed, stat err=%v", err)
@@ -70,9 +64,6 @@ func TestRunCacheCleanupRemovesStaleHashDir(t *testing.T) {
 }
 
 func TestRunCacheCleanupKeepsActiveHashDir(t *testing.T) {
-	reset := stubCleanupDeps(t)
-	defer reset()
-
 	tmp := t.TempDir()
 	activeHash := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
@@ -81,28 +72,28 @@ func TestRunCacheCleanupKeepsActiveHashDir(t *testing.T) {
 		t.Fatalf("mkdir active dir: %v", err)
 	}
 
-	prevBT := settings.BTsets
-	settings.BTsets = &settings.BTSets{
-		UseDisk:           true,
-		TorrentsSavePath:  tmp,
-		RemoveCacheOnDrop: false,
-	}
-
-	t.Cleanup(func() { settings.BTsets = prevBT })
-
-	cleanupListTorrent = func() []*settings.TorrentDB {
-		return []*settings.TorrentDB{
-			{
-				TorrentSpec: &torrent.TorrentSpec{
-					AddTorrentOpts: torrent.AddTorrentOpts{
-						InfoHash: mustHashFromHex(t, activeHash),
+	deps := cacheCleanupDeps{
+		settingsProvider: staticSettingsProvider{cfg: &settings.BTSets{
+			UseDisk:           true,
+			TorrentsSavePath:  tmp,
+			RemoveCacheOnDrop: false,
+		}},
+		readDir: os.ReadDir,
+		remove:  os.Remove,
+		listTorrents: func() []*settings.TorrentDB {
+			return []*settings.TorrentDB{
+				{
+					TorrentSpec: &torrent.TorrentSpec{
+						AddTorrentOpts: torrent.AddTorrentOpts{
+							InfoHash: mustHashFromHex(t, activeHash),
+						},
 					},
 				},
-			},
-		}
+			}
+		},
 	}
 
-	runCacheCleanup(context.Background())
+	runCacheCleanupWithDeps(context.Background(), deps)
 
 	if _, err := os.Stat(activeDir); err != nil {
 		t.Fatalf("expected active dir kept, stat err=%v", err)
@@ -110,9 +101,6 @@ func TestRunCacheCleanupKeepsActiveHashDir(t *testing.T) {
 }
 
 func TestRunCacheCleanupRespectsContextCancellation(t *testing.T) {
-	reset := stubCleanupDeps(t)
-	defer reset()
-
 	tmp := t.TempDir()
 	dirOne := filepath.Join(tmp, "1111111111111111111111111111111111111111")
 	dirTwo := filepath.Join(tmp, "2222222222222222222222222222222222222222")
@@ -133,26 +121,25 @@ func TestRunCacheCleanupRespectsContextCancellation(t *testing.T) {
 		t.Fatalf("write dirTwo file: %v", err)
 	}
 
-	prevBT := settings.BTsets
-	settings.BTsets = &settings.BTSets{
-		UseDisk:           true,
-		TorrentsSavePath:  tmp,
-		RemoveCacheOnDrop: true,
-	}
-
-	t.Cleanup(func() { settings.BTsets = prevBT })
-
 	ctx, cancel := context.WithCancel(context.Background())
-	cleanupListTorrent = func() []*settings.TorrentDB { return nil }
-	cleanupRemove = func(path string) error {
-		if path == filepath.Join(dirOne, "piece") {
-			cancel()
-		}
+	deps := cacheCleanupDeps{
+		settingsProvider: staticSettingsProvider{cfg: &settings.BTSets{
+			UseDisk:           true,
+			TorrentsSavePath:  tmp,
+			RemoveCacheOnDrop: true,
+		}},
+		readDir:      os.ReadDir,
+		listTorrents: func() []*settings.TorrentDB { return nil },
+		remove: func(path string) error {
+			if path == filepath.Join(dirOne, "piece") {
+				cancel()
+			}
 
-		return os.Remove(path)
+			return os.Remove(path)
+		},
 	}
 
-	runCacheCleanup(ctx)
+	runCacheCleanupWithDeps(ctx, deps)
 
 	if _, err := os.Stat(dirOne); !os.IsNotExist(err) {
 		t.Fatalf("expected first dir removed, stat err=%v", err)
@@ -164,9 +151,6 @@ func TestRunCacheCleanupRespectsContextCancellation(t *testing.T) {
 }
 
 func TestRemoveAllFilesRemovesNestedDirectories(t *testing.T) {
-	reset := stubCleanupDeps(t)
-	defer reset()
-
 	root := filepath.Join(t.TempDir(), "cache")
 
 	nested := filepath.Join(root, "sub", "deep")
@@ -178,7 +162,12 @@ func TestRemoveAllFilesRemovesNestedDirectories(t *testing.T) {
 		t.Fatalf("write nested file: %v", err)
 	}
 
-	if err := removeAllFiles(context.Background(), root); err != nil {
+	deps := cacheCleanupDeps{
+		readDir: os.ReadDir,
+		remove:  os.Remove,
+	}
+
+	if err := removeAllFiles(context.Background(), root, deps); err != nil {
 		t.Fatalf("removeAllFiles returned error: %v", err)
 	}
 
@@ -188,9 +177,6 @@ func TestRemoveAllFilesRemovesNestedDirectories(t *testing.T) {
 }
 
 func TestRemoveAllFilesReturnsContextError(t *testing.T) {
-	reset := stubCleanupDeps(t)
-	defer reset()
-
 	root := filepath.Join(t.TempDir(), "cache")
 	if err := os.Mkdir(root, 0o755); err != nil {
 		t.Fatalf("mkdir root: %v", err)
@@ -203,23 +189,14 @@ func TestRemoveAllFilesReturnsContextError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := removeAllFiles(ctx, root)
+	deps := cacheCleanupDeps{
+		readDir: os.ReadDir,
+		remove:  os.Remove,
+	}
+
+	err := removeAllFiles(ctx, root, deps)
 	if err == nil {
 		t.Fatal("expected context canceled error")
-	}
-}
-
-func stubCleanupDeps(t *testing.T) func() {
-	t.Helper()
-
-	origReadDir := cleanupReadDir
-	origRemove := cleanupRemove
-	origList := cleanupListTorrent
-
-	return func() {
-		cleanupReadDir = origReadDir
-		cleanupRemove = origRemove
-		cleanupListTorrent = origList
 	}
 }
 
@@ -243,31 +220,44 @@ func mustHashFromHex(t *testing.T, s string) metainfo.Hash {
 }
 
 func TestRunCacheCleanupHandlesReadDirError(t *testing.T) {
-	reset := stubCleanupDeps(t)
-	defer reset()
-
-	prevBT := settings.BTsets
-	settings.BTsets = &settings.BTSets{
-		UseDisk:           true,
-		TorrentsSavePath:  "/non-existent-dir",
-		RemoveCacheOnDrop: true,
+	deps := cacheCleanupDeps{
+		settingsProvider: staticSettingsProvider{cfg: &settings.BTSets{
+			UseDisk:           true,
+			TorrentsSavePath:  "/non-existent-dir",
+			RemoveCacheOnDrop: true,
+		}},
+		readDir:      func(_ string) ([]os.DirEntry, error) { return nil, os.ErrPermission },
+		remove:       os.Remove,
+		listTorrents: func() []*settings.TorrentDB { return nil },
 	}
-
-	t.Cleanup(func() { settings.BTsets = prevBT })
-
-	cleanupReadDir = func(_ string) ([]os.DirEntry, error) {
-		return nil, os.ErrPermission
-	}
-	cleanupListTorrent = func() []*settings.TorrentDB { return nil }
 
 	// Should not panic and should just return.
-	runCacheCleanup(context.Background())
+	runCacheCleanupWithDeps(context.Background(), deps)
+}
+
+type staticSettingsProvider struct {
+	cfg *settings.BTSets
+}
+
+func (p staticSettingsProvider) Get() *settings.BTSets {
+	return p.cfg
+}
+
+func (staticSettingsProvider) Set(*settings.BTSets) {}
+
+func (staticSettingsProvider) ReadOnly() bool {
+	return true
+}
+
+func (staticSettingsProvider) GetStaticConfig() settings.StaticConfig {
+	return settings.StaticConfig{}
+}
+
+func (staticSettingsProvider) GetStoragePreferences() map[string]any {
+	return map[string]any{}
 }
 
 func TestRunCacheCleanupSkipsNonHashEntries(t *testing.T) {
-	reset := stubCleanupDeps(t)
-	defer reset()
-
 	tmp := t.TempDir()
 	if err := os.Mkdir(filepath.Join(tmp, "short"), 0o755); err != nil {
 		t.Fatalf("mkdir short: %v", err)
@@ -277,18 +267,18 @@ func TestRunCacheCleanupSkipsNonHashEntries(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	prevBT := settings.BTsets
-	settings.BTsets = &settings.BTSets{
-		UseDisk:           true,
-		TorrentsSavePath:  tmp,
-		RemoveCacheOnDrop: true,
+	deps := cacheCleanupDeps{
+		settingsProvider: staticSettingsProvider{cfg: &settings.BTSets{
+			UseDisk:           true,
+			TorrentsSavePath:  tmp,
+			RemoveCacheOnDrop: true,
+		}},
+		readDir:      os.ReadDir,
+		remove:       os.Remove,
+		listTorrents: func() []*settings.TorrentDB { return nil },
 	}
 
-	t.Cleanup(func() { settings.BTsets = prevBT })
-
-	cleanupListTorrent = func() []*settings.TorrentDB { return nil }
-
-	runCacheCleanup(context.Background())
+	runCacheCleanupWithDeps(context.Background(), deps)
 
 	if _, err := os.Stat(filepath.Join(tmp, "short")); err != nil {
 		t.Fatalf("expected short dir untouched, stat err=%v", err)
@@ -300,13 +290,15 @@ func TestRunCacheCleanupSkipsNonHashEntries(t *testing.T) {
 }
 
 func TestRemoveAllFilesNotExistIsNoop(t *testing.T) {
-	reset := stubCleanupDeps(t)
-	defer reset()
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	err := removeAllFiles(ctx, filepath.Join(t.TempDir(), "missing"))
+	deps := cacheCleanupDeps{
+		readDir: os.ReadDir,
+		remove:  os.Remove,
+	}
+
+	err := removeAllFiles(ctx, filepath.Join(t.TempDir(), "missing"), deps)
 	if err != nil {
 		t.Fatalf("expected nil error for missing path, got %v", err)
 	}

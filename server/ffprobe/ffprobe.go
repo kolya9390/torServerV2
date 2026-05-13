@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"server/log"
-
 	"gopkg.in/vansante/go-ffprobe.v2"
 )
 
 var binFile = "ffprobe"
+
+const probeTimeout = 30 * time.Second
 
 func init() {
 	path, err := exec.LookPath("ffprobe")
@@ -36,28 +36,19 @@ func Exists() bool {
 }
 
 func ProbeURL(link string) (*ffprobe.ProbeData, error) {
-	data, err := ffprobe.ProbeURL(getCtx(), link)
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+
+	data, err := ffprobe.ProbeURL(ctx, link)
 
 	return data, err
 }
 
 func ProbeReader(reader io.Reader) (*ffprobe.ProbeData, error) {
-	data, err := ffprobe.ProbeReader(getCtx(), reader)
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+
+	data, err := ffprobe.ProbeReader(ctx, reader)
 
 	return data, err
-}
-
-func getCtx() context.Context {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.TLogln("ffprobe context goroutine panic recovered", "panic", r)
-			}
-		}()
-		time.Sleep(5 * time.Minute)
-		cancel()
-	}()
-
-	return ctx
 }

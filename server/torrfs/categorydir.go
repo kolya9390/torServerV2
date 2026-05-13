@@ -5,17 +5,21 @@ import (
 	"time"
 
 	"server/settings"
-
 	"server/torr"
 )
 
 type CategoryDir struct {
-	info fs.FileInfo
+	info     fs.FileInfo
+	provider settings.SettingsProvider
 }
 
-func NewCategoryDir(category string) *CategoryDir {
+func NewCategoryDir(category string, provider settings.SettingsProvider) *CategoryDir {
 	if category == "" {
 		category = "other"
+	}
+
+	if provider == nil {
+		provider = settings.NewNoopSettingsProvider()
 	}
 
 	d := &CategoryDir{
@@ -26,6 +30,7 @@ func NewCategoryDir(category string) *CategoryDir {
 			mtime: time.Unix(477033666, 0),
 			isDir: true,
 		},
+		provider: provider,
 	}
 
 	return d
@@ -38,18 +43,18 @@ func (d *CategoryDir) Stat() (fs.FileInfo, error) {
 func (d *CategoryDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	nodes := []fs.DirEntry{}
 
-	torrs := torr.ListTorrent()
+	torrs := getCatalog().ListTorrents()
 	for _, t := range torrs {
 		if t.Category == "" {
 			t.Category = "other"
 		}
 
 		if t.Category == d.Name() {
-			if settings.GetSettings().ShowFSActiveTorr && !t.GotInfo() {
+			if d.provider.Get().DLNAConfig().ShowFSActiveTorr && !t.GotInfo() {
 				continue
 			}
 
-			td := NewTorrDir(nil, t.Title, t)
+			td := NewTorrDir(nil, t.Title, t, d.provider)
 			nodes = append(nodes, td)
 		}
 	}

@@ -19,12 +19,16 @@ var listenTCP = net.Listen
 // PrepareNetwork validates web network settings and resolves final runtime ports.
 // It mutates args/BT settings with defaults for compatibility with existing flow.
 func PrepareNetwork(args *settings.ExecArgs) error {
+	return PrepareNetworkWithProvider(args, settings.DefaultSettingsProvider)
+}
+
+func PrepareNetworkWithProvider(args *settings.ExecArgs, provider settings.SettingsProvider) error {
 	if args == nil {
 		return errors.New("exec args are not initialized")
 	}
 
 	if args.Ssl {
-		if err := prepareSSL(args); err != nil {
+		if err := prepareSSL(args, provider); err != nil {
 			return err
 		}
 	}
@@ -40,9 +44,16 @@ func PrepareNetwork(args *settings.ExecArgs) error {
 	return nil
 }
 
-func prepareSSL(args *settings.ExecArgs) error {
+func prepareSSL(args *settings.ExecArgs, provider settings.SettingsProvider) error {
+	if provider == nil {
+		provider = settings.NewNoopSettingsProvider()
+	}
+
+	curSets := provider.Get()
+	curTLS := curSets.TLSConfig()
+
 	if args.SslPort == "" {
-		dbSSLPort := strconv.Itoa(settings.GetSettings().SslPort)
+		dbSSLPort := strconv.Itoa(curTLS.Port)
 		if dbSSLPort != "0" {
 			args.SslPort = dbSSLPort
 		} else {
@@ -51,7 +62,7 @@ func prepareSSL(args *settings.ExecArgs) error {
 	} else {
 		dbSSLPort, err := strconv.Atoi(args.SslPort)
 		if err == nil {
-			settings.GetSettings().SslPort = dbSSLPort
+			curSets.SslPort = dbSSLPort
 		}
 	}
 

@@ -16,11 +16,13 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
+	"server/dlna"
 	"server/log"
 	"server/metrics"
 	"server/modules"
 	"server/settings"
 	"server/torr"
+	"server/torrfs"
 	"server/torrfs/webdav"
 	"server/web/api"
 	"server/web/auth"
@@ -28,10 +30,15 @@ import (
 	"server/web/webinfra"
 )
 
-var (
-	defaultServerMu sync.Mutex
-	defaultServer   = NewServer()
-)
+type ServerDeps struct {
+	BTServer         *torr.BTServer
+	TorrentDBStore   torr.TorrentDBStore
+	SettingsProvider settings.SettingsProvider
+	ArgsProvider     settings.ArgsProvider
+	RuntimeState     func() settings.RuntimeState
+	CORSService      webinfra.CORSService
+	SSLService       webinfra.SSLService
+}
 
 type Server struct {
 	bts        *torr.BTServer
@@ -41,33 +48,84 @@ type Server struct {
 	httpsSrv   *http.Server
 	corsSvc    webinfra.CORSService
 	sslSvc     webinfra.SSLService
+	settings   settings.SettingsProvider
+	args       settings.ArgsProvider
+	runtime    func() settings.RuntimeState
 }
 
-func NewServer() *Server {
+func NewServerWithDeps(deps ServerDeps) *Server {
+	if deps.BTServer == nil {
+		deps.BTServer = torr.NewBTSWithProvidersRuntimeAndDB(deps.SettingsProvider, deps.ArgsProvider, deps.RuntimeState, deps.TorrentDBStore)
+	}
+	if deps.RuntimeState == nil {
+		deps.RuntimeState = func() settings.RuntimeState { return settings.RuntimeState{} }
+	}
+
 	return &Server{
-		bts:      torr.NewBTS(),
+		bts:      deps.BTServer,
 		waitChan: make(chan error, 2),
-		corsSvc:  webinfra.NewCORSService(),
-		sslSvc:   webinfra.NewSSLService(),
+		corsSvc:  deps.CORSService,
+		sslSvc:   deps.SSLService,
+		settings: deps.SettingsProvider,
+		args:     deps.ArgsProvider,
+		runtime:  deps.RuntimeState,
 	}
 }
 
-func getDefaultServer() *Server {
-	defaultServerMu.Lock()
-	defer defaultServerMu.Unlock()
-
-	if defaultServer == nil {
-		defaultServer = NewServer()
+func (s *Server) currentSettings() *settings.BTSets {
+	if s != nil && s.settings != nil {
+		return s.settings.Get()
 	}
 
-	return defaultServer
+	return nil
 }
 
-func Start() error {
-	return getDefaultServer().Start()
+func (s *Server) currentArgs() *settings.ExecArgs {
+	if s != nil && s.args != nil {
+		return s.args.Get()
+	}
+
+	return nil
+}
+
+func (s *Server) ensureInfraServices() {
+	if s.corsSvc == nil {
+		s.corsSvc = webinfra.NewCORSServiceWithProviders(s.args)
+	}
+
+	if s.sslSvc == nil {
+		s.sslSvc = webinfra.NewSSLServiceWithProvidersAndRuntime(s.settings, s.args, s.currentRuntimeState)
+	}
+}
+
+func (s *Server) currentRuntimeState() settings.RuntimeState {
+	if s != nil && s.runtime != nil {
+		return s.runtime()
+	}
+
+	return settings.RuntimeState{}
+}
+
+func (s *Server) debugEnabled() bool {
+	curSets := s.currentSettings()
+	if curSets == nil {
+		return false
+	}
+
+	return curSets.DebugConfig().EnableDebug
+}
+
+func (s *Server) BTServer() *torr.BTServer {
+	if s == nil {
+		return nil
+	}
+
+	return s.bts
 }
 
 func (s *Server) Start() error {
+	s.ensureInfraServices()
+
 	log.TLogln("Start TorrServer 2.0.0")
 
 	ips := webinfra.GetLocalIps()
@@ -79,16 +137,23 @@ func (s *Server) Start() error {
 		return fmt.Errorf("BTS.Connect() error: %w", err)
 	}
 
+	catalog := torr.NewTorrentServiceWithBT(s.bts)
+	dlna.SetCatalog(catalog)
+	torrfs.SetCatalog(catalog)
+
 	// Initialize runtime metrics
-	metrics.Init()
+	metrics.InitWithDeps(metrics.Deps{
+		SettingsProvider: s.settings,
+		TorrentBackend:   torr.NewTorrentServiceWithBT(s.bts),
+	})
 
 	route := setupMiddleware(s)
-	registerDebugRoutes(route)
+	s.registerDebugRoutes(route)
 
 	// Swagger UI (accessible at /swagger/index.html)
 	route.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	registerAppRoutes(route)
+	s.registerAppRoutes(route)
 
 	if err := s.startHTTPSServer(route, ips); err != nil {
 		return err
@@ -113,14 +178,14 @@ func setupMiddleware(s *Server) *gin.Engine {
 	route.Use(
 		log.RequestIDMiddleware(),
 		log.WebLogger(),
-		blocker.Blocker(),
+		blocker.BlockerWithRuntimeState(s.currentRuntimeState),
 		gin.Recovery(),
 		cors.New(corsCfg),
 		location.Default(),
 		securityHeadersMiddleware(),
 		api.ErrorResponder(),
 	)
-	auth.InitAuth()
+	auth.InitAuthWithRuntimeState(s.currentRuntimeState)
 	auth.SetupAuth(route)
 
 	return route
@@ -136,11 +201,16 @@ func rootHandler(c *gin.Context) {
 	})
 }
 
-func registerDebugRoutes(route *gin.Engine) {
+func (s *Server) registerDebugRoutes(route *gin.Engine) {
 	route.GET("/", rootHandler)
 	route.GET("/echo", echo)
 	route.GET("/healthz", healthz)
-	route.GET("/readyz", readyz)
+	route.GET("/readyz", s.readyz)
+
+	if !s.debugEnabled() {
+		return
+	}
+
 	route.GET("/debug/vars", expvarHandler())
 	route.GET("/debug/pprof/", pprofIndex())
 	route.GET("/debug/pprof/profile", pprofProfile())
@@ -151,29 +221,33 @@ func registerDebugRoutes(route *gin.Engine) {
 	route.GET("/debug/pprof/block", pprofBlock())
 	route.GET("/debug/pprof/mutex", pprofMutex())
 	route.GET("/debug/pprof/threadcreate", pprofThreadcreate())
+	route.GET("/debug/pprof/heap", heapHandler())
+	route.GET("/debug/pprof/goroutine", goroutinesHandler())
 	route.GET("/debug/heap", heapHandler())
 	route.GET("/debug/goroutines", goroutinesHandler())
 }
 
 // registerAppRoutes registers API routes and optional WebDAV/DLNA/FUSE modules.
-func registerAppRoutes(route *gin.Engine) {
-	api.SetupRoute(route)
+func (s *Server) registerAppRoutes(route *gin.Engine) {
+	api.SetupRouteWithRuntimeState(route, s.currentRuntimeState)
 
-	args := settings.GetArgs()
+	args := s.currentArgs()
 	if args != nil && args.WebDAV {
 		webdav.MountWebDAV(route)
 	}
 
-	if settings.GetSettings().EnableDLNA {
-		modules.LogPeripheralFailure("dlna", modules.RestartDLNA(true))
+	dlnaCfg := s.currentSettings().DLNAConfig()
+	if dlnaCfg.Enabled {
+		modules.LogPeripheralFailure("dlna", modules.RestartDLNAWithProviders(true, s.settings, s.args))
 	}
 
-	modules.LogPeripheralFailure("fuse", modules.StartFUSE())
+	modules.LogPeripheralFailure("fuse", modules.StartFUSEWithProviders(s.settings, s.args))
 }
 
 // startHTTPSServer starts the HTTPS server if SSL is enabled.
 func (s *Server) startHTTPSServer(route *gin.Engine, ips []string) error {
-	if !settings.Ssl {
+	args := s.currentArgs()
+	if args == nil || !args.Ssl {
 		return nil
 	}
 
@@ -185,7 +259,7 @@ func (s *Server) startHTTPSServer(route *gin.Engine, ips []string) error {
 		return fmt.Errorf("SSL verify error: %w", err)
 	}
 
-	httpsAddr := settings.IP + ":" + settings.SslPort
+	httpsAddr := args.IP + ":" + args.SslPort
 	httpsSrv := s.sslSvc.Server(httpsAddr, route)
 
 	s.mu.Lock()
@@ -200,7 +274,8 @@ func (s *Server) startHTTPSServer(route *gin.Engine, ips []string) error {
 		}()
 		log.TLogln("Start https server at", httpsAddr)
 
-		err := httpsSrv.ListenAndServeTLS(settings.GetSettings().SslCert, settings.GetSettings().SslKey)
+		tlsCfg := s.currentSettings().TLSConfig()
+		err := httpsSrv.ListenAndServeTLS(tlsCfg.Cert, tlsCfg.Key)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.waitChan <- err
 
@@ -214,7 +289,12 @@ func (s *Server) startHTTPSServer(route *gin.Engine, ips []string) error {
 
 // startHTTPServer starts the HTTP server on the configured address.
 func (s *Server) startHTTPServer(route *gin.Engine) {
-	httpAddr := settings.IP + ":" + settings.Port
+	args := s.currentArgs()
+	if args == nil {
+		args = &settings.ExecArgs{}
+	}
+
+	httpAddr := args.IP + ":" + args.Port
 	httpSrv := &http.Server{
 		Addr:         httpAddr,
 		Handler:      route,
@@ -245,10 +325,6 @@ func (s *Server) startHTTPServer(route *gin.Engine) {
 	}()
 }
 
-func Wait() error {
-	return getDefaultServer().Wait()
-}
-
 func (s *Server) Wait() error {
 	err := <-s.waitChan
 	if err != nil && errors.Is(err, http.ErrServerClosed) {
@@ -256,10 +332,6 @@ func (s *Server) Wait() error {
 	}
 
 	return err
-}
-
-func Stop() {
-	getDefaultServer().Stop()
 }
 
 func (s *Server) Stop() {
@@ -302,8 +374,17 @@ func healthz(c *gin.Context) {
 	c.String(200, "OK")
 }
 
-func readyz(c *gin.Context) {
-	s := getDefaultServer()
+func (s *Server) readyz(c *gin.Context) {
+	if s == nil {
+		c.JSON(200, gin.H{
+			"status":  "ready",
+			"http":    false,
+			"torrent": false,
+		})
+
+		return
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

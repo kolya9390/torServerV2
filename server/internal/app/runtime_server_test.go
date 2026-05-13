@@ -58,6 +58,7 @@ func TestServerRuntimeStartPropagatesInitError(t *testing.T) {
 
 	initErr := errors.New("init failed")
 	deps := serverRuntimeDeps{
+		argsProvider: settings.DefaultArgsProvider,
 		initSettings: func(readOnly, searchWA bool) error { return initErr },
 		setShutdown:  func(func()) {},
 	}
@@ -78,8 +79,9 @@ func TestServerRuntimeStartPropagatesPrepareError(t *testing.T) {
 
 	prepareErr := errors.New("prepare failed")
 	deps := serverRuntimeDeps{
+		argsProvider:   settings.DefaultArgsProvider,
 		initSettings:   func(readOnly, searchWA bool) error { return nil },
-		prepareStartup: func(_ *settings.ExecArgs) error { return prepareErr },
+		prepareStartup: func(_ *settings.ExecArgs, _ settings.SettingsProvider) error { return prepareErr },
 		setShutdown:    func(func()) {},
 	}
 	rt := newServerRuntime(deps, nil)
@@ -92,8 +94,7 @@ func TestServerRuntimeStartPropagatesPrepareError(t *testing.T) {
 
 func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *testing.T) {
 	prevArgs := settings.GetArgs()
-	prevBT := settings.BTsets
-	settings.BTsets = &settings.BTSets{}
+	restore := settings.ReplaceSettingsForTests(&settings.BTSets{})
 	args := &settings.ExecArgs{
 		Port:     "18090",
 		Ssl:      true,
@@ -106,15 +107,17 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 	settings.SetArgs(args)
 	t.Cleanup(func() {
 		settings.SetArgs(prevArgs)
-		settings.BTsets = prevBT
+		restore()
 	})
 
 	webErr := errors.New("web start failed")
 	web := &fakeWebRuntime{startErr: webErr}
 	shutdownHookSet := false
 	deps := serverRuntimeDeps{
+		argsProvider:   settings.DefaultArgsProvider,
+		settingsSource: settings.DefaultSettingsProvider,
 		initSettings:   func(readOnly, searchWA bool) error { return nil },
-		prepareStartup: func(_ *settings.ExecArgs) error { return nil },
+		prepareStartup: func(_ *settings.ExecArgs, _ settings.SettingsProvider) error { return nil },
 		newWebServer:   func() webRuntime { return web },
 		setShutdown: func(fn func()) {
 			shutdownHookSet = fn != nil
@@ -131,16 +134,18 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 		t.Fatal("expected shutdown hook to be set")
 	}
 
-	if settings.Port != "18090" || settings.SslPort != "18443" || settings.IP != "127.0.0.1" {
-		t.Fatalf("runtime settings were not applied: port=%s ssl=%s ip=%s", settings.Port, settings.SslPort, settings.IP)
+	runtime := settings.GetRuntimeState()
+	if runtime.Port != "18090" || runtime.SslPort != "18443" || runtime.IP != "127.0.0.1" {
+		t.Fatalf("runtime settings were not applied: port=%s ssl=%s ip=%s", runtime.Port, runtime.SslPort, runtime.IP)
 	}
 
-	if !settings.HTTPAuth {
+	if !runtime.HTTPAuth {
 		t.Fatal("expected HttpAuth to be enabled from args")
 	}
 
-	if settings.BTsets.SslCert != "cert.pem" || settings.BTsets.SslKey != "key.pem" {
-		t.Fatalf("expected ssl cert/key to be applied, got cert=%q key=%q", settings.BTsets.SslCert, settings.BTsets.SslKey)
+	curSets := settings.DefaultSettingsProvider.Get()
+	if curSets.SslCert != "cert.pem" || curSets.SslKey != "key.pem" {
+		t.Fatalf("expected ssl cert/key to be applied, got cert=%q key=%q", curSets.SslCert, curSets.SslKey)
 	}
 
 	if !web.started {

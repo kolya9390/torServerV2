@@ -5,6 +5,7 @@ import (
 
 	"server/dlna"
 	"server/log"
+	"server/settings"
 	"server/torrfs/fuse"
 )
 
@@ -14,6 +15,10 @@ var (
 )
 
 func RestartDLNA(enable bool) error {
+	return RestartDLNAWithProviders(enable, nil, nil)
+}
+
+func RestartDLNAWithProviders(enable bool, provider settings.SettingsProvider, argsProvider settings.ArgsProvider) error {
 	dlnaMu.Lock()
 	defer dlnaMu.Unlock()
 
@@ -23,7 +28,9 @@ func RestartDLNA(enable bool) error {
 		return nil
 	}
 
-	return startWithPolicy("dlna", dlna.Start, DefaultPolicy())
+	return startWithPolicy("dlna", func() error {
+		return dlna.StartWithProviders(provider, argsProvider)
+	}, DefaultPolicy())
 }
 
 func StopDLNA() {
@@ -33,10 +40,16 @@ func StopDLNA() {
 }
 
 func StartFUSE() error {
+	return StartFUSEWithProviders(nil, nil)
+}
+
+func StartFUSEWithProviders(provider settings.SettingsProvider, argsProvider settings.ArgsProvider) error {
 	fuseMu.Lock()
 	defer fuseMu.Unlock()
 
-	return startWithPolicy("fuse", fuse.FuseAutoMount, DefaultPolicy())
+	return startWithPolicy("fuse", func() error {
+		return fuse.FuseAutoMountWithProviders(provider, argsProvider)
+	}, DefaultPolicy())
 }
 
 func StopFUSE() {

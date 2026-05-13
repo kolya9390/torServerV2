@@ -20,7 +20,7 @@ func setupTestSettings() {
 		ResponsiveMode:           true,
 		RetrackersMode:           1,
 	}
-	settings.BTsets = sets
+	settings.DefaultSettingsProvider.Set(sets)
 	// Initialize Args to avoid nil pointer in configureProxy
 	settings.Args = &settings.ExecArgs{
 		ProxyURL:  "",
@@ -34,8 +34,8 @@ func TestNewBTS(t *testing.T) {
 		t.Fatal("NewBTS() returned nil")
 	}
 
-	if bts.torrents == nil {
-		t.Fatal("NewBTS() torrents not initialized")
+	if bts.registry == nil {
+		t.Fatal("NewBTS() registry not initialized")
 	}
 }
 
@@ -165,5 +165,72 @@ func TestTorrentStateTransitions(t *testing.T) {
 
 	if torr.Stat != state.TorrentAdded {
 		t.Errorf("Torrent stat = %v, want %v", torr.Stat, state.TorrentAdded)
+	}
+}
+
+func TestPeerWatermarks(t *testing.T) {
+	tests := []struct {
+		name      string
+		effective int
+		wantLow   int
+		wantHigh  int
+	}{
+		{name: "defaults", effective: 0, wantLow: 50, wantHigh: 500},
+		{name: "low connections floor", effective: 8, wantLow: 50, wantHigh: 500},
+		{name: "medium", effective: 25, wantLow: 50, wantHigh: 500},
+		{name: "high", effective: 80, wantLow: 160, wantHigh: 800},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			low, high := peerWatermarks(tt.effective)
+			if low != tt.wantLow || high != tt.wantHigh {
+				t.Fatalf("peerWatermarks(%d) = (%d, %d), want (%d, %d)", tt.effective, low, high, tt.wantLow, tt.wantHigh)
+			}
+
+			if high < low+50 {
+				t.Fatalf("high watermark must provide headroom: low=%d high=%d effective=%d", low, high, tt.effective)
+			}
+		})
+	}
+}
+
+func TestEffectiveEstablishedConns(t *testing.T) {
+	tests := []struct {
+		name         string
+		userLimit    int
+		defaultConns int
+		want         int
+	}{
+		{name: "uses library default when unset", userLimit: 0, defaultConns: 50, want: 50},
+		{name: "floors low user limit to default", userLimit: 25, defaultConns: 50, want: 50},
+		{name: "keeps higher user limit", userLimit: 80, defaultConns: 50, want: 80},
+		{name: "fallback default when invalid", userLimit: 0, defaultConns: 0, want: 50},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := effectiveEstablishedConns(tt.userLimit, tt.defaultConns); got != tt.want {
+				t.Fatalf("effectiveEstablishedConns(%d, %d) = %d, want %d", tt.userLimit, tt.defaultConns, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestActivePlaybackTorrents(t *testing.T) {
+	t.Parallel()
+
+	bts := NewBTS()
+	bts.registry.LoadOrStore([20]byte{1}, &Torrent{})
+	bts.registry.LoadOrStore([20]byte{2}, &Torrent{})
+	bts.registry.LoadOrStore([20]byte{3}, nil)
+
+	if got, want := bts.ActivePlaybackTorrents(), 1; got != want {
+		t.Fatalf("ActivePlaybackTorrents() = %d, want %d", got, want)
+	}
+
+	empty := NewBTS()
+	if got, want := empty.ActivePlaybackTorrents(), 1; got != want {
+		t.Fatalf("ActivePlaybackTorrents on empty server = %d, want %d", got, want)
 	}
 }

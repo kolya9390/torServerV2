@@ -145,9 +145,8 @@ func TestStreamStatNotFound(t *testing.T) {
 		Torrents: torrentsSvc,
 		Streams:  streamSvc,
 	}
-	SetServices(svc)
-
-	defer SetServices(nil)
+	restore := ReplaceServicesForTests(svc)
+	defer restore()
 
 	r := gin.New()
 	r.GET("/streams/stat", streamStat)
@@ -169,9 +168,8 @@ func TestStreamServiceParseLinkError(t *testing.T) {
 			parseLinkErr: ErrStreamLinkEmpty,
 		},
 	}
-	SetServices(svc)
-
-	defer SetServices(nil)
+	restore := ReplaceServicesForTests(svc)
+	defer restore()
 
 	r := gin.New()
 	r.GET("/streams/play", streamPlay)
@@ -245,9 +243,8 @@ func TestStreamServiceParseLink(t *testing.T) {
 			parseLinkErr: ErrStreamLinkEmpty,
 		},
 	}
-	SetServices(svc)
-
-	defer SetServices(nil)
+	restore := ReplaceServicesForTests(svc)
+	defer restore()
 
 	r := gin.New()
 	r.GET("/streams/play", streamPlay)

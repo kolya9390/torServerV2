@@ -2,8 +2,8 @@ package torrstor
 
 import (
 	"context"
-	"sync"
 
+	"server/settings"
 	"server/torr/storage"
 
 	"github.com/anacrolix/torrent/metainfo"
@@ -13,65 +13,69 @@ import (
 type Storage struct {
 	storage.Storage
 
-	caches   map[metainfo.Hash]*Cache
-	capacity int64
-	mu       sync.Mutex
+	manager *storageCacheManager
 }
 
 func NewStorage(capacity int64) *Storage {
-	stor := new(Storage)
-	stor.capacity = capacity
-	stor.caches = make(map[metainfo.Hash]*Cache)
+	return NewStorageWithProvider(capacity, settings.DefaultSettingsProvider)
+}
+
+func NewStorageWithProvider(capacity int64, provider settings.SettingsProvider) *Storage {
+	if provider == nil {
+		provider = settings.NewNoopSettingsProvider()
+	}
+
+	stor := &Storage{
+		manager: newStorageCacheManager(capacity, provider),
+	}
 
 	return stor
 }
 
-func (s *Storage) OpenTorrent(ctx context.Context, info *metainfo.Info, infoHash metainfo.Hash) (ts.TorrentImpl, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ch := NewCache(s.capacity, s)
-	ch.Init(info, infoHash)
-	s.caches[infoHash] = ch
+func (s *Storage) currentSettings() *settings.BTSets {
+	if s == nil || s.manager == nil {
+		return nil
+	}
 
-	return ts.TorrentImpl{
-		Piece: ch.Piece,
-		Close: ch.Close,
-	}, nil
+	return s.manager.currentSettings()
+}
+
+func (s *Storage) OpenTorrent(ctx context.Context, info *metainfo.Info, infoHash metainfo.Hash) (ts.TorrentImpl, error) {
+	return s.manager.OpenTorrent(ctx, info, infoHash)
 }
 
 func (s *Storage) CloseHash(hash metainfo.Hash) {
-	if s.caches == nil {
-		return
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if ch, ok := s.caches[hash]; ok {
-		_ = ch.Close()
-
-		delete(s.caches, hash)
+	if s != nil && s.manager != nil {
+		s.manager.CloseHash(hash)
 	}
 }
 
 func (s *Storage) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for _, ch := range s.caches {
-		_ = ch.Close()
+	if s == nil || s.manager == nil {
+		return nil
 	}
 
-	return nil
+	return s.manager.Close()
 }
 
 func (s *Storage) GetCache(hash metainfo.Hash) *Cache {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if cache, ok := s.caches[hash]; ok {
-		return cache
+	if s == nil || s.manager == nil {
+		return nil
 	}
 
-	return nil
+	return s.manager.GetCache(hash)
+}
+
+func (s *Storage) unregisterCache(hash metainfo.Hash) {
+	if s != nil && s.manager != nil {
+		s.manager.unregisterCache(hash)
+	}
+}
+
+func (s *Storage) cacheCount() int {
+	if s == nil || s.manager == nil {
+		return 0
+	}
+
+	return s.manager.cacheCount()
 }

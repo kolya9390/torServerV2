@@ -85,7 +85,15 @@ func loadTorrentFromBucket(hdb *bolt.Bucket, hash string) *torrentBackupDB {
 // MigrateTorrents migrates torrents from torrserver.db to config.db.
 // Also migrates Category and Data fields if they exist in the old DB.
 func MigrateTorrent() {
-	srcPath := filepath.Join(Path, "torrserver.db")
+	MigrateTorrentAtPath(currentRuntimePath())
+}
+
+func MigrateTorrentAtPath(runtimePath string) {
+	if runtimePath == "" {
+		runtimePath = "."
+	}
+
+	srcPath := filepath.Join(runtimePath, "torrserver.db")
 	if _, err := os.Lstat(srcPath); os.IsNotExist(err) {
 		return
 	}

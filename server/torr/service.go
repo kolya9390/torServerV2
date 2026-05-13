@@ -1,9 +1,16 @@
 package torr
 
 import (
+	"errors"
+
 	"github.com/anacrolix/torrent"
 
 	"server/torr/storage"
+)
+
+var (
+	// ErrRuntimeUnavailable indicates that torrent runtime services are not bound yet.
+	ErrRuntimeUnavailable = errors.New("torrent runtime is unavailable")
 )
 
 // TorrentService defines the interface for torrent management operations.
@@ -27,8 +34,8 @@ type TorrentService interface {
 	// DropTorrent closes a torrent without saving to DB.
 	DropTorrent(hash string)
 
-	// GetTorrentDB returns torrent metadata from database.
-	GetTorrentDB(hash string) *Torrent
+	// SaveTorrentDB persists torrent metadata in the backing store.
+	SaveTorrentDB(tor *Torrent)
 
 	// LoadTorrent loads a torrent from database and starts it.
 	LoadTorrent(tor *Torrent) *Torrent

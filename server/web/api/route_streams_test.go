@@ -5,13 +5,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	sets "server/settings"
+
 	"github.com/gin-gonic/gin"
 )
 
 func TestExplicitStreamsRoutesRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	SetupRoute(r)
+	SetupRouteWithRuntimeState(r, func() sets.RuntimeState { return sets.RuntimeState{} })
 
 	cases := []string{
 		"/streams/stat",
