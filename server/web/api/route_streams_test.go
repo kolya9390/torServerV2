@@ -13,7 +13,7 @@ import (
 func TestExplicitStreamsRoutesRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	SetupRouteWithRuntimeState(r, func() sets.RuntimeState { return sets.RuntimeState{} })
+	SetupRouteWithServices(r, func() sets.RuntimeState { return sets.RuntimeState{} }, newAPIServicesFixture(t, nil))
 
 	cases := []string{
 		"/streams/stat",

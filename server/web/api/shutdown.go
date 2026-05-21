@@ -19,7 +19,7 @@ import (
 // @Success		200
 // @Router			/shutdown [get].
 func shutdown(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 	reasonStr := strings.ReplaceAll(c.Param("reason"), "/", "")
 
 	if svc.Settings.ReadOnly() && reasonStr == "" {
@@ -47,6 +47,6 @@ func shutdown(c *gin.Context) {
 			}
 		}()
 		time.Sleep(time.Second)
-		getServices().System.Shutdown()
+		svc.System.Shutdown()
 	}()
 }

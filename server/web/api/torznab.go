@@ -23,7 +23,7 @@ import (
 //	@Success		200	{array}	torznab.TorrentDetails	"Torznab torrent search result(s)"
 //	@Router			/torznab/search [get]
 func torznabSearch(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 	if !svc.Search.EnableTorznabSearch() {
 		c.JSON(http.StatusBadRequest, []string{})
 
@@ -74,7 +74,7 @@ func torznabTest(c *gin.Context) {
 		return
 	}
 
-	if err := getServices().Search.TorznabTest(req.Host, req.Key); err != nil {
+	if err := servicesFromContext(c).Search.TorznabTest(req.Host, req.Key); err != nil {
 		c.JSON(200, gin.H{"success": false, "error": err.Error()})
 
 		return

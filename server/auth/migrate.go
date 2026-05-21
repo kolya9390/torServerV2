@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -188,7 +189,7 @@ func GenerateSecureToken(size int) (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-// EnsureDefaultToken generates a token if none exists and logs it once.
+// EnsureDefaultToken generates a token if none exists and logs a safe fingerprint.
 func (ts *TokenStore) EnsureDefaultToken() error {
 	token, err := ts.GetShutdownToken()
 	if err != nil {
@@ -205,10 +206,17 @@ func (ts *TokenStore) EnsureDefaultToken() error {
 		return fmt.Errorf("generate shutdown token: %w", err)
 	}
 
-	log.TLogln("Generated shutdown token:", token)
-	log.TLogln("Store this token securely — it will not be shown again")
+	log.TLogln("Generated shutdown token; fingerprint:", TokenFingerprint(token))
+	log.TLogln("Use the authenticated API or CLI to rotate or set a shutdown token")
 
 	return nil
+}
+
+// TokenFingerprint returns a stable, non-secret identifier for operational logs.
+func TokenFingerprint(token string) string {
+	sum := sha256.Sum256([]byte(token))
+
+	return "sha256:" + hex.EncodeToString(sum[:])[:12]
 }
 
 // readCryptoRandom fills the given slice with cryptographically secure random bytes.

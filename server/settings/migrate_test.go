@@ -155,6 +155,17 @@ func TestMigrateAllWithReportVerificationFailure(t *testing.T) {
 	}
 }
 
+func TestJSONByteArrayCompareDetectsSameLengthDifferentObjects(t *testing.T) {
+	equal, err := isByteArraysEqualJSON([]byte(`{"a":1}`), []byte(`{"b":2}`))
+	if err != nil {
+		t.Fatalf("compare failed: %v", err)
+	}
+
+	if equal {
+		t.Fatal("same-length JSON documents with different fields must not compare equal")
+	}
+}
+
 func TestMigrateAllWithRealBackendsAndDryRun(t *testing.T) {
 	tmp := t.TempDir()
 	restoreRuntime := ReplaceRuntimeStateForTests(RuntimeState{Path: tmp})

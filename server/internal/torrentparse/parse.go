@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
+
+	"server/torrshash"
 )
 
 // ParseLink parses magnet/hash/http/file torrent links into torrent spec.
@@ -42,6 +45,29 @@ func fromMagnet(link string) (*torrent.TorrentSpec, error) {
 	}
 
 	return spec, nil
+}
+
+// ParseTorrsHash parses a torrs:// or base62 TorrServer hash into torrent spec and metadata.
+func ParseTorrsHash(token string) (*torrent.TorrentSpec, *torrshash.TorrsHash, error) {
+	token = strings.TrimPrefix(token, "torrs://")
+
+	th, err := torrshash.Unpack(token)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var trackers [][]string
+	if len(th.Trackers()) > 0 {
+		trackers = [][]string{th.Trackers()}
+	}
+
+	return &torrent.TorrentSpec{
+		AddTorrentOpts: torrent.AddTorrentOpts{
+			InfoHash: metainfo.NewHashFromHex(th.Hash),
+		},
+		Trackers:    trackers,
+		DisplayName: th.Title(),
+	}, th, nil
 }
 
 func fromHTTP(link string) (*torrent.TorrentSpec, error) {
@@ -94,12 +120,17 @@ func fromFile(path string) (*torrent.TorrentSpec, error) {
 	return torrent.TorrentSpecFromMetaInfo(minfo), nil
 }
 
-// ParseFromBytes parses .torrent payload bytes into torrent spec.
-func ParseFromBytes(data []byte) (*torrent.TorrentSpec, error) {
-	minfo, err := metainfo.Load(bytes.NewReader(data))
+// ParseReader parses .torrent payload from a reader into torrent spec.
+func ParseReader(reader io.Reader) (*torrent.TorrentSpec, error) {
+	minfo, err := metainfo.Load(reader)
 	if err != nil {
 		return nil, err
 	}
 
 	return torrent.TorrentSpecFromMetaInfo(minfo), nil
+}
+
+// ParseFromBytes parses .torrent payload bytes into torrent spec.
+func ParseFromBytes(data []byte) (*torrent.TorrentSpec, error) {
+	return ParseReader(bytes.NewReader(data))
 }

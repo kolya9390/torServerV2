@@ -34,6 +34,7 @@ func NewTDBAtPath(path string) TorrServerDB {
 	if path == "" {
 		path = "."
 	}
+
 	db, err := bolt.Open(filepath.Join(path, "config.db"), 0o666, &bolt.Options{Timeout: 5 * time.Second})
 	if err != nil {
 		log.TLogln(err)

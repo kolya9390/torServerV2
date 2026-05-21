@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"server/internal/app/contracts"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,7 +26,7 @@ type cacheReqJS struct {
 //	@Success		200	{object} object	"Cache stats"
 //	@Router			/cache [post]
 func cache(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 
 	var req cacheReqJS
 
@@ -50,17 +51,14 @@ func cache(c *gin.Context) {
 	}
 }
 
-func getCache(svc *APIServices, req cacheReqJS, c *gin.Context) {
+func getCache(svc *contracts.APIServices, req cacheReqJS, c *gin.Context) {
 	if req.Hash == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "is required for action=get"))
 
 		return
 	}
 
-	tor := svc.Torrents.Get(req.Hash)
-
-	if tor != nil {
-		st := tor.CacheState()
+	if st, found := svc.Torrents.CacheStateByHash(req.Hash); found {
 		if st == nil {
 			c.JSON(200, struct{}{})
 		} else {

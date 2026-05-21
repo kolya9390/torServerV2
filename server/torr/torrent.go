@@ -223,6 +223,7 @@ func NewTorrent(spec *torrent.TorrentSpec, bt *BTServer) (*Torrent, error) {
 	}
 
 	sets := bt.currentSettings()
+
 	enableIPv6 := sets.EnableIPv6
 	if bt.config != nil && bt.config.DisableIPv6 {
 		enableIPv6 = false

@@ -24,6 +24,7 @@ func BlockerWithRuntimeState(runtimeState func() settings.RuntimeState) gin.Hand
 	if runtimeState == nil {
 		runtimeState = func() settings.RuntimeState { return settings.RuntimeState{} }
 	}
+
 	pathCfg := runtimeState().PathConfig()
 
 	name := filepath.Join(pathCfg.Path, "bip.txt")

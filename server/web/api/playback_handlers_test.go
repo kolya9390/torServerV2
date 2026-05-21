@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"server/internal/app/contracts"
 	"strings"
 	"testing"
 
@@ -12,36 +13,36 @@ import (
 )
 
 type playbackStub struct {
-	allRes      PlaylistPayload
-	playlistRes PlaylistPayload
+	allRes      contracts.PlaylistPayload
+	playlistRes contracts.PlaylistPayload
 	playlistErr error
 	resolveErr  error
 	m3uResult   string
 }
 
-func (s playbackStub) BuildAllPlaylist(host string, torrents TorrentService) PlaylistPayload {
+func (s playbackStub) BuildAllPlaylist(host string, torrents contracts.TorrentService) contracts.PlaylistPayload {
 	return s.allRes
 }
 
-func (s playbackStub) BuildPlaylistByHash(hash, requestedName string, fromLast bool, host string, torrents TorrentService, viewed ViewedService) (PlaylistPayload, error) {
+func (s playbackStub) BuildPlaylistByHash(hash, requestedName string, fromLast bool, host string, torrents contracts.TorrentService, viewed contracts.ViewedService) (contracts.PlaylistPayload, error) {
 	return s.playlistRes, s.playlistErr
 }
 
-func (s playbackStub) BuildM3UFromStatus(tor *state.TorrentStatus, host string, fromLast bool, viewed ViewedService) string {
+func (s playbackStub) BuildM3UFromStatus(tor *state.TorrentStatus, host string, fromLast bool, viewed contracts.ViewedService) string {
 	return s.m3uResult
 }
 
-func (s playbackStub) ResolvePlay(hash, index string, unauthorized bool, torrents TorrentService) (PlayTarget, error) {
-	return PlayTarget{}, s.resolveErr
+func (s playbackStub) ResolvePlay(hash, index string, unauthorized bool, torrents contracts.TorrentService) (contracts.PlayTarget, error) {
+	return contracts.PlayTarget{}, s.resolveErr
 }
 
 func TestPlayMapsUnauthorizedError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	setTestServices(t, &APIServices{
-		Playback: playbackStub{resolveErr: ErrPlayUnauthorized},
-	})
 
 	r := gin.New()
+	setTestServices(t, r, &contracts.APIServices{
+		Playback: playbackStub{resolveErr: contracts.ErrPlayUnauthorized},
+	})
 	r.GET("/play/:hash/:id", play)
 
 	req := httptest.NewRequest(http.MethodGet, "/play/hash/1", nil)
@@ -59,11 +60,11 @@ func TestPlayMapsUnauthorizedError(t *testing.T) {
 
 func TestPlayListMapsNotFoundError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	setTestServices(t, &APIServices{
-		Playback: playbackStub{playlistErr: ErrPlaylistTorrentNotFound},
-	})
 
 	r := gin.New()
+	setTestServices(t, r, &contracts.APIServices{
+		Playback: playbackStub{playlistErr: contracts.ErrPlaylistTorrentNotFound},
+	})
 	r.GET("/playlist/*fname", playList)
 
 	req := httptest.NewRequest(http.MethodGet, "/playlist/list.m3u?hash=deadbeef", nil)
@@ -77,17 +78,17 @@ func TestPlayListMapsNotFoundError(t *testing.T) {
 
 func TestAllPlayListUsesPlaybackServiceResult(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	setTestServices(t, &APIServices{
+
+	r := gin.New()
+	setTestServices(t, r, &contracts.APIServices{
 		Playback: playbackStub{
-			allRes: PlaylistPayload{
+			allRes: contracts.PlaylistPayload{
 				Name: "all.m3u",
 				Hash: "abc123",
 				Body: "#EXTM3U\n#EXTINF:0,Demo\nhttp://localhost/stream/demo\n",
 			},
 		},
 	})
-
-	r := gin.New()
 	r.GET("/playlistall/all.m3u", allPlayList)
 
 	req := httptest.NewRequest(http.MethodGet, "/playlistall/all.m3u", nil)
@@ -107,8 +108,8 @@ func TestAllPlayListUsesPlaybackServiceResult(t *testing.T) {
 	}
 }
 
-func setTestServices(t *testing.T, s *APIServices) {
+func setTestServices(t *testing.T, r *gin.Engine, s *contracts.APIServices) {
 	t.Helper()
-	restore := ReplaceServicesForTests(s)
-	t.Cleanup(restore)
+
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, s)))
 }

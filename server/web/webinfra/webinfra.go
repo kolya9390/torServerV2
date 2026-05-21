@@ -257,6 +257,7 @@ func (s *sslService) PrepareCertificates(ips []string) error {
 	}
 
 	curSets := s.currentSettings()
+
 	tlsCfg := curSets.TLSConfig()
 	if tlsCfg.Cert != "" && tlsCfg.Key != "" {
 		return nil
@@ -288,6 +289,7 @@ func (s *sslService) VerifyOrRegenerateCerts(ips []string) error {
 
 	curSets := s.currentSettings()
 	tlsCfg := curSets.TLSConfig()
+
 	err := sslcerts.VerifyCertKeyFiles(tlsCfg.Cert, tlsCfg.Key, args.SslPort)
 	if err == nil {
 		return nil

@@ -22,10 +22,10 @@ func setupTestSettings() {
 	}
 	settings.DefaultSettingsProvider.Set(sets)
 	// Initialize Args to avoid nil pointer in configureProxy
-	settings.Args = &settings.ExecArgs{
+	settings.SetArgs(&settings.ExecArgs{
 		ProxyURL:  "",
 		ProxyMode: "",
-	}
+	})
 }
 
 func TestNewBTS(t *testing.T) {

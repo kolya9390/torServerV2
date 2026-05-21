@@ -31,6 +31,7 @@ func InitSets(readOnly, searchWA bool) error {
 	UpdateRuntimeState(func(runtime *RuntimeState) {
 		runtime.SearchWA = searchWA
 	})
+
 	runtimePath := currentRuntimePath()
 
 	bboltDB := NewTDBAtPath(runtimePath)

@@ -32,7 +32,7 @@ func RegisterAuthRoutes(rg *gin.RouterGroup) {
 // @Success 200 {object} map[string]string
 // @Router /api/v1/auth/users [get].
 func listUsers(c *gin.Context) {
-	store := auth.GetAuthStore()
+	store := auth.RuntimeFromContext(c).Store()
 	if store == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "auth store not initialized"})
 
@@ -68,7 +68,7 @@ type addUserRequest struct {
 // @Success 201 {string} string "created"
 // @Router /api/v1/auth/users [post].
 func addUser(c *gin.Context) {
-	store := auth.GetAuthStore()
+	store := auth.RuntimeFromContext(c).Store()
 	if store == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "auth store not initialized"})
 
@@ -99,7 +99,7 @@ func addUser(c *gin.Context) {
 // @Success 200 {string} string "removed"
 // @Router /api/v1/auth/users/{name} [delete].
 func removeUser(c *gin.Context) {
-	store := auth.GetAuthStore()
+	store := auth.RuntimeFromContext(c).Store()
 	if store == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "auth store not initialized"})
 
@@ -124,7 +124,7 @@ func removeUser(c *gin.Context) {
 // @Success 200 {object} object
 // @Router /api/v1/config/shutdown-token [get].
 func getShutdownToken(c *gin.Context) {
-	store := auth.GetTokenStore()
+	store := auth.RuntimeFromContext(c).TokenStore()
 	if store == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "token store not initialized"})
 
@@ -156,7 +156,7 @@ type setTokenRequest struct {
 // @Success 200 {string} string "ok"
 // @Router /api/v1/config/shutdown-token [post].
 func setShutdownToken(c *gin.Context) {
-	store := auth.GetTokenStore()
+	store := auth.RuntimeFromContext(c).TokenStore()
 	if store == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "token store not initialized"})
 
@@ -186,7 +186,7 @@ func setShutdownToken(c *gin.Context) {
 // @Success 200 {object} object
 // @Router /api/v1/config/shutdown-token/generate [post].
 func generateShutdownToken(c *gin.Context) {
-	store := auth.GetTokenStore()
+	store := auth.RuntimeFromContext(c).TokenStore()
 	if store == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "token store not initialized"})
 

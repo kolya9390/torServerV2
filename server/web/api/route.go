@@ -1,6 +1,11 @@
 package api
 
 import (
+	"errors"
+	"fmt"
+	"strings"
+
+	"server/internal/app/contracts"
 	sets "server/settings"
 	authapi "server/web/api/auth"
 	"server/web/auth"
@@ -12,22 +17,29 @@ type requestI struct {
 	Action string `json:"action,omitempty"`
 }
 
-func SetupRouteWithRuntimeState(route gin.IRouter, runtimeState func() sets.RuntimeState) {
+func SetupRouteWithServices(route gin.IRouter, runtimeState func() sets.RuntimeState, services *contracts.APIServices) {
+	if err := validateAPIServices(services); err != nil {
+		panic(fmt.Sprintf("api services are not configured: %v", err))
+	}
+
 	route.GET("/api/version", apiVersion)
 	route.GET("/api/v1/version", apiVersion)
 
 	legacy := route.Group("/", legacyDeprecationHeaders())
-	registerAPIRoutes(legacy, runtimeState)
+	registerAPIRoutes(legacy, runtimeState, services)
 
 	v1 := route.Group("/api/v1")
-	registerAPIRoutes(v1, runtimeState)
+	registerAPIRoutes(v1, runtimeState, services)
 }
 
-func registerAPIRoutes(route gin.IRouter, runtimeState func() sets.RuntimeState) {
+func registerAPIRoutes(route gin.IRouter, runtimeState func() sets.RuntimeState, services *contracts.APIServices) {
+	route.Use(servicesMiddleware(services))
 	authorized := route.Group("/", auth.CheckAuth())
+
 	if runtimeState == nil {
 		runtimeState = func() sets.RuntimeState { return sets.RuntimeState{} }
 	}
+
 	authCfg := runtimeState().AuthConfig()
 
 	authorized.GET("/shutdown", shutdown)
@@ -89,4 +101,53 @@ func registerAPIRoutes(route gin.IRouter, runtimeState func() sets.RuntimeState)
 
 	// Auth management API (requires existing auth)
 	authapi.RegisterAuthRoutes(authorized)
+}
+
+func validateAPIServices(services *contracts.APIServices) error {
+	if services == nil {
+		return errors.New("services is nil")
+	}
+
+	missing := make([]string, 0)
+	if services.Torrents == nil {
+		missing = append(missing, "Torrents")
+	}
+
+	if services.Settings == nil {
+		missing = append(missing, "Settings")
+	}
+
+	if services.Viewed == nil {
+		missing = append(missing, "Viewed")
+	}
+
+	if services.System == nil {
+		missing = append(missing, "System")
+	}
+
+	if services.Search == nil {
+		missing = append(missing, "Search")
+	}
+
+	if services.Media == nil {
+		missing = append(missing, "Media")
+	}
+
+	if services.Modules == nil {
+		missing = append(missing, "Modules")
+	}
+
+	if services.Streams == nil {
+		missing = append(missing, "Streams")
+	}
+
+	if services.Playback == nil {
+		missing = append(missing, "Playback")
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("missing %s", strings.Join(missing, ", "))
+	}
+
+	return nil
 }

@@ -72,6 +72,7 @@ func (a *btserverAdapter) SetTorrent(hash, title, poster, category, data string)
 		torr = a.GetTorrent(hash)
 		if torr != nil {
 			torr.GotInfo()
+
 			if torr.Torrent != nil && torr.Info() != nil {
 				title = torr.Info().Name
 			}
@@ -87,6 +88,7 @@ func (a *btserverAdapter) SetTorrent(hash, title, poster, category, data string)
 		torr.Title = title
 		torr.Poster = poster
 		torr.Category = category
+
 		if data != "" {
 			torr.Data = data
 		}
@@ -96,9 +98,11 @@ func (a *btserverAdapter) SetTorrent(hash, title, poster, category, data string)
 		torrDB.Title = title
 		torrDB.Poster = poster
 		torrDB.Category = category
+
 		if data != "" {
 			torrDB.Data = data
 		}
+
 		if record := torrentDBRecordFromTorrent(torrDB); record != nil {
 			a.bt.currentDBStore().Add(record)
 		}
@@ -138,6 +142,7 @@ func (a *btserverAdapter) ListTorrents() []*Torrent {
 	}
 
 	btlist := a.bt.ListTorrents()
+
 	for _, db := range a.bt.currentDBStore().List() {
 		t := torrentFromDBRecord(db)
 		if t == nil || t.TorrentSpec == nil {

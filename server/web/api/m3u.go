@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"server/internal/app/contracts"
 	"time"
 
 	"github.com/anacrolix/missinggo/v2/httptoo"
@@ -26,7 +27,7 @@ import (
 //	@Success		200	{file}	file
 //	@Router			/playlistall/all.m3u [get]
 func allPlayList(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 	host := utils.GetScheme(c) + "://" + utils.GetHost(c)
 	res := svc.Playback.BuildAllPlaylist(host, svc.Torrents)
 	sendM3U(c, res.Name, res.Hash, res.Body)
@@ -46,7 +47,7 @@ func allPlayList(c *gin.Context) {
 //	@Success		200	{file}	file
 //	@Router			/playlist [get]
 func playList(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 	hash, _ := c.GetQuery("hash")
 	_, fromlast := c.GetQuery("fromlast")
 
@@ -61,11 +62,11 @@ func playList(c *gin.Context) {
 	res, err := svc.Playback.BuildPlaylistByHash(hash, c.Param("fname"), fromlast, host, svc.Torrents, svc.Viewed)
 	if err != nil {
 		switch {
-		case errors.Is(err, ErrPlaylistHashRequired):
+		case errors.Is(err, contracts.ErrPlaylistHashRequired):
 			abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "is required"))
-		case errors.Is(err, ErrPlaylistTorrentNotFound):
+		case errors.Is(err, contracts.ErrPlaylistTorrentNotFound):
 			abortAPIError(c, http.StatusNotFound, newNotFoundError("torrent not found"))
-		case errors.Is(err, ErrPlaylistLoadFailed):
+		case errors.Is(err, contracts.ErrPlaylistLoadFailed):
 			abortAPIError(c, http.StatusInternalServerError, newInternalError("failed to load torrent info", nil))
 		default:
 			abortAPIError(c, http.StatusInternalServerError, newInternalError("failed to build playlist", err))

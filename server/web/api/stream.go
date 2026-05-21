@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"server/internal/app/contracts"
 
 	"server/log"
 	utils2 "server/utils"
@@ -75,7 +76,7 @@ func handleStreamAuth(c *gin.Context, link string, notAuth, play, m3u bool) bool
 //	@Success		200	"Data returned according to query"
 //	@Router			/stream [get]
 func stream(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 	link := c.Query("link")
 	f := validateStreamRequest(c)
 
@@ -122,7 +123,7 @@ func stream(c *gin.Context) {
 		return
 	}
 
-	tor, err := svc.Streams.EnsureTorrent(svc.Torrents, spec, StreamMeta{
+	tor, err := svc.Streams.EnsureTorrent(svc.Torrents, spec, contracts.StreamMeta{
 		Title:    meta.title,
 		Poster:   meta.poster,
 		Category: meta.category,
@@ -140,7 +141,7 @@ func stream(c *gin.Context) {
 		svc.Torrents.SaveToDB(tor)
 	}
 
-	index, err := parseStreamFileIndex(c, len(tor.Files()))
+	index, err := parseStreamFileIndex(c, tor.FileCount())
 	if err != nil && (f.play || f.preload) {
 		abortAPIError(c, http.StatusBadRequest, err)
 
@@ -162,7 +163,7 @@ func stream(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusAccepted, gin.H{"status": "preload accepted", "hash": tor.Hash().HexString()})
+		c.JSON(http.StatusAccepted, gin.H{"status": "preload accepted", "hash": tor.HashHex()})
 
 		return
 	}
@@ -177,7 +178,7 @@ func stream(c *gin.Context) {
 		name := svc.Streams.NormalizePlaylistName(c.Param("fname"), tor.Name())
 		host := utils2.GetScheme(c) + "://" + utils2.GetHost(c)
 		m3ulist := svc.Playback.BuildM3UFromStatus(tor.Status(), host, f.fromlast, svc.Viewed)
-		sendM3U(c, name, tor.Hash().HexString(), m3ulist)
+		sendM3U(c, name, tor.HashHex(), m3ulist)
 
 		return
 	}
@@ -206,7 +207,7 @@ func stream(c *gin.Context) {
 }
 
 func streamNoAuth(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 	link := c.Query("link")
 	_, preload := c.GetQuery("preload")
 	_, m3u := c.GetQuery("m3u")
@@ -226,7 +227,7 @@ func streamNoAuth(c *gin.Context) {
 		return
 	}
 
-	tor, err := svc.Streams.EnsureTorrent(svc.Torrents, spec, StreamMeta{
+	tor, err := svc.Streams.EnsureTorrent(svc.Torrents, spec, contracts.StreamMeta{
 		Title:    meta.title,
 		Poster:   meta.poster,
 		Category: meta.category,
@@ -243,7 +244,7 @@ func streamNoAuth(c *gin.Context) {
 		return
 	}
 
-	index, err := parseStreamFileIndex(c, len(tor.Files()))
+	index, err := parseStreamFileIndex(c, tor.FileCount())
 	if err != nil && play {
 		abortAPIError(c, http.StatusBadRequest, err)
 
@@ -260,7 +261,7 @@ func streamNoAuth(c *gin.Context) {
 		name := svc.Streams.NormalizePlaylistName(c.Param("fname"), tor.Name())
 		host := utils2.GetScheme(c) + "://" + utils2.GetHost(c)
 		m3ulist := svc.Playback.BuildM3UFromStatus(tor.Status(), host, fromlast, svc.Viewed)
-		sendM3U(c, name, tor.Hash().HexString(), m3ulist)
+		sendM3U(c, name, tor.HashHex(), m3ulist)
 
 		return
 	}

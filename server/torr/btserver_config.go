@@ -78,6 +78,7 @@ func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
 		config.ListenPort = networkCfg.PeersListenPort
 	} else {
 		log.TLogln("Set listen port to random autoselect (0)")
+
 		config.ListenPort = 0
 	}
 
@@ -120,6 +121,7 @@ func detectPublicIPv4(ctx context.Context, config *torrent.ClientConfig, identit
 	if identityCfg.PubIPv4 != "" {
 		if ip4 := net.ParseIP(identityCfg.PubIPv4); ip4.To4() != nil && !isPrivateIP(ip4) {
 			config.PublicIp4 = ip4
+
 			return
 		}
 	}
@@ -128,8 +130,10 @@ func detectPublicIPv4(ctx context.Context, config *torrent.ClientConfig, identit
 		ip, err := publicip.Get4(ctx)
 		if err != nil {
 			log.TLogln("Error getting public ipv4 address:", err)
+
 			return
 		}
+
 		if ip.To4() == nil {
 			return
 		}
@@ -147,9 +151,11 @@ func detectPublicIPv6(ctx context.Context, config *torrent.ClientConfig, identit
 	if !enableIPv6 {
 		return false
 	}
+
 	if identityCfg.PubIPv6 != "" {
 		if ip6 := net.ParseIP(identityCfg.PubIPv6); ip6.To16() != nil && ip6.To4() == nil && !isPrivateIP(ip6) {
 			config.PublicIp6 = ip6
+
 			return true
 		}
 	}
@@ -158,8 +164,10 @@ func detectPublicIPv6(ctx context.Context, config *torrent.ClientConfig, identit
 		ip, err := publicip.Get6(ctx)
 		if err != nil {
 			log.TLogln("Error getting public ipv6 address:", err)
+
 			return false
 		}
+
 		if ip.To16() == nil {
 			return false
 		}
@@ -169,6 +177,7 @@ func detectPublicIPv6(ctx context.Context, config *torrent.ClientConfig, identit
 
 	if config.PublicIp6 != nil {
 		log.TLogln("PublicIp6:", config.PublicIp6)
+
 		return true
 	}
 
@@ -184,11 +193,13 @@ func (bt *BTServer) configure(ctx context.Context) {
 	}
 
 	log.TLogln("Client config:", sets)
+
 	identityCfg := bt.currentRuntimeState().IdentityConfig()
 	detectPublicIPv4(ctx, bt.config, identityCfg)
 
 	if !detectPublicIPv6(ctx, bt.config, identityCfg, sets.EnableIPv6) && sets.EnableIPv6 {
 		bt.config.DisableIPv6 = true
+
 		log.TLogln("IPv6 disabled: public IPv6 is unavailable")
 	}
 }
@@ -213,15 +224,20 @@ func (bt *BTServer) configureProxy() error {
 	switch proxyCfg.Mode {
 	case proxy.ModeTracker:
 		log.TLogln("Configuring HTTP proxy for tracker requests:", proxyCfg.URL.String())
+
 		bt.config.HTTPProxy = d.HTTPProxy()
+
 		log.TLogln("Proxy configured successfully for HTTP tracker connections only")
 	case proxy.ModePeers, proxy.ModeFull:
 		log.TLogln("Configuring proxy for all connections:", proxyCfg.URL.String())
+
 		bt.config.HTTPDialContext = d.DialContext
 		bt.config.HTTPProxy = d.HTTPProxy()
+
 		log.TLogln("Proxy configured successfully for all BitTorrent connections")
 	default:
 		log.TLogln("Configuring HTTP proxy for tracker requests (default):", proxyCfg.URL.String())
+
 		bt.config.HTTPProxy = d.HTTPProxy()
 	}
 
@@ -247,6 +263,7 @@ func getPublicIP4() net.IP {
 	ifaces, err := anet.Interfaces()
 	if err != nil {
 		log.TLogln("Error get public IPv4:", err)
+
 		return nil
 	}
 
@@ -281,6 +298,7 @@ func getPublicIP6() net.IP {
 	ifaces, err := anet.Interfaces()
 	if err != nil {
 		log.TLogln("Error get public IPv6:", err)
+
 		return nil
 	}
 

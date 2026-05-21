@@ -210,6 +210,7 @@ func PeerIDRandom(peer string) string {
 		log.TLogln("Error generating random peer ID:", err)
 		// Fallback: use time-based value as a "random enough" ID
 		fallback := base32.StdEncoding.EncodeToString([]byte(peer + time.Now().String()))[:20-len(peer)]
+
 		return peer + fallback
 	}
 

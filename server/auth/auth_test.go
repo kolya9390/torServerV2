@@ -1,8 +1,11 @@
 package auth
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.etcd.io/bbolt"
@@ -246,4 +249,90 @@ func TestTokenStore(t *testing.T) {
 	if stored != genToken {
 		t.Fatal("stored token doesn't match generated")
 	}
+}
+
+func TestTokenFingerprintDoesNotRevealSecret(t *testing.T) {
+	token := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+	fingerprint := TokenFingerprint(token)
+	if fingerprint == "" {
+		t.Fatal("fingerprint is empty")
+	}
+
+	if strings.Contains(fingerprint, token) {
+		t.Fatal("fingerprint contains full token")
+	}
+
+	if fingerprint != TokenFingerprint(token) {
+		t.Fatal("fingerprint should be stable")
+	}
+
+	if fingerprint == TokenFingerprint(token+"x") {
+		t.Fatal("different tokens should have different fingerprints")
+	}
+}
+
+func TestEnsureDefaultTokenDoesNotLogFullToken(t *testing.T) {
+	dir := t.TempDir()
+	db, err := bbolt.Open(filepath.Join(dir, "test.db"), 0600, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	ts := NewTokenStore(db)
+	output := captureStdout(t, func() {
+		if err := ts.EnsureDefaultToken(); err != nil {
+			t.Fatalf("EnsureDefaultToken() error = %v", err)
+		}
+	})
+
+	token, err := ts.GetShutdownToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if token == "" {
+		t.Fatal("expected generated token")
+	}
+
+	if strings.Contains(output, token) {
+		t.Fatalf("log output contains full token: %q", output)
+	}
+
+	if !strings.Contains(output, TokenFingerprint(token)) {
+		t.Fatalf("log output should include safe fingerprint, got %q", output)
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	original := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	os.Stdout = writer
+	defer func() {
+		os.Stdout = original
+	}()
+
+	fn()
+
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, reader); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	return buf.String()
 }

@@ -53,6 +53,7 @@ func FuseAutoMount() error {
 
 func FuseAutoMountWithProviders(provider settings.SettingsProvider, argsProvider settings.ArgsProvider) error {
 	runtimeCtx := newFuseRuntimeContext(provider, argsProvider)
+
 	args := runtimeCtx.currentArgs()
 	if args != nil && args.FusePath != "" {
 		ffs := GetFuseFSWithProviders(provider, argsProvider)

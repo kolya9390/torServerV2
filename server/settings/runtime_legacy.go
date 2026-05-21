@@ -15,3 +15,33 @@ var (
 	TorAddr  string
 	MaxSize  int64
 )
+
+func syncLegacyRuntimeVars(state RuntimeState) {
+	Path = state.Path
+	IP = state.IP
+	Port = state.Port
+	Ssl = state.Ssl
+	SslPort = state.SslPort
+	HTTPAuth = state.HTTPAuth
+	SearchWA = state.SearchWA
+	PubIPv4 = state.PubIPv4
+	PubIPv6 = state.PubIPv6
+	TorAddr = state.TorAddr
+	MaxSize = state.MaxSize
+}
+
+func legacyRuntimeStateSnapshot() RuntimeState {
+	return RuntimeState{
+		Path:     Path,
+		IP:       IP,
+		Port:     Port,
+		Ssl:      Ssl,
+		SslPort:  SslPort,
+		HTTPAuth: HTTPAuth,
+		SearchWA: SearchWA,
+		PubIPv4:  PubIPv4,
+		PubIPv6:  PubIPv6,
+		TorAddr:  TorAddr,
+		MaxSize:  MaxSize,
+	}
+}

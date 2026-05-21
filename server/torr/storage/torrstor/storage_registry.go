@@ -58,9 +58,11 @@ func (r *storageCacheRegistry) Drain() []*Cache {
 	}
 
 	r.mu.Lock()
+
 	caches := make([]*Cache, 0, len(r.items))
 	for hash, cache := range r.items {
 		caches = append(caches, cache)
+
 		delete(r.items, hash)
 	}
 	r.mu.Unlock()

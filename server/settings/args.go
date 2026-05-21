@@ -52,3 +52,28 @@ func GetArgs() *ExecArgs {
 
 	return &cp
 }
+
+// ReplaceArgsForTests swaps process args and returns a restore function.
+func ReplaceArgsForTests(args *ExecArgs) func() {
+	prev := GetArgs()
+
+	setArgsForTests(args)
+
+	return func() {
+		setArgsForTests(prev)
+	}
+}
+
+func setArgsForTests(args *ExecArgs) {
+	argsMu.Lock()
+	defer argsMu.Unlock()
+
+	if args == nil {
+		Args = nil
+
+		return
+	}
+
+	cp := *args
+	Args = &cp
+}

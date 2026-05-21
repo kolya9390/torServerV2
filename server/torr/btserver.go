@@ -63,10 +63,12 @@ func NewBTS() *BTServer {
 
 func NewBTSWithProvidersRuntimeAndDB(settingsProvider settings.SettingsProvider, argsProvider settings.ArgsProvider, runtimeState func() settings.RuntimeState, dbStore TorrentDBStore) *BTServer {
 	var deps btServerDeps
+
 	deps.settingsProvider = settingsProvider
 	if argsProvider != nil {
 		deps.getArgs = argsProvider.Get
 	}
+
 	deps.runtimeState = runtimeState
 	deps.dbStore = dbStore
 

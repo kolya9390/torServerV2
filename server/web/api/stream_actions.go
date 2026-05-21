@@ -3,12 +3,11 @@ package api
 import (
 	"errors"
 	"net/http"
+	"server/internal/app/contracts"
 
 	"server/log"
-	"server/torr/state"
 	utils2 "server/utils"
 
-	"github.com/anacrolix/torrent"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,7 +28,7 @@ type streamMeta struct {
 //	@Success		200	{object}	state.TorrentStatus
 //	@Router			/streams/stat [get]
 func streamStat(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 
 	if isNotAuthRequest(c) {
 		c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
@@ -45,14 +44,14 @@ func streamStat(c *gin.Context) {
 		return
 	}
 
-	tor := svc.Torrents.Get(spec.InfoHash.HexString())
+	tor := svc.Torrents.Get(spec.HashHex())
 	if tor == nil {
 		abortAPIError(c, http.StatusNotFound, newNotFoundError("torrent not active"))
 
 		return
 	}
 
-	if tor.Stat == state.TorrentInDB {
+	if svc.Torrents.IsStored(tor) {
 		abortAPIError(c, http.StatusConflict, newConflictError("torrent is stored only, activate via play"))
 
 		return
@@ -72,7 +71,7 @@ func streamStat(c *gin.Context) {
 //	@Success		200	{file}	file
 //	@Router			/streams/m3u [get]
 func streamM3U(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 
 	spec, _, err := parseStreamLink(c)
 	if err != nil {
@@ -81,7 +80,7 @@ func streamM3U(c *gin.Context) {
 		return
 	}
 
-	tor := svc.Torrents.Get(spec.InfoHash.HexString())
+	tor := svc.Torrents.Get(spec.HashHex())
 	if tor == nil {
 		if isNotAuthRequest(c) {
 			c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
@@ -95,7 +94,7 @@ func streamM3U(c *gin.Context) {
 		return
 	}
 
-	if tor.Stat == state.TorrentInDB {
+	if svc.Torrents.IsStored(tor) {
 		abortAPIError(c, http.StatusConflict, newConflictError("torrent is stored only, activate via play"))
 
 		return
@@ -112,7 +111,7 @@ func streamM3U(c *gin.Context) {
 	name := svc.Streams.NormalizePlaylistName(c.Param("fname"), tor.Name())
 	host := utils2.GetScheme(c) + "://" + utils2.GetHost(c)
 	m3ulist := svc.Playback.BuildM3UFromStatus(status, host, fromlast, svc.Viewed)
-	sendM3U(c, name, tor.Hash().HexString(), m3ulist)
+	sendM3U(c, name, tor.HashHex(), m3ulist)
 }
 
 // streamPlay godoc
@@ -130,7 +129,7 @@ func streamM3U(c *gin.Context) {
 //	@Success		200	"Torrent data"
 //	@Router			/streams/play [get]
 func streamPlay(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 
 	spec, meta, err := parseStreamLink(c)
 	if err != nil {
@@ -139,7 +138,7 @@ func streamPlay(c *gin.Context) {
 		return
 	}
 
-	tor, err := svc.Streams.EnsureTorrent(svc.Torrents, spec, StreamMeta{
+	tor, err := svc.Streams.EnsureTorrent(svc.Torrents, spec, contracts.StreamMeta{
 		Title:    meta.title,
 		Poster:   meta.poster,
 		Category: meta.category,
@@ -156,7 +155,7 @@ func streamPlay(c *gin.Context) {
 		return
 	}
 
-	index, err := parseStreamFileIndex(c, len(tor.Files()))
+	index, err := parseStreamFileIndex(c, tor.FileCount())
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
 
@@ -194,7 +193,7 @@ func streamPlay(c *gin.Context) {
 //	@Success		200	{object}	map[string]interface{}
 //	@Router			/streams/save [post]
 func streamSave(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 
 	spec, meta, err := parseStreamLink(c)
 	if err != nil {
@@ -203,8 +202,8 @@ func streamSave(c *gin.Context) {
 		return
 	}
 
-	tor := svc.Torrents.Get(spec.InfoHash.HexString())
-	if tor == nil || tor.Stat == state.TorrentInDB {
+	tor := svc.Torrents.Get(spec.HashHex())
+	if tor == nil || svc.Torrents.IsStored(tor) {
 		tor, err = svc.Torrents.Add(spec, meta.title, meta.poster, meta.data, meta.category)
 		if err != nil {
 			abortAPIError(c, http.StatusInternalServerError, newInternalError("failed to add torrent", err))
@@ -213,26 +212,22 @@ func streamSave(c *gin.Context) {
 		}
 	}
 
-	if tor.Title == "" && tor.Name() != "" {
-		tor.Title = tor.Name()
-	}
-
 	svc.Torrents.SaveToDB(tor)
-	c.JSON(http.StatusOK, gin.H{"status": "saved", "hash": tor.Hash().HexString()})
+	c.JSON(http.StatusOK, gin.H{"status": "saved", "hash": tor.HashHex()})
 }
 
-func parseStreamLink(c *gin.Context) (*torrent.TorrentSpec, streamMeta, error) {
-	svc := getServices()
+func parseStreamLink(c *gin.Context) (contracts.TorrentSpec, streamMeta, error) {
+	svc := servicesFromContext(c)
 
 	spec, meta, err := svc.Streams.ParseLink(c.Query("link"), c.Query("title"), c.Query("poster"), c.Query("category"))
 	if err != nil {
 		switch {
-		case errors.Is(err, ErrStreamLinkEmpty):
-			return nil, streamMeta{}, newValidationError("link", "should not be empty")
-		case errors.Is(err, ErrStreamInvalidTorrsHash):
-			return nil, streamMeta{}, newValidationError("link", "invalid torrs hash")
+		case errors.Is(err, contracts.ErrStreamLinkEmpty):
+			return contracts.TorrentSpec{}, streamMeta{}, newValidationError("link", "should not be empty")
+		case errors.Is(err, contracts.ErrStreamInvalidTorrsHash):
+			return contracts.TorrentSpec{}, streamMeta{}, newValidationError("link", "invalid torrs hash")
 		default:
-			return nil, streamMeta{}, newValidationError("link", "invalid magnet/hash/link")
+			return contracts.TorrentSpec{}, streamMeta{}, newValidationError("link", "invalid magnet/hash/link")
 		}
 	}
 
@@ -240,7 +235,7 @@ func parseStreamLink(c *gin.Context) (*torrent.TorrentSpec, streamMeta, error) {
 }
 
 func parseStreamFileIndex(c *gin.Context, fileCount int) (int, error) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 
 	index, err := svc.Streams.ParseFileIndex(c.Query("index"), fileCount)
 	if err != nil {
@@ -252,9 +247,9 @@ func parseStreamFileIndex(c *gin.Context, fileCount int) (int, error) {
 
 func mapStreamEnsureError(err error) (int, error) {
 	switch {
-	case errors.Is(err, ErrStreamUnauthorized):
+	case errors.Is(err, contracts.ErrStreamUnauthorized):
 		return http.StatusUnauthorized, newUnauthorizedError("authorization required")
-	case errors.Is(err, ErrStreamConnectionTimeout):
+	case errors.Is(err, contracts.ErrStreamConnectionTimeout):
 		return http.StatusInternalServerError, newInternalError("torrent connection timeout", nil)
 	default:
 		return http.StatusInternalServerError, newInternalError("failed to add torrent", err)

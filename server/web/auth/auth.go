@@ -22,26 +22,66 @@ var (
 	authEnabled bool
 )
 
-// InitFromStore initializes auth from a pre-configured store (for testing or custom setups).
-func InitFromStore(s *auth.Store, enabled bool) {
-	authStore = s
-	authEnabled = enabled
-	tokenStore = auth.NewTokenStore(nil)
+const runtimeContextKey = "auth_runtime"
+
+type Runtime struct {
+	store  *auth.Store
+	token  *auth.TokenStore
+	authOn bool
 }
 
-// InitAuthWithRuntimeState initializes the auth package with the BBolt database.
-// Performs migration from legacy accs.db if needed.
-func InitAuthWithRuntimeState(runtimeState func() settings.RuntimeState) {
+func (r *Runtime) Store() *auth.Store {
+	if r == nil {
+		return nil
+	}
+
+	return r.store
+}
+
+func (r *Runtime) TokenStore() *auth.TokenStore {
+	if r == nil {
+		return nil
+	}
+
+	return r.token
+}
+
+func (r *Runtime) Enabled() bool {
+	return r != nil && r.authOn
+}
+
+func NewRuntimeFromStore(store *auth.Store, tokens *auth.TokenStore, enabled bool) *Runtime {
+	if tokens == nil {
+		tokens = auth.NewTokenStore(nil)
+	}
+
+	return &Runtime{
+		store:  store,
+		token:  tokens,
+		authOn: enabled,
+	}
+}
+
+// InitFromStore initializes auth from a pre-configured store (for testing or custom setups).
+func InitFromStore(s *auth.Store, enabled bool) {
+	runtime := NewRuntimeFromStore(s, nil, enabled)
+	authStore = runtime.Store()
+	authEnabled = runtime.Enabled()
+	tokenStore = runtime.TokenStore()
+}
+
+func NewRuntimeWithRuntimeState(runtimeState func() settings.RuntimeState) *Runtime {
 	if runtimeState == nil {
 		runtimeState = func() settings.RuntimeState { return settings.RuntimeState{} }
 	}
 
 	runtimePath := runtimeState().PathConfig().Path
+
 	tdb := settings.NewTDBAtPath(runtimePath)
 	if tdb == nil {
 		log.TLogln("Auth: failed to get BBolt DB, auth disabled")
 
-		return
+		return &Runtime{}
 	}
 
 	rawDB := tdb.GetRawDB()
@@ -50,23 +90,35 @@ func InitAuthWithRuntimeState(runtimeState func() settings.RuntimeState) {
 	if !ok || bboltDB == nil {
 		log.TLogln("Auth: raw DB is nil or wrong type, auth disabled")
 
-		return
+		return &Runtime{}
 	}
 
-	authStore = auth.NewStore(bboltDB)
-	tokenStore = auth.NewTokenStore(bboltDB)
+	store := auth.NewStore(bboltDB)
+	tokens := auth.NewTokenStore(bboltDB)
 	authCfg := runtimeState().AuthConfig()
-	authEnabled = authCfg.HTTPAuth
 
-	// Run migration from legacy accs.db
-	if err := auth.MigrateFromAccsDB(authStore, runtimePath); err != nil {
+	if err := auth.MigrateFromAccsDB(store, runtimePath); err != nil {
 		log.TLogln("Auth migration error:", err)
 	}
 
-	// Ensure shutdown token exists
-	if err := tokenStore.EnsureDefaultToken(); err != nil {
+	if err := tokens.EnsureDefaultToken(); err != nil {
 		log.TLogln("Auth: shutdown token init error:", err)
 	}
+
+	return &Runtime{
+		store:  store,
+		token:  tokens,
+		authOn: authCfg.HTTPAuth,
+	}
+}
+
+// InitAuthWithRuntimeState initializes the auth package with the BBolt database.
+// Performs migration from legacy accs.db if needed.
+func InitAuthWithRuntimeState(runtimeState func() settings.RuntimeState) {
+	runtime := NewRuntimeWithRuntimeState(runtimeState)
+	authStore = runtime.Store()
+	tokenStore = runtime.TokenStore()
+	authEnabled = runtime.Enabled()
 }
 
 // GetAuthStore returns the auth store for API handlers.
@@ -93,10 +145,47 @@ func SetupAuth(engine *gin.Engine) {
 	engine.Use(auth.BasicAuthMiddleware(authStore, authEnabled))
 }
 
+func SetupAuthRuntime(engine *gin.Engine, runtime *Runtime) {
+	engine.Use(RuntimeMiddleware(runtime))
+
+	if runtime == nil || runtime.Store() == nil {
+		return
+	}
+
+	engine.Use(auth.BasicAuthMiddleware(runtime.Store(), runtime.Enabled()))
+}
+
+func RuntimeMiddleware(runtime *Runtime) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if runtime != nil {
+			c.Set(runtimeContextKey, runtime)
+		}
+
+		c.Next()
+	}
+}
+
+func RuntimeFromContext(c *gin.Context) *Runtime {
+	if c != nil {
+		if value, ok := c.Get(runtimeContextKey); ok {
+			if runtime, ok := value.(*Runtime); ok {
+				return runtime
+			}
+		}
+	}
+
+	return &Runtime{
+		store:  authStore,
+		token:  tokenStore,
+		authOn: authEnabled,
+	}
+}
+
 // CheckAuth enforces authentication for protected routes.
 func CheckAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !authEnabled {
+		runtime := RuntimeFromContext(c)
+		if !runtime.Enabled() {
 			c.Next()
 
 			return

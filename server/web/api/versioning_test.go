@@ -13,7 +13,7 @@ import (
 func TestLegacyRouteHasDeprecationHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	SetupRouteWithRuntimeState(r, func() sets.RuntimeState { return sets.RuntimeState{} })
+	SetupRouteWithServices(r, func() sets.RuntimeState { return sets.RuntimeState{} }, newAPIServicesFixture(t, nil))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
 	w := httptest.NewRecorder()
@@ -39,7 +39,7 @@ func TestLegacyRouteHasDeprecationHeaders(t *testing.T) {
 func TestV1RouteHasNoLegacyDeprecationHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	SetupRouteWithRuntimeState(r, func() sets.RuntimeState { return sets.RuntimeState{} })
+	SetupRouteWithServices(r, func() sets.RuntimeState { return sets.RuntimeState{} }, newAPIServicesFixture(t, nil))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/stream?link=bad&stat=1", nil)
 	w := httptest.NewRecorder()

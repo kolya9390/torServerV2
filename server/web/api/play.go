@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"server/internal/app/contracts"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,7 +22,7 @@ import (
 //	@Success		200	"Torrent data"
 //	@Router			/play/{hash}/{id} [get]
 func play(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 	hash := c.Param("hash")
 	indexStr := c.Param("id")
 	notAuth := c.GetBool("auth_required") && c.GetString(gin.AuthUserKey) == ""
@@ -29,20 +30,20 @@ func play(c *gin.Context) {
 	target, err := svc.Playback.ResolvePlay(hash, indexStr, notAuth, svc.Torrents)
 	if err != nil {
 		switch {
-		case errors.Is(err, ErrPlayPathRequired):
+		case errors.Is(err, contracts.ErrPlayPathRequired):
 			abortAPIError(c, http.StatusNotFound, newValidationError("path", "hash and id are required"))
-		case errors.Is(err, ErrPlayHashInvalid):
+		case errors.Is(err, contracts.ErrPlayHashInvalid):
 			abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "invalid infohash"))
-		case errors.Is(err, ErrPlayUnauthorized):
+		case errors.Is(err, contracts.ErrPlayUnauthorized):
 			c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
 			abortAPIError(c, http.StatusUnauthorized, newUnauthorizedError("authorization required"))
-		case errors.Is(err, ErrPlayTorrentNotFound):
+		case errors.Is(err, contracts.ErrPlayTorrentNotFound):
 			abortAPIError(c, http.StatusNotFound, newNotFoundError("torrent not active"))
-		case errors.Is(err, ErrPlayLoadFailed):
+		case errors.Is(err, contracts.ErrPlayLoadFailed):
 			abortAPIError(c, http.StatusInternalServerError, newInternalError("failed to load torrent from db", err))
-		case errors.Is(err, ErrPlayTimeout):
+		case errors.Is(err, contracts.ErrPlayTimeout):
 			abortAPIError(c, http.StatusInternalServerError, newInternalError("torrent connection timeout", nil))
-		case errors.Is(err, ErrPlayFileIndexInvalid):
+		case errors.Is(err, contracts.ErrPlayFileIndexInvalid):
 			abortAPIError(c, http.StatusBadRequest, newValidationError("id", "invalid file index"))
 		default:
 			abortAPIError(c, http.StatusInternalServerError, newInternalError("failed to prepare playback", err))

@@ -178,6 +178,7 @@ func (s *BTSets) ensureDefaults() {
 
 	s.ResponsiveMode = true
 	s.CoreProfile = normalizeCoreProfile(s.CoreProfile)
+
 	if s.StreamQueueWaitSec <= 0 {
 		s.StreamQueueWaitSec = 3
 	}

@@ -75,6 +75,7 @@ func (r *btTorrentRegistry) LoadOrStore(hash torrent.InfoHash, torr *Torrent) (*
 	}
 
 	r.mu.Lock()
+
 	existing, ok := r.items[hash]
 	if ok {
 		r.mu.Unlock()
@@ -94,6 +95,7 @@ func (r *btTorrentRegistry) Snapshot() []*Torrent {
 	}
 
 	r.mu.RLock()
+
 	torrents := make([]*Torrent, 0, len(r.items))
 	for _, torr := range r.items {
 		torrents = append(torrents, torr)

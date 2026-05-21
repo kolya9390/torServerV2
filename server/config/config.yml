@@ -71,8 +71,8 @@ workers:
   preload_queue_size: 0  # 0 = auto
 
 debug:
-  enabled: true  # Full debug: pprof + V2 logs + library logs (SPAM!)
-  service_only: true  # Only V2 debug logs, no library spam
+  enabled: false  # Release-safe default. Set true only for local profiling: /debug/pprof/* and /debug/vars
+  service_only: false  # Set true locally for V2 debug logs without library spam
   show_fs_active_torr: false
 
 proxy:

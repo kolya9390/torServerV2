@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"server/config"
 	"server/settings"
 )
 
@@ -32,14 +33,8 @@ func (f *fakeWebRuntime) Stop() {
 }
 
 func TestServerRuntimeStartRequiresArgs(t *testing.T) {
-	prevArgs := settings.GetArgs()
-	settings.Args = nil
-
-	t.Cleanup(func() {
-		if prevArgs != nil {
-			settings.SetArgs(prevArgs)
-		}
-	})
+	restoreArgs := settings.ReplaceArgsForTests(nil)
+	t.Cleanup(restoreArgs)
 
 	rt := newServerRuntime(serverRuntimeDeps{}, nil)
 
@@ -50,11 +45,8 @@ func TestServerRuntimeStartRequiresArgs(t *testing.T) {
 }
 
 func TestServerRuntimeStartPropagatesInitError(t *testing.T) {
-	prevArgs := settings.GetArgs()
-	settings.SetArgs(&settings.ExecArgs{})
-	t.Cleanup(func() {
-		settings.SetArgs(prevArgs)
-	})
+	restoreArgs := settings.ReplaceArgsForTests(&settings.ExecArgs{})
+	t.Cleanup(restoreArgs)
 
 	initErr := errors.New("init failed")
 	deps := serverRuntimeDeps{
@@ -71,11 +63,8 @@ func TestServerRuntimeStartPropagatesInitError(t *testing.T) {
 }
 
 func TestServerRuntimeStartPropagatesPrepareError(t *testing.T) {
-	prevArgs := settings.GetArgs()
-	settings.SetArgs(&settings.ExecArgs{})
-	t.Cleanup(func() {
-		settings.SetArgs(prevArgs)
-	})
+	restoreArgs := settings.ReplaceArgsForTests(&settings.ExecArgs{})
+	t.Cleanup(restoreArgs)
 
 	prepareErr := errors.New("prepare failed")
 	deps := serverRuntimeDeps{
@@ -93,7 +82,6 @@ func TestServerRuntimeStartPropagatesPrepareError(t *testing.T) {
 }
 
 func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *testing.T) {
-	prevArgs := settings.GetArgs()
 	restore := settings.ReplaceSettingsForTests(&settings.BTSets{})
 	args := &settings.ExecArgs{
 		Port:     "18090",
@@ -104,9 +92,10 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 		IP:       "127.0.0.1",
 		HTTPAuth: true,
 	}
-	settings.SetArgs(args)
+	restoreArgs := settings.ReplaceArgsForTests(args)
+
 	t.Cleanup(func() {
-		settings.SetArgs(prevArgs)
+		restoreArgs()
 		restore()
 	})
 
@@ -150,6 +139,62 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 
 	if !web.started {
 		t.Fatal("expected web start to be called")
+	}
+}
+
+func TestServerRuntimeStartAppliesConfigToArgsBeforeStartup(t *testing.T) {
+	restoreArgs := settings.ReplaceArgsForTests(&settings.ExecArgs{})
+	restoreSettings := settings.ReplaceSettingsForTests(&settings.BTSets{})
+
+	t.Cleanup(func() {
+		restoreArgs()
+		restoreSettings()
+	})
+
+	webErr := errors.New("stop before binding test server")
+	web := &fakeWebRuntime{startErr: webErr}
+	prepareSawConfigPort := false
+	deps := serverRuntimeDeps{
+		argsProvider:   settings.DefaultArgsProvider,
+		settingsSource: settings.DefaultSettingsProvider,
+		initSettings:   func(readOnly, searchWA bool) error { return nil },
+		prepareStartup: func(args *settings.ExecArgs, _ settings.SettingsProvider) error {
+			prepareSawConfigPort = args.Port == "19090" &&
+				args.SslPort == "19443" &&
+				args.HTTPAuth &&
+				args.SearchWA
+
+			return nil
+		},
+		newWebServer: func() webRuntime { return web },
+		setShutdown:  func(func()) {},
+	}
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port:     "19090",
+			SSLPort:  "19443",
+			HTTPAuth: true,
+			SearchWA: true,
+		},
+	}
+	rt := newServerRuntime(deps, cfg)
+
+	err := rt.Start()
+	if !errors.Is(err, webErr) {
+		t.Fatalf("expected web start error, got %v", err)
+	}
+
+	if !prepareSawConfigPort {
+		t.Fatal("expected config server values to be applied before prepare startup")
+	}
+
+	runtime := settings.GetRuntimeState()
+	if runtime.Port != "19090" || runtime.SslPort != "19443" {
+		t.Fatalf("runtime state did not receive config ports: port=%q ssl_port=%q", runtime.Port, runtime.SslPort)
+	}
+
+	if !runtime.HTTPAuth || !runtime.SearchWA {
+		t.Fatalf("runtime auth flags not applied: http_auth=%v search_wa=%v", runtime.HTTPAuth, runtime.SearchWA)
 	}
 }
 

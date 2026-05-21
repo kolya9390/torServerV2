@@ -5,49 +5,78 @@ import (
 
 	"github.com/anacrolix/torrent"
 
+	"server/internal/app/contracts"
 	"server/settings"
 	"server/torr"
 	"server/torr/state"
-	"server/web/api"
 )
 
 type ensureTorrentServiceStub struct {
-	getResult  *torr.Torrent
-	loadResult *torr.Torrent
-	addResult  *torr.Torrent
+	getResult  contracts.TorrentHandle
+	loadResult contracts.TorrentHandle
+	addResult  contracts.TorrentHandle
 	addErr     error
 
 	loadCalls int
 	addCalls  int
 }
 
-func (s *ensureTorrentServiceStub) Add(spec *torrent.TorrentSpec, title, poster, data, category string) (*torr.Torrent, error) {
+func (s *ensureTorrentServiceStub) Add(spec contracts.TorrentSpec, title, poster, data, category string) (contracts.TorrentHandle, error) {
 	s.addCalls++
 
 	return s.addResult, s.addErr
 }
 
-func (s *ensureTorrentServiceStub) Get(hash string) *torr.Torrent {
+func (s *ensureTorrentServiceStub) Get(hash string) contracts.TorrentHandle {
 	return s.getResult
 }
 
-func (s *ensureTorrentServiceStub) Set(hash, title, poster, category, data string) *torr.Torrent {
+func (s *ensureTorrentServiceStub) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+	if tor == nil {
+		return nil
+	}
+
+	return tor.Status()
+}
+
+func (s *ensureTorrentServiceStub) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+	if s.getResult == nil {
+		return nil, false
+	}
+
+	return s.getResult.Status(), true
+}
+
+func (s *ensureTorrentServiceStub) Set(hash, title, poster, category, data string) contracts.TorrentHandle {
 	return nil
 }
 
-func (s *ensureTorrentServiceStub) SaveToDB(tor *torr.Torrent) {}
-func (s *ensureTorrentServiceStub) Remove(hash string)         {}
-func (s *ensureTorrentServiceStub) List() []*torr.Torrent      { return nil }
-func (s *ensureTorrentServiceStub) Drop(hash string)           {}
-func (s *ensureTorrentServiceStub) EnqueuePreload(tor *torr.Torrent, index int) bool {
+func (s *ensureTorrentServiceStub) SaveToDB(tor contracts.TorrentHandle) {}
+func (s *ensureTorrentServiceStub) Remove(hash string)                   {}
+func (s *ensureTorrentServiceStub) List() []contracts.TorrentHandle      { return nil }
+func (s *ensureTorrentServiceStub) Statuses() []*state.TorrentStatus {
+	return []*state.TorrentStatus{}
+}
+func (s *ensureTorrentServiceStub) ListHashes() []string { return []string{} }
+func (s *ensureTorrentServiceStub) Drop(hash string)     {}
+func (s *ensureTorrentServiceStub) IsStored(tor contracts.TorrentHandle) bool {
+	return tor != nil && tor.State() == state.TorrentInDB
+}
+func (s *ensureTorrentServiceStub) DropReadiness(hash string) contracts.DropReadiness {
+	return contracts.DropReadiness{}
+}
+func (s *ensureTorrentServiceStub) CacheStateByHash(hash string) (any, bool) {
+	return nil, false
+}
+func (s *ensureTorrentServiceStub) EnqueuePreload(tor contracts.TorrentHandle, index int) bool {
 	return false
 }
 
-func (s *ensureTorrentServiceStub) EnqueueMetadataFinalize(tor *torr.Torrent, spec *torrent.TorrentSpec, saveToDB bool) bool {
+func (s *ensureTorrentServiceStub) EnqueueMetadataFinalize(tor contracts.TorrentHandle, spec *contracts.TorrentSpec, saveToDB bool) bool {
 	return false
 }
 
-func (s *ensureTorrentServiceStub) LoadFromDB(tor *torr.Torrent) *torr.Torrent {
+func (s *ensureTorrentServiceStub) LoadFromDB(tor contracts.TorrentHandle) contracts.TorrentHandle {
 	s.loadCalls++
 
 	return s.loadResult
@@ -58,14 +87,14 @@ func TestEnsureTorrent_LoadsDBTorrentBeforePlayback(t *testing.T) {
 	spec := &torrent.TorrentSpec{}
 	spec.InfoHash = torrent.InfoHash{1, 2, 3}
 
-	dbTorrent := &torr.Torrent{Stat: state.TorrentInDB, Title: "stored"}
-	loadedTorrent := &torr.Torrent{Stat: state.TorrentWorking, Title: "stored"}
+	dbTorrent := wrapTorrent(&torr.Torrent{Stat: state.TorrentInDB, Title: "stored"})
+	loadedTorrent := wrapTorrent(&torr.Torrent{Stat: state.TorrentWorking, Title: "stored"})
 	stub := &ensureTorrentServiceStub{
 		getResult:  dbTorrent,
 		loadResult: loadedTorrent,
 	}
 
-	got, err := svc.EnsureTorrent(stub, spec, api.StreamMeta{}, true)
+	got, err := svc.EnsureTorrent(stub, wrapTorrentSpec(spec), contracts.StreamMeta{}, true)
 	if err != nil {
 		t.Fatalf("EnsureTorrent returned error: %v", err)
 	}
@@ -89,12 +118,12 @@ func TestEnsureTorrent_DBTorrentRequiresActivationPermission(t *testing.T) {
 	spec.InfoHash = torrent.InfoHash{9, 9, 9}
 
 	stub := &ensureTorrentServiceStub{
-		getResult: &torr.Torrent{Stat: state.TorrentInDB},
+		getResult: wrapTorrent(&torr.Torrent{Stat: state.TorrentInDB}),
 	}
 
-	_, err := svc.EnsureTorrent(stub, spec, api.StreamMeta{}, false)
-	if err != api.ErrStreamUnauthorized {
-		t.Fatalf("EnsureTorrent error = %v, want %v", err, api.ErrStreamUnauthorized)
+	_, err := svc.EnsureTorrent(stub, wrapTorrentSpec(spec), contracts.StreamMeta{}, false)
+	if err != contracts.ErrStreamUnauthorized {
+		t.Fatalf("EnsureTorrent error = %v, want %v", err, contracts.ErrStreamUnauthorized)
 	}
 
 	if stub.loadCalls != 0 {

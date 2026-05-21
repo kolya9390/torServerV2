@@ -131,9 +131,11 @@ func (t *Torrent) runPreloadLoop(ctx context.Context, reader torrent.Reader, rea
 		select {
 		case <-ctx.Done():
 			log.Debug("Preload cancelled via context")
+
 			return nil
 		case <-t.lifecycle.closed:
 			log.Debug("Preload cancelled: torrent closed")
+
 			return nil
 		default:
 		}
@@ -223,6 +225,7 @@ func (t *Torrent) probeFileMetadata(index int) {
 
 	serverCfg := t.currentRuntimeState().ServerConfig()
 	link := "http://127.0.0.1:" + serverCfg.Port + "/play/" + t.Hash().HexString() + "/" + strconv.Itoa(index)
+
 	if serverCfg.SSL {
 		link = "https://127.0.0.1:" + serverCfg.SSLPort + "/play/" + t.Hash().HexString() + "/" + strconv.Itoa(index)
 	}

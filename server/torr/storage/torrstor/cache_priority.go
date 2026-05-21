@@ -156,6 +156,7 @@ func (c *Cache) desiredPriorities(ranges []Range) map[int]torrent.PiecePriority 
 	}
 
 	activeReaders := 0
+
 	for r := range c.readers.items {
 		if r.isActive() {
 			activeReaders++
@@ -221,11 +222,13 @@ func (c *Cache) applyDesiredPriorities(desired map[int]torrent.PiecePriority) {
 			}
 
 			delete(c.priorities.pieces, id)
+
 			continue
 		}
 
 		if tracked == want && actual == want {
 			delete(desired, id)
+
 			continue
 		}
 
@@ -234,6 +237,7 @@ func (c *Cache) applyDesiredPriorities(desired map[int]torrent.PiecePriority) {
 		}
 
 		c.priorities.pieces[id] = want
+
 		delete(desired, id)
 	}
 
@@ -333,6 +337,7 @@ func (c *Cache) clearPriority() {
 
 	for r := range c.readers.items {
 		r.checkReader(totalReaders)
+
 		if r.isActive() {
 			activeReaders++
 		}

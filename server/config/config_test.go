@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -84,6 +86,26 @@ func TestApplyDefaults(t *testing.T) {
 
 	if cfg.DiskCache.SyncPolicy != "periodic" {
 		t.Errorf("DiskCache.SyncPolicy = %q, want %q", cfg.DiskCache.SyncPolicy, "periodic")
+	}
+
+	if cfg.Debug.Enabled {
+		t.Error("Debug.Enabled = true, want false by default")
+	}
+}
+
+func TestShippedConfigDisablesFullDebugByDefault(t *testing.T) {
+	data, err := os.ReadFile("config.yml")
+	if err != nil {
+		t.Fatalf("read shipped config.yml: %v", err)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("parse shipped config.yml: %v", err)
+	}
+
+	if cfg.Debug.Enabled {
+		t.Fatal("release config template must keep debug.enabled=false")
 	}
 }
 

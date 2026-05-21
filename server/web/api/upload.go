@@ -1,13 +1,22 @@
 package api
 
 import (
+	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
+	"server/internal/app/contracts"
 
 	"server/log"
-	"server/web/api/utils"
 
 	"github.com/gin-gonic/gin"
+)
+
+const (
+	// MaxTorrentUploadBodyBytes limits the whole multipart request body before form parsing.
+	// .torrent metadata files are normally small; 4 MiB leaves room for large metadata while
+	// preventing unbounded multipart memory/disk use.
+	maxTorrentUploadBodyBytes int64 = 4 << 20
 )
 
 // parseUploadForm extracts form fields from a multipart form.
@@ -38,7 +47,7 @@ func parseUploadForm(form *multipart.Form) (save bool, title, category, poster, 
 // Returns torSet flag, torrent status, and any error encountered.
 func processUploadFile(
 	file *multipart.FileHeader,
-	svc *APIServices,
+	svc *contracts.APIServices,
 	save bool,
 	title, category, poster, data string,
 ) (torSet bool, status any, err error) {
@@ -53,7 +62,7 @@ func processUploadFile(
 		}
 	}()
 
-	spec, parseErr := utils.ParseFile(torrFile)
+	spec, parseErr := svc.Streams.ParseTorrentFile(torrFile)
 	if parseErr != nil {
 		return false, nil, parseErr
 	}
@@ -63,25 +72,26 @@ func processUploadFile(
 		return false, nil, addErr
 	}
 
-	if tor.Data != "" && svc.Settings.EnableDebug() {
-		log.TLogln("torrent data:", tor.Data)
+	torStatus := svc.Torrents.Status(tor)
+	if torStatus != nil && torStatus.Data != "" && svc.Settings.EnableDebug() {
+		log.TLogln("torrent data:", torStatus.Data)
 	}
 
-	if tor.Category != "" && svc.Settings.EnableDebug() {
-		log.TLogln("torrent category:", tor.Category)
+	if torStatus != nil && torStatus.Category != "" && svc.Settings.EnableDebug() {
+		log.TLogln("torrent category:", torStatus.Category)
 	}
 
-	if queued := svc.Torrents.EnqueueMetadataFinalize(tor, spec, save); !queued {
+	if queued := svc.Torrents.EnqueueMetadataFinalize(tor, &spec, save); !queued {
 		log.TLogln("metadata finalize queue is full, skipping async finalize")
 	}
 
-	return true, tor.Status(), nil
+	return true, torStatus, nil
 }
 
 // torrentUpload godoc
 //
 //	@Summary		Add .torrent file
-//	@Description	Only one file support.
+//	@Description	Only one file support. Multipart request body is limited to 4 MiB.
 //
 //	@Tags			API
 //
@@ -98,10 +108,18 @@ func processUploadFile(
 //	@Success		200	{object}	object	"Torrent status"
 //	@Router			/torrent/upload [post]
 func torrentUpload(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
+	limitUploadRequestBody(c)
 
 	form, err := c.MultipartForm()
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			abortAPIError(c, http.StatusRequestEntityTooLarge, newUploadTooLargeError(maxTorrentUploadBodyBytes))
+
+			return
+		}
+
 		abortAPIError(c, http.StatusBadRequest, newValidationError("request", "invalid multipart form"))
 
 		return
@@ -154,4 +172,32 @@ func torrentUpload(c *gin.Context) {
 	}
 
 	c.JSON(200, status)
+}
+
+func limitUploadRequestBody(c *gin.Context) {
+	if c == nil || c.Request == nil || c.Request.Body == nil {
+		return
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxTorrentUploadBodyBytes)
+}
+
+func newUploadTooLargeError(limit int64) error {
+	return APIError{
+		Type:    "validation_error",
+		Message: "multipart upload exceeds maximum allowed size",
+		Status:  http.StatusRequestEntityTooLarge,
+		Field:   "request",
+		Cause:   errors.New(formatByteLimit(limit)),
+	}
+}
+
+func formatByteLimit(limit int64) string {
+	const bytesInMiB = 1024 * 1024
+
+	if limit%bytesInMiB == 0 {
+		return fmt.Sprintf("max upload size is %d MiB", limit/bytesInMiB)
+	}
+
+	return fmt.Sprintf("max upload size is %d bytes", limit)
 }

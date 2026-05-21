@@ -49,17 +49,7 @@ func (s *runtimeStateStore) set(state RuntimeState) {
 	s.mu.Unlock()
 
 	// Transitional compatibility for legacy call sites still reading package vars.
-	Path = state.Path
-	IP = state.IP
-	Port = state.Port
-	Ssl = state.Ssl
-	SslPort = state.SslPort
-	HTTPAuth = state.HTTPAuth
-	SearchWA = state.SearchWA
-	PubIPv4 = state.PubIPv4
-	PubIPv6 = state.PubIPv6
-	TorAddr = state.TorAddr
-	MaxSize = state.MaxSize
+	syncLegacyRuntimeVars(state)
 }
 
 func (s *runtimeStateStore) get() RuntimeState {
@@ -69,19 +59,7 @@ func (s *runtimeStateStore) get() RuntimeState {
 
 	// Transitional fallback in case legacy code mutated package vars directly.
 	if state == (RuntimeState{}) {
-		state = RuntimeState{
-			Path:     Path,
-			IP:       IP,
-			Port:     Port,
-			Ssl:      Ssl,
-			SslPort:  SslPort,
-			HTTPAuth: HTTPAuth,
-			SearchWA: SearchWA,
-			PubIPv4:  PubIPv4,
-			PubIPv6:  PubIPv6,
-			TorAddr:  TorAddr,
-			MaxSize:  MaxSize,
-		}
+		state = legacyRuntimeStateSnapshot()
 	}
 
 	return state
@@ -108,15 +86,5 @@ func (s *runtimeStateStore) update(update func(*RuntimeState)) {
 	s.mu.Unlock()
 
 	// Transitional compatibility for legacy call sites still reading package vars.
-	Path = state.Path
-	IP = state.IP
-	Port = state.Port
-	Ssl = state.Ssl
-	SslPort = state.SslPort
-	HTTPAuth = state.HTTPAuth
-	SearchWA = state.SearchWA
-	PubIPv4 = state.PubIPv4
-	PubIPv6 = state.PubIPv6
-	TorAddr = state.TorAddr
-	MaxSize = state.MaxSize
+	syncLegacyRuntimeVars(state)
 }

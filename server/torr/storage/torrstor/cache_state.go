@@ -26,6 +26,7 @@ func (c *Cache) GetState() *state.CacheState {
 	c.mu.RUnlock()
 
 	readersState := make([]*state.ReaderState, 0)
+
 	if c.Readers() > 0 {
 		c.readers.mu.Lock()
 		activeReaders := 0
@@ -128,6 +129,7 @@ func (c *Cache) evictLRU() *Piece {
 	}
 
 	c.lru.list.Remove(el)
+
 	p.lruEl = nil
 
 	return p

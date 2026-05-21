@@ -24,10 +24,12 @@ func (c *Cache) CleanPieces() {
 	c.cleanup.mu.Lock()
 	if c.cleanup.removing.Load() {
 		c.cleanup.mu.Unlock()
+
 		return
 	}
 
 	c.cleanup.removing.Store(true)
+
 	defer func() { c.cleanup.removing.Store(false) }()
 	c.cleanup.mu.Unlock()
 
@@ -56,6 +58,7 @@ func (c *Cache) getRemPieces() []*Piece {
 	ranges := c.getActiveReaderRanges()
 
 	c.mu.RLock()
+
 	pieces := c.pieces
 	for id, p := range pieces {
 		pSize := p.Size.Load()

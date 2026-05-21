@@ -14,6 +14,7 @@ func (t *Torrent) WaitInfo() bool {
 	}
 
 	sets := t.currentSettings()
+
 	tm := time.NewTimer(time.Minute + time.Second*time.Duration(sets.TorrentDisconnectTimeout))
 	defer tm.Stop()
 
@@ -51,6 +52,7 @@ func (t *Torrent) GotInfo() bool {
 
 		return false
 	}
+
 	if t.Stat == state.TorrentPreload {
 		t.muTorrent.Unlock()
 

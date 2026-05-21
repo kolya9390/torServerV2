@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"strings"
 
+	"server/internal/app/contracts"
 	"server/internal/torrentparse"
 	"server/torr/state"
 	"server/utils"
-	"server/web/api"
 )
 
-func (d playbackService) BuildAllPlaylist(host string, torrents api.TorrentService) api.PlaylistPayload {
+func (d playbackService) BuildAllPlaylist(host string, torrents contracts.TorrentService) contracts.PlaylistPayload {
 	torrs := torrents.List()
 
 	var body strings.Builder
@@ -28,27 +28,32 @@ func (d playbackService) BuildAllPlaylist(host string, torrents api.TorrentServi
 
 	// fn=file.m3u fixes forkplayer bug with trailing .m3u in link.
 	for _, tr := range torrs {
+		status := tr.Status()
+		if status == nil {
+			continue
+		}
+
 		body.WriteString("#EXTINF:0")
 
-		if tr.Poster != "" {
+		if status.Poster != "" {
 			body.WriteString(` tvg-logo="`)
-			body.WriteString(tr.Poster)
+			body.WriteString(status.Poster)
 			body.WriteString(`"`)
 		}
 
 		body.WriteString(` type="playlist",`)
-		body.WriteString(tr.Title)
+		body.WriteString(status.Title)
 		body.WriteString("\n")
 		body.WriteString(host)
 		body.WriteString("/stream/")
-		body.WriteString(url.PathEscape(tr.Title))
+		body.WriteString(url.PathEscape(status.Title))
 		body.WriteString(".m3u?link=")
-		body.WriteString(tr.TorrentSpec.InfoHash.HexString())
+		body.WriteString(tr.HashHex())
 		body.WriteString("&m3u&fn=file.m3u\n")
-		hash.WriteString(tr.Hash().HexString())
+		hash.WriteString(tr.HashHex())
 	}
 
-	return api.PlaylistPayload{
+	return contracts.PlaylistPayload{
 		Name: "all.m3u",
 		Hash: hash.String(),
 		Body: body.String(),
@@ -56,65 +61,69 @@ func (d playbackService) BuildAllPlaylist(host string, torrents api.TorrentServi
 }
 
 func (d playbackService) BuildPlaylistByHash(hash, requestedName string, fromLast bool,
-	host string, torrents api.TorrentService, viewed api.ViewedService) (api.PlaylistPayload, error) {
+	host string, torrents contracts.TorrentService, viewed contracts.ViewedService) (contracts.PlaylistPayload, error) {
 	if hash == "" {
-		return api.PlaylistPayload{}, api.ErrPlaylistHashRequired
+		return contracts.PlaylistPayload{}, contracts.ErrPlaylistHashRequired
 	}
 
 	tor := torrents.Get(hash)
 	if tor == nil {
-		return api.PlaylistPayload{}, api.ErrPlaylistTorrentNotFound
+		return contracts.PlaylistPayload{}, contracts.ErrPlaylistTorrentNotFound
 	}
 
-	if tor.Stat == state.TorrentInDB {
+	if tor.State() == state.TorrentInDB {
 		tor = torrents.LoadFromDB(tor)
 		if tor == nil {
-			return api.PlaylistPayload{}, api.ErrPlaylistLoadFailed
+			return contracts.PlaylistPayload{}, contracts.ErrPlaylistLoadFailed
 		}
 	}
 
 	name := normalizePlaylistName(requestedName, tor.Name())
 	body := d.BuildM3UFromStatus(tor.Status(), host, fromLast, viewed)
 
-	return api.PlaylistPayload{
+	return contracts.PlaylistPayload{
 		Name: name,
-		Hash: tor.Hash().HexString(),
+		Hash: tor.HashHex(),
 		Body: body,
 	}, nil
 }
 
-func (d playbackService) ResolvePlay(hash, index string, unauthorized bool, torrents api.TorrentService) (api.PlayTarget, error) {
+func (d playbackService) ResolvePlay(hash, index string, unauthorized bool, torrents contracts.TorrentService) (contracts.PlayTarget, error) {
 	if hash == "" || index == "" {
-		return api.PlayTarget{}, api.ErrPlayPathRequired
+		return contracts.PlayTarget{}, contracts.ErrPlayPathRequired
 	}
 
 	spec, err := torrentparse.ParseLink(hash)
 	if err != nil {
-		return api.PlayTarget{}, api.ErrPlayHashInvalid
+		return contracts.PlayTarget{}, contracts.ErrPlayHashInvalid
 	}
 
-	tor := torrents.Get(spec.InfoHash.HexString())
+	appSpec := wrapTorrentSpec(spec)
+
+	tor := torrents.Get(appSpec.HashHex())
 	if tor == nil && unauthorized {
-		return api.PlayTarget{}, api.ErrPlayUnauthorized
+		return contracts.PlayTarget{}, contracts.ErrPlayUnauthorized
 	}
 
 	if tor == nil {
-		return api.PlayTarget{}, api.ErrPlayTorrentNotFound
+		return contracts.PlayTarget{}, contracts.ErrPlayTorrentNotFound
 	}
 
-	if tor.Stat == state.TorrentInDB {
-		tor, err = torrents.Add(spec, tor.Title, tor.Poster, tor.Data, tor.Category)
+	if tor.State() == state.TorrentInDB {
+		meta := tor.Metadata()
+
+		tor, err = torrents.Add(appSpec, meta.Title, meta.Poster, meta.Data, meta.Category)
 		if err != nil {
-			return api.PlayTarget{}, fmt.Errorf("%w: %v", api.ErrPlayLoadFailed, err)
+			return contracts.PlayTarget{}, fmt.Errorf("%w: %v", contracts.ErrPlayLoadFailed, err)
 		}
 	}
 
-	if !tor.GotInfo() {
-		return api.PlayTarget{}, api.ErrPlayTimeout
+	if !tor.Ready() {
+		return contracts.PlayTarget{}, contracts.ErrPlayTimeout
 	}
 
 	fileIndex := -1
-	if len(tor.Files()) == 1 {
+	if tor.FileCount() == 1 {
 		fileIndex = 1
 	} else {
 		ind, parseErr := strconv.Atoi(index)
@@ -124,10 +133,10 @@ func (d playbackService) ResolvePlay(hash, index string, unauthorized bool, torr
 	}
 
 	if fileIndex == -1 {
-		return api.PlayTarget{}, api.ErrPlayFileIndexInvalid
+		return contracts.PlayTarget{}, contracts.ErrPlayFileIndexInvalid
 	}
 
-	return api.PlayTarget{
+	return contracts.PlayTarget{
 		Torrent:   tor,
 		FileIndex: fileIndex,
 	}, nil
@@ -147,7 +156,7 @@ func normalizePlaylistName(rawName, fallback string) string {
 	return name + ".m3u"
 }
 
-func (d playbackService) BuildM3UFromStatus(tor *state.TorrentStatus, host string, fromLast bool, viewed api.ViewedService) string {
+func (d playbackService) BuildM3UFromStatus(tor *state.TorrentStatus, host string, fromLast bool, viewed contracts.ViewedService) string {
 	var body strings.Builder
 
 	from := 0
@@ -239,7 +248,7 @@ func findFileNamesakes(files []*state.TorrentFileStat, file *state.TorrentFileSt
 	return namesakes
 }
 
-func searchLastPlayed(viewedSvc api.ViewedService, tor *state.TorrentStatus) int {
+func searchLastPlayed(viewedSvc contracts.ViewedService, tor *state.TorrentStatus) int {
 	viewed := viewedSvc.ListViewed(tor.Hash)
 	if len(viewed) == 0 {
 		return -1

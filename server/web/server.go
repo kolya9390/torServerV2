@@ -17,6 +17,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"server/dlna"
+	"server/internal/app/contracts"
 	"server/log"
 	"server/metrics"
 	"server/modules"
@@ -38,6 +39,7 @@ type ServerDeps struct {
 	RuntimeState     func() settings.RuntimeState
 	CORSService      webinfra.CORSService
 	SSLService       webinfra.SSLService
+	APIServices      *contracts.APIServices
 }
 
 type Server struct {
@@ -51,12 +53,20 @@ type Server struct {
 	settings   settings.SettingsProvider
 	args       settings.ArgsProvider
 	runtime    func() settings.RuntimeState
+	apiSvc     *contracts.APIServices
 }
+
+const (
+	httpReadHeaderTimeout = 10 * time.Second
+	httpIdleTimeout       = 60 * time.Second
+	httpMaxHeaderBytes    = 1 << 20
+)
 
 func NewServerWithDeps(deps ServerDeps) *Server {
 	if deps.BTServer == nil {
 		deps.BTServer = torr.NewBTSWithProvidersRuntimeAndDB(deps.SettingsProvider, deps.ArgsProvider, deps.RuntimeState, deps.TorrentDBStore)
 	}
+
 	if deps.RuntimeState == nil {
 		deps.RuntimeState = func() settings.RuntimeState { return settings.RuntimeState{} }
 	}
@@ -69,7 +79,18 @@ func NewServerWithDeps(deps ServerDeps) *Server {
 		settings: deps.SettingsProvider,
 		args:     deps.ArgsProvider,
 		runtime:  deps.RuntimeState,
+		apiSvc:   deps.APIServices,
 	}
+}
+
+func (s *Server) SetAPIServices(services *contracts.APIServices) {
+	if s == nil || services == nil {
+		return
+	}
+
+	s.mu.Lock()
+	s.apiSvc = services
+	s.mu.Unlock()
 }
 
 func (s *Server) currentSettings() *settings.BTSets {
@@ -185,8 +206,9 @@ func setupMiddleware(s *Server) *gin.Engine {
 		securityHeadersMiddleware(),
 		api.ErrorResponder(),
 	)
-	auth.InitAuthWithRuntimeState(s.currentRuntimeState)
-	auth.SetupAuth(route)
+
+	authRuntime := auth.NewRuntimeWithRuntimeState(s.currentRuntimeState)
+	auth.SetupAuthRuntime(route, authRuntime)
 
 	return route
 }
@@ -229,7 +251,11 @@ func (s *Server) registerDebugRoutes(route *gin.Engine) {
 
 // registerAppRoutes registers API routes and optional WebDAV/DLNA/FUSE modules.
 func (s *Server) registerAppRoutes(route *gin.Engine) {
-	api.SetupRouteWithRuntimeState(route, s.currentRuntimeState)
+	s.mu.RLock()
+	apiServices := s.apiSvc
+	s.mu.RUnlock()
+
+	api.SetupRouteWithServices(route, s.currentRuntimeState, apiServices)
 
 	args := s.currentArgs()
 	if args != nil && args.WebDAV {
@@ -275,6 +301,7 @@ func (s *Server) startHTTPSServer(route *gin.Engine, ips []string) error {
 		log.TLogln("Start https server at", httpsAddr)
 
 		tlsCfg := s.currentSettings().TLSConfig()
+
 		err := httpsSrv.ListenAndServeTLS(tlsCfg.Cert, tlsCfg.Key)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.waitChan <- err
@@ -295,13 +322,7 @@ func (s *Server) startHTTPServer(route *gin.Engine) {
 	}
 
 	httpAddr := args.IP + ":" + args.Port
-	httpSrv := &http.Server{
-		Addr:         httpAddr,
-		Handler:      route,
-		ReadTimeout:  0, // No timeout - streaming connections
-		WriteTimeout: 0, // No timeout - streaming connections
-		IdleTimeout:  60 * time.Second,
-	}
+	httpSrv := newHTTPServer(httpAddr, route)
 
 	s.mu.Lock()
 	s.httpServer = httpSrv
@@ -323,6 +344,18 @@ func (s *Server) startHTTPServer(route *gin.Engine) {
 		}
 		s.waitChan <- nil
 	}()
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+		MaxHeaderBytes:    httpMaxHeaderBytes,
+		ReadTimeout:       0, // No timeout - streaming connections.
+		WriteTimeout:      0, // No timeout - streaming connections.
+		IdleTimeout:       httpIdleTimeout,
+	}
 }
 
 func (s *Server) Wait() error {

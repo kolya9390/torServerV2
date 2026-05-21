@@ -65,6 +65,7 @@ func tryAcquireStream(ctx context.Context, sets *settings.BTSets) (func(), error
 
 	if !acquireStreamSlot(admission.maxStreams) {
 		deadline := time.After(admission.waitDuration)
+
 		ticker := time.NewTicker(250 * time.Millisecond)
 		defer ticker.Stop()
 

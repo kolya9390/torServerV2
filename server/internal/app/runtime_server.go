@@ -5,6 +5,7 @@ import (
 	"os"
 	"server/config"
 	"server/internal/app/apiservices"
+	"server/internal/app/contracts"
 	"server/internal/startup"
 	"server/log"
 	"server/settings"
@@ -25,6 +26,10 @@ type btServerProvider interface {
 	BTServer() *torr.BTServer
 }
 
+type apiServicesSetter interface {
+	SetAPIServices(*contracts.APIServices)
+}
+
 type serverRuntimeDeps struct {
 	argsProvider   settings.ArgsProvider
 	settingsSource settings.SettingsProvider
@@ -32,10 +37,9 @@ type serverRuntimeDeps struct {
 	initSettings   func(readOnly, searchWA bool) error
 	prepareStartup func(args *settings.ExecArgs, provider settings.SettingsProvider) error
 	newWebServer   func() webRuntime
-	newAPIServices func(*torr.BTServer) *api.APIServices
+	newAPIServices func(*torr.BTServer) *contracts.APIServices
 	closeSettings  func()
 	setShutdown    func(func())
-	setAPIServices func(*api.APIServices)
 }
 
 func defaultServerRuntimeDeps() serverRuntimeDeps {
@@ -53,7 +57,7 @@ func defaultServerRuntimeDeps() serverRuntimeDeps {
 				RuntimeState:     settings.GetRuntimeState,
 			})
 		},
-		newAPIServices: func(bt *torr.BTServer) *api.APIServices {
+		newAPIServices: func(bt *torr.BTServer) *contracts.APIServices {
 			return apiservices.NewDefaultWithDeps(apiservices.DefaultDeps{
 				TorrentBackend:    torr.NewTorrentServiceWithBT(bt),
 				SettingsProvider:  settings.DefaultSettingsProvider,
@@ -66,9 +70,8 @@ func defaultServerRuntimeDeps() serverRuntimeDeps {
 				ListViewed:        settings.ListViewed,
 			})
 		},
-		closeSettings:  settings.CloseDB,
-		setShutdown:    api.SetShutdownHook,
-		setAPIServices: api.SetServices,
+		closeSettings: settings.CloseDB,
+		setShutdown:   api.SetShutdownHook,
 	}
 }
 
@@ -81,7 +84,7 @@ type serverRuntime struct {
 	deps        serverRuntimeDeps
 	web         webRuntime
 	cfg         *config.Config
-	apiServices *api.APIServices
+	apiServices *contracts.APIServices
 }
 
 func (r *serverRuntime) Start() error {
@@ -100,15 +103,10 @@ func (r *serverRuntime) Start() error {
 		return err
 	}
 
-	if r.deps.setAPIServices != nil {
-		r.deps.setAPIServices(r.apiServices)
-	} else {
-		api.SetServices(r.apiServices)
-	}
-
 	if err := r.deps.prepareStartup(args, r.deps.settingsSource); err != nil {
 		return err
 	}
+
 	settings.SetArgs(args)
 
 	if args.Ssl && args.SslCert != "" && args.SslKey != "" {
@@ -201,7 +199,7 @@ func (r *serverRuntime) Wait() error {
 	return r.web.Wait()
 }
 
-func (r *serverRuntime) APIServices() *api.APIServices {
+func (r *serverRuntime) APIServices() *contracts.APIServices {
 	return r.apiServices
 }
 
@@ -231,17 +229,13 @@ func newServerRuntime(deps serverRuntimeDeps, cfg *config.Config) Runtime {
 	}
 
 	if deps.newAPIServices == nil {
-		deps.newAPIServices = func(bt *torr.BTServer) *api.APIServices {
+		deps.newAPIServices = func(bt *torr.BTServer) *contracts.APIServices {
 			return newDefaultAPIServices(deps, bt)
 		}
 	}
 
 	if deps.closeSettings == nil {
 		deps.closeSettings = settings.CloseDB
-	}
-
-	if deps.setAPIServices == nil {
-		deps.setAPIServices = api.SetServices
 	}
 
 	runtimeWeb := deps.newWebServer()
@@ -257,6 +251,10 @@ func newServerRuntime(deps serverRuntimeDeps, cfg *config.Config) Runtime {
 	apiServices := deps.newAPIServices(bt)
 	if apiServices == nil {
 		apiServices = newDefaultAPIServices(deps, bt)
+	}
+
+	if setter, ok := runtimeWeb.(apiServicesSetter); ok {
+		setter.SetAPIServices(apiServices)
 	}
 
 	return &serverRuntime{
@@ -276,7 +274,7 @@ func newDefaultWebRuntime(deps serverRuntimeDeps) webRuntime {
 	})
 }
 
-func newDefaultAPIServices(deps serverRuntimeDeps, bt *torr.BTServer) *api.APIServices {
+func newDefaultAPIServices(deps serverRuntimeDeps, bt *torr.BTServer) *contracts.APIServices {
 	defaultDeps := apiservices.DefaultDeps{
 		SettingsProvider: deps.settingsSource,
 		RuntimeState:     settings.GetRuntimeState,

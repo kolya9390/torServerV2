@@ -15,6 +15,7 @@ func setupBenchmarkCache(pieceLength int64, pieceCount int) *Cache {
 		UseDisk:          false,
 		TorrentsSavePath: "",
 	})
+
 	stor := NewStorage(pieceLength * int64(pieceCount))
 	cache := NewCache(pieceLength*int64(pieceCount), stor)
 

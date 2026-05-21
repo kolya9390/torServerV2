@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"runtime/debug"
+	"server/internal/app/contracts"
 
 	"server/log"
 	sets "server/settings"
@@ -34,7 +35,7 @@ type viewedReqJS struct {
 //	@Success		200 {array} sets.Viewed
 //	@Router			/viewed [post]
 func viewed(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 
 	var req viewedReqJS
 
@@ -63,7 +64,7 @@ func viewed(c *gin.Context) {
 	}
 }
 
-func setViewed(svc *APIServices, req viewedReqJS, c *gin.Context) {
+func setViewed(svc *contracts.APIServices, req viewedReqJS, c *gin.Context) {
 	if svc == nil || svc.Viewed == nil || req.Viewed == nil {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("viewed", "is required for action=set"))
 
@@ -74,7 +75,7 @@ func setViewed(svc *APIServices, req viewedReqJS, c *gin.Context) {
 	c.Status(200)
 }
 
-func remViewed(svc *APIServices, req viewedReqJS, c *gin.Context) {
+func remViewed(svc *contracts.APIServices, req viewedReqJS, c *gin.Context) {
 	if svc == nil || svc.Viewed == nil || req.Viewed == nil {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("viewed", "is required for action=rem"))
 
@@ -85,7 +86,7 @@ func remViewed(svc *APIServices, req viewedReqJS, c *gin.Context) {
 	c.Status(200)
 }
 
-func listViewed(svc *APIServices, req viewedReqJS, c *gin.Context) {
+func listViewed(svc *contracts.APIServices, req viewedReqJS, c *gin.Context) {
 	log.TLogln("listViewed: START")
 	log.TLogln("listViewed: svc is nil?", svc == nil)
 

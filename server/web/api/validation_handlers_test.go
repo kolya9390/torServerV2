@@ -12,6 +12,7 @@ import (
 func TestSettingsValidationRequiresAction(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, nil)))
 	r.POST("/settings", settings)
 
 	req := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(`{}`))
@@ -32,6 +33,7 @@ func TestSettingsValidationRequiresAction(t *testing.T) {
 func TestTorrentsValidationRequiresAction(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, nil)))
 	r.POST("/torrents", torrents)
 
 	req := httptest.NewRequest(http.MethodPost, "/torrents", strings.NewReader(`{}`))
@@ -52,6 +54,7 @@ func TestTorrentsValidationRequiresAction(t *testing.T) {
 func TestCacheValidationRequiresHash(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, nil)))
 	r.POST("/cache", cache)
 
 	req := httptest.NewRequest(http.MethodPost, "/cache", strings.NewReader(`{"action":"get"}`))
@@ -72,6 +75,7 @@ func TestCacheValidationRequiresHash(t *testing.T) {
 func TestViewedValidationRequiresPayload(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, nil)))
 	r.POST("/viewed", viewed)
 
 	req := httptest.NewRequest(http.MethodPost, "/viewed", strings.NewReader(`{"action":"set"}`))
@@ -92,6 +96,7 @@ func TestViewedValidationRequiresPayload(t *testing.T) {
 func TestStorageValidationRejectsInvalidValues(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, nil)))
 	r.POST("/storage/settings", UpdateStorageSettings)
 
 	req := httptest.NewRequest(http.MethodPost, "/storage/settings", strings.NewReader(`{"settings":"wrong"}`))
@@ -112,6 +117,7 @@ func TestStorageValidationRejectsInvalidValues(t *testing.T) {
 func TestCacheNotFoundEnvelope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, nil)))
 	r.POST("/cache", cache)
 
 	req := httptest.NewRequest(http.MethodPost, "/cache", strings.NewReader(`{"action":"get","hash":"0123456789abcdef0123456789abcdef01234567"}`))

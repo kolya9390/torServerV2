@@ -103,6 +103,7 @@ generate-mocks:
 	@mkdir -p server/internal/mocks
 	@cd server && $(HOME)/go/bin/mockgen -source=torr/service.go -destination=internal/mocks/mock_torrent_service.go -package=mocks TorrentService
 	@cd server && $(HOME)/go/bin/mockgen -source=settings/provider.go -destination=internal/mocks/mock_settings_provider.go -package=mocks SettingsProvider
+	@cd server && $(HOME)/go/bin/mockgen -source=internal/app/contracts/contracts.go -destination=internal/mocks/mock_api_contracts.go -package=mocks -mock_names TorrentHandle=MockAPITorrentHandle,TorrentService=MockAPITorrentService,SettingsService=MockAPISettingsService,ViewedService=MockAPIViewedService,SystemService=MockAPISystemService,SearchService=MockAPISearchService,MediaService=MockAPIMediaService,ModulesService=MockAPIModulesService,StreamService=MockAPIStreamService,PlaybackService=MockAPIPlaybackService TorrentHandle,TorrentService,SettingsService,ViewedService,SystemService,SearchService,MediaService,ModulesService,StreamService,PlaybackService
 	@echo "Mocks generated successfully"
 
 ## help: Show this help message

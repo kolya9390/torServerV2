@@ -15,6 +15,7 @@ func SwitchSettingsStorage(useJSON bool) error {
 	// Acquire exclusive lock for migration
 	dbMigrationLock.Lock()
 	defer dbMigrationLock.Unlock()
+
 	runtimePath := currentRuntimePath()
 
 	bboltDB := NewTDBAtPath(runtimePath)
@@ -61,6 +62,7 @@ func SwitchViewedStorage(useJSON bool) error {
 	// Acquire exclusive lock for migration
 	dbMigrationLock.Lock()
 	defer dbMigrationLock.Unlock()
+
 	runtimePath := currentRuntimePath()
 
 	bboltDB := NewTDBAtPath(runtimePath)

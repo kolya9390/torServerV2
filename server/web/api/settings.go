@@ -29,7 +29,7 @@ type setsReqJS struct {
 //	@Success		200	{object}	sets.BTSets	"Settings JSON or nothing. Depends on what action has been asked."
 //	@Router			/settings [post]
 func settings(c *gin.Context) {
-	svc := getServices()
+	svc := servicesFromContext(c)
 
 	var req setsReqJS
 

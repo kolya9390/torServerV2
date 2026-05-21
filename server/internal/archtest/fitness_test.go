@@ -40,12 +40,6 @@ func TestNoDirectSettingsArgsUsage(t *testing.T) {
 }
 
 func TestAPILayerDoesNotImportInfraDirectly(t *testing.T) {
-	forbidden := map[string]struct{}{
-		"server/torr":    {},
-		"server/modules": {},
-		"server/ffprobe": {},
-	}
-
 	goFiles := collectGoFiles(t, filepath.Join(projectRoot(t), "web", "api"), func(path string) bool {
 		if strings.HasSuffix(path, "_test.go") {
 			return false
@@ -65,14 +59,39 @@ func TestAPILayerDoesNotImportInfraDirectly(t *testing.T) {
 	for _, path := range goFiles {
 		f := parseFile(t, path)
 		for _, imp := range f.Imports {
-			pkg, err := strconv.Unquote(imp.Path.Value)
-			if err != nil {
-				t.Fatalf("unquote import in %s: %v", path, err)
-			}
-
-			if _, exists := forbidden[pkg]; exists {
+			pkg := importPath(t, path, imp)
+			if isForbiddenTransportInfraImport(pkg) {
 				t.Errorf("forbidden import %q in transport file %s", pkg, path)
 			}
+		}
+	}
+}
+
+func TestAppContractsDoNotImportTransportPackages(t *testing.T) {
+	goFiles := collectGoFiles(t, filepath.Join(projectRoot(t), "internal", "app", "contracts"), func(path string) bool {
+		return !strings.HasSuffix(path, "_test.go")
+	})
+
+	for _, path := range goFiles {
+		f := parseFile(t, path)
+		for _, imp := range f.Imports {
+			pkg := importPath(t, path, imp)
+			if pkg == "server/web" || strings.HasPrefix(pkg, "server/web/") {
+				t.Errorf("forbidden transport import %q in app contract file %s", pkg, path)
+			}
+		}
+	}
+}
+
+func TestTorrentsHandlerDoesNotImportParsingAdapters(t *testing.T) {
+	path := filepath.Join(projectRoot(t), "web", "api", "torrents.go")
+	f := parseFile(t, path)
+
+	for _, imp := range f.Imports {
+		pkg := importPath(t, path, imp)
+		switch pkg {
+		case "github.com/anacrolix/torrent", "server/torrshash", "server/web/api/utils":
+			t.Errorf("forbidden parsing adapter import %q in torrents handler %s", pkg, path)
 		}
 	}
 }
@@ -120,10 +139,7 @@ func TestSettingsLayerDoesNotImportWebPackages(t *testing.T) {
 	for _, path := range goFiles {
 		f := parseFile(t, path)
 		for _, imp := range f.Imports {
-			pkg, err := strconv.Unquote(imp.Path.Value)
-			if err != nil {
-				t.Fatalf("unquote import in %s: %v", path, err)
-			}
+			pkg := importPath(t, path, imp)
 
 			if strings.HasPrefix(pkg, "server/web/") {
 				t.Errorf("forbidden settings import %q in %s", pkg, path)
@@ -140,16 +156,36 @@ func TestInternalAppDoesNotImportRootServerPackage(t *testing.T) {
 	for _, path := range goFiles {
 		f := parseFile(t, path)
 		for _, imp := range f.Imports {
-			pkg, err := strconv.Unquote(imp.Path.Value)
-			if err != nil {
-				t.Fatalf("unquote import in %s: %v", path, err)
-			}
+			pkg := importPath(t, path, imp)
 
 			if pkg == "server" {
 				t.Errorf("forbidden internal/app import %q in %s", pkg, path)
 			}
 		}
 	}
+}
+
+func importPath(t *testing.T, sourcePath string, imp *ast.ImportSpec) string {
+	t.Helper()
+
+	pkg, err := strconv.Unquote(imp.Path.Value)
+	if err != nil {
+		t.Fatalf("unquote import in %s: %v", sourcePath, err)
+	}
+
+	return pkg
+}
+
+func isForbiddenTransportInfraImport(pkg string) bool {
+	if pkg == "github.com/anacrolix/torrent" || strings.HasPrefix(pkg, "github.com/anacrolix/torrent/") {
+		return true
+	}
+
+	if pkg == "server/torr" || strings.HasPrefix(pkg, "server/torr/") {
+		return true
+	}
+
+	return pkg == "server/modules" || pkg == "server/ffprobe"
 }
 
 func collectGoFiles(t *testing.T, root string, include func(string) bool) []string {

@@ -59,6 +59,7 @@ jobs:
 
   build:
     name: Build
+    needs: [test, lint]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:

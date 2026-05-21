@@ -277,6 +277,7 @@ func (runtimeCtx dlnaRuntimeContext) getLink(host, path string) string {
 
 	args := runtimeCtx.currentArgs()
 	port := ""
+
 	if args != nil {
 		port = args.Port
 	}
