@@ -7,8 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"server/internal/app/contracts"
 	"server/log"
-	sets "server/settings"
 )
 
 type APIError struct {
@@ -113,7 +113,11 @@ func abortAPIError(c *gin.Context, fallbackStatus int, err error) {
 	c.AbortWithStatusJSON(status, body)
 }
 
-func generateSettingsETag(s *sets.BTSets) string {
+func generateSettingsETag(s *contracts.Settings) string {
+	if s == nil {
+		return ""
+	}
+
 	data := []byte{
 		byte(s.CacheSize >> 24), byte(s.CacheSize >> 16), byte(s.CacheSize >> 8), byte(s.CacheSize),
 		byte(s.TorrentDisconnectTimeout >> 8), byte(s.TorrentDisconnectTimeout),

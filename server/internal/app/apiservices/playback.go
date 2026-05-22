@@ -10,7 +10,6 @@ import (
 
 	"server/internal/app/contracts"
 	"server/internal/torrentparse"
-	"server/torr/state"
 	"server/utils"
 )
 
@@ -71,7 +70,7 @@ func (d playbackService) BuildPlaylistByHash(hash, requestedName string, fromLas
 		return contracts.PlaylistPayload{}, contracts.ErrPlaylistTorrentNotFound
 	}
 
-	if tor.State() == state.TorrentInDB {
+	if tor.State() == contracts.TorrentInDB {
 		tor = torrents.LoadFromDB(tor)
 		if tor == nil {
 			return contracts.PlaylistPayload{}, contracts.ErrPlaylistLoadFailed
@@ -109,7 +108,7 @@ func (d playbackService) ResolvePlay(hash, index string, unauthorized bool, torr
 		return contracts.PlayTarget{}, contracts.ErrPlayTorrentNotFound
 	}
 
-	if tor.State() == state.TorrentInDB {
+	if tor.State() == contracts.TorrentInDB {
 		meta := tor.Metadata()
 
 		tor, err = torrents.Add(appSpec, meta.Title, meta.Poster, meta.Data, meta.Category)
@@ -156,7 +155,7 @@ func normalizePlaylistName(rawName, fallback string) string {
 	return name + ".m3u"
 }
 
-func (d playbackService) BuildM3UFromStatus(tor *state.TorrentStatus, host string, fromLast bool, viewed contracts.ViewedService) string {
+func (d playbackService) BuildM3UFromStatus(tor *contracts.TorrentStatus, host string, fromLast bool, viewed contracts.ViewedService) string {
 	var body strings.Builder
 
 	from := 0
@@ -233,10 +232,10 @@ func (d playbackService) BuildM3UFromStatus(tor *state.TorrentStatus, host strin
 	return body.String()
 }
 
-func findFileNamesakes(files []*state.TorrentFileStat, file *state.TorrentFileStat) []*state.TorrentFileStat {
+func findFileNamesakes(files []*contracts.TorrentFile, file *contracts.TorrentFile) []*contracts.TorrentFile {
 	name := filepath.Base(strings.TrimSuffix(file.Path, filepath.Ext(file.Path)))
 
-	var namesakes []*state.TorrentFileStat
+	var namesakes []*contracts.TorrentFile
 
 	for _, f := range files {
 		// External audio/subtitle files usually contain video filename fragment.
@@ -248,7 +247,7 @@ func findFileNamesakes(files []*state.TorrentFileStat, file *state.TorrentFileSt
 	return namesakes
 }
 
-func searchLastPlayed(viewedSvc contracts.ViewedService, tor *state.TorrentStatus) int {
+func searchLastPlayed(viewedSvc contracts.ViewedService, tor *contracts.TorrentStatus) int {
 	viewed := viewedSvc.ListViewed(tor.Hash)
 	if len(viewed) == 0 {
 		return -1

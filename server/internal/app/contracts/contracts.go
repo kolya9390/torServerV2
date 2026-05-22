@@ -5,11 +5,6 @@ import (
 	"io"
 	"net/http"
 	"time"
-
-	goffprobe "gopkg.in/vansante/go-ffprobe.v2"
-
-	sets "server/settings"
-	"server/torr/state"
 )
 
 // TorrentSpecPayload is an adapter-owned payload for a torrent engine implementation.
@@ -42,8 +37,8 @@ func (s TorrentSpec) Payload() TorrentSpecPayload {
 
 // TorrentHandle is the transport-facing view of an active torrent.
 type TorrentHandle interface {
-	Status() *state.TorrentStatus
-	State() state.TorrentStat
+	Status() *TorrentStatus
+	State() TorrentState
 	HashHex() string
 	Name() string
 	FileCount() int
@@ -61,15 +56,15 @@ type TorrentCreator interface {
 // TorrentLookup reads active torrent handles and derived runtime state.
 type TorrentLookup interface {
 	Get(hash string) TorrentHandle
-	Status(tor TorrentHandle) *state.TorrentStatus
-	StatusByHash(hash string) (*state.TorrentStatus, bool)
+	Status(tor TorrentHandle) *TorrentStatus
+	StatusByHash(hash string) (*TorrentStatus, bool)
 	IsStored(tor TorrentHandle) bool
 }
 
 // TorrentCatalog reads torrent collection views.
 type TorrentCatalog interface {
 	List() []TorrentHandle
-	Statuses() []*state.TorrentStatus
+	Statuses() []*TorrentStatus
 	ListHashes() []string
 }
 
@@ -149,13 +144,13 @@ type DropReadiness struct {
 
 // SettingsService defines settings use-cases for API handlers.
 type SettingsService interface {
-	Current() *sets.BTSets
-	Set(*sets.BTSets)
+	Current() *Settings
+	Set(*Settings)
 	SetDefault()
 	ReadOnly() bool
 	GetStoragePreferences() map[string]any
 	SetStoragePreferences(map[string]any) error
-	TMDBConfig() (sets.TMDBConfig, bool)
+	TMDBConfig() (TMDBConfig, bool)
 	BuildPlayURL(hash, fileID string) string
 	EnableDLNA() bool
 	EnableDebug() bool
@@ -163,9 +158,9 @@ type SettingsService interface {
 
 // ViewedService defines viewed-history operations consumed by handlers.
 type ViewedService interface {
-	SetViewed(v *sets.Viewed)
-	RemoveViewed(v *sets.Viewed)
-	ListViewed(hash string) []*sets.Viewed
+	SetViewed(v *ViewedItem)
+	RemoveViewed(v *ViewedItem)
+	ListViewed(hash string) []*ViewedItem
 }
 
 // SystemService defines process-level operations used by API handlers.
@@ -182,7 +177,7 @@ type SearchService interface {
 
 // MediaService defines media metadata operations used by API handlers.
 type MediaService interface {
-	ProbePlayURL(hash, fileID string) (*goffprobe.ProbeData, error)
+	ProbePlayURL(hash, fileID string) (MediaProbe, error)
 }
 
 // ModulesService defines peripheral module operations used by API handlers.
@@ -213,6 +208,161 @@ type SearchResult struct {
 	CreateDate time.Time `json:"createDate"`
 	Categories []string  `json:"categories,omitempty"`
 	Year       int       `json:"year,omitempty"`
+}
+
+// TorrentState is an application-owned torrent lifecycle state.
+// Numeric values intentionally match the legacy torr/state JSON values.
+type TorrentState int
+
+const (
+	TorrentAdded TorrentState = iota
+	TorrentGettingInfo
+	TorrentPreload
+	TorrentWorking
+	TorrentClosed
+	TorrentInDB
+)
+
+// TorrentStatus is an application-owned torrent runtime read-model.
+// JSON tags preserve the legacy torr/state.TorrentStatus response shape.
+type TorrentStatus struct {
+	Title               string         `json:"title"`
+	Category            string         `json:"category"`
+	Poster              string         `json:"poster"`
+	Data                string         `json:"data,omitempty"`
+	Timestamp           int64          `json:"timestamp"`
+	Name                string         `json:"name,omitempty"`
+	Hash                string         `json:"hash,omitempty"`
+	TorrsHash           string         `json:"torrs_hash,omitempty"`
+	Stat                TorrentState   `json:"stat"`
+	StatString          string         `json:"stat_string"`
+	LoadedSize          int64          `json:"loaded_size,omitempty"`
+	TorrentSize         int64          `json:"torrent_size,omitempty"`
+	PreloadedBytes      int64          `json:"preloaded_bytes,omitempty"`
+	PreloadSize         int64          `json:"preload_size,omitempty"`
+	DownloadSpeed       float64        `json:"download_speed,omitempty"`
+	UploadSpeed         float64        `json:"upload_speed,omitempty"`
+	TotalPeers          int            `json:"total_peers,omitempty"`
+	PendingPeers        int            `json:"pending_peers,omitempty"`
+	ActivePeers         int            `json:"active_peers,omitempty"`
+	ConnectedSeeders    int            `json:"connected_seeders,omitempty"`
+	HalfOpenPeers       int            `json:"half_open_peers,omitempty"`
+	BytesWritten        int64          `json:"bytes_written,omitempty"`
+	BytesWrittenData    int64          `json:"bytes_written_data,omitempty"`
+	BytesRead           int64          `json:"bytes_read,omitempty"`
+	BytesReadData       int64          `json:"bytes_read_data,omitempty"`
+	BytesReadUsefulData int64          `json:"bytes_read_useful_data,omitempty"`
+	ChunksWritten       int64          `json:"chunks_written,omitempty"`
+	ChunksRead          int64          `json:"chunks_read,omitempty"`
+	ChunksReadUseful    int64          `json:"chunks_read_useful,omitempty"`
+	ChunksReadWasted    int64          `json:"chunks_read_wasted,omitempty"`
+	PiecesDirtiedGood   int64          `json:"pieces_dirtied_good,omitempty"`
+	PiecesDirtiedBad    int64          `json:"pieces_dirtied_bad,omitempty"`
+	DurationSeconds     float64        `json:"duration_seconds,omitempty"`
+	BitRate             string         `json:"bit_rate,omitempty"`
+	FileStats           []*TorrentFile `json:"file_stats,omitempty"`
+}
+
+// TorrentFile is an application-owned torrent file status read-model.
+type TorrentFile struct {
+	ID     int    `json:"id,omitempty"` //nolint:staticcheck // json tag preserves API compatibility
+	Path   string `json:"path,omitempty"`
+	Length int64  `json:"length,omitempty"`
+}
+
+// MediaProbe is an application-owned media metadata DTO.
+// It preserves the legacy ffprobe JSON response shape without exposing the ffprobe package.
+type MediaProbe map[string]any
+
+// ViewedItem is an application-owned viewed-history DTO.
+// Keep JSON tags compatible with the legacy settings.Viewed HTTP contract.
+type ViewedItem struct {
+	Hash      string `json:"hash"`
+	FileIndex int    `json:"file_index"`
+}
+
+// TorznabConfig is an application-owned Torznab endpoint setting.
+type TorznabConfig struct {
+	Host string
+	Key  string
+	Name string
+}
+
+// TMDBConfig is an application-owned TMDB API setting.
+type TMDBConfig struct {
+	APIKey     string // #nosec G117 -- DTO field for operator-provided config, not a hardcoded credential.
+	APIURL     string
+	ImageURL   string
+	ImageURLRu string
+}
+
+// Settings is an application-owned server settings DTO.
+// Exported field names intentionally preserve the legacy BTSets JSON shape.
+type Settings struct {
+	CacheSize       int64
+	ReaderReadAHead int
+	PreloadCache    int
+
+	UseDisk           bool
+	TorrentsSavePath  string
+	RemoveCacheOnDrop bool
+
+	ForceEncrypt             bool
+	RetrackersMode           int
+	TorrentDisconnectTimeout int
+	EnableDebug              bool
+	ServiceOnlyDebug         bool
+
+	EnableDLNA   bool
+	FriendlyName string
+
+	EnableRutorSearch bool
+
+	EnableTorznabSearch bool
+	TorznabUrls         []TorznabConfig
+
+	TMDBSettings TMDBConfig
+
+	EnableIPv6        bool
+	DisableTCP        bool
+	DisableUTP        bool
+	DisableUPNP       bool
+	DisableDHT        bool
+	DisablePEX        bool
+	DisableUpload     bool
+	DownloadRateLimit int
+	UploadRateLimit   int
+	ConnectionsLimit  int
+	PeersListenPort   int
+
+	SslPort int
+	SslCert string
+	SslKey  string
+
+	ResponsiveMode       bool
+	CoreProfile          string
+	MaxConcurrentStreams int
+	StreamQueueSize      int
+	StreamQueueWaitSec   int
+	AdaptiveRAMinMB      int
+	AdaptiveRAMaxMB      int
+	WarmDiskCacheSizeMB  int64
+	WarmDiskCacheTTLMin  int
+	DiskSyncPolicy       string
+	DiskSyncIntervalMS   int
+	DiskWriteBatchSize   int
+	MetadataWorkers      int
+	MetadataQueueSize    int
+	PreloadWorkers       int
+	PreloadQueueSize     int
+
+	ShowFSActiveTorr bool
+
+	StoreSettingsInJSON bool
+	StoreViewedInJSON   bool
+
+	EnableProxy bool
+	ProxyHosts  []string
 }
 
 var (
@@ -296,7 +446,7 @@ type PlayTarget struct {
 type PlaybackService interface {
 	BuildAllPlaylist(host string, torrents TorrentPlaylistService) PlaylistPayload
 	BuildPlaylistByHash(hash, requestedName string, fromLast bool, host string, torrents TorrentPlaylistService, viewed ViewedService) (PlaylistPayload, error)
-	BuildM3UFromStatus(tor *state.TorrentStatus, host string, fromLast bool, viewed ViewedService) string
+	BuildM3UFromStatus(tor *TorrentStatus, host string, fromLast bool, viewed ViewedService) string
 	ResolvePlay(hash, index string, unauthorized bool, torrents TorrentPlayService) (PlayTarget, error)
 }
 

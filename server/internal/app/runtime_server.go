@@ -90,6 +90,7 @@ func (r *serverRuntime) Start() error {
 		return err
 	}
 
+	// Keep the legacy process-global args snapshot in sync for compatibility wrappers.
 	settings.SetArgs(args)
 
 	if args.Ssl && args.SslCert != "" && args.SslKey != "" {

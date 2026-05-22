@@ -6,7 +6,6 @@ import (
 	"server/internal/app/contracts"
 	"server/log"
 	"server/torr"
-	"server/torr/state"
 )
 
 func (d torrentService) Add(spec contracts.TorrentSpec, title, poster, data, category string) (contracts.TorrentHandle, error) {
@@ -27,7 +26,7 @@ func (d torrentService) Get(hash string) contracts.TorrentHandle {
 	return wrapTorrent(d.backend.GetTorrent(hash))
 }
 
-func (torrentService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+func (torrentService) Status(tor contracts.TorrentHandle) *contracts.TorrentStatus {
 	if tor == nil {
 		return nil
 	}
@@ -35,13 +34,13 @@ func (torrentService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
 	return tor.Status()
 }
 
-func (d torrentService) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+func (d torrentService) StatusByHash(hash string) (*contracts.TorrentStatus, bool) {
 	tor := d.backend.GetTorrent(hash)
 	if tor == nil {
 		return nil, false
 	}
 
-	return tor.Status(), true
+	return mapTorrentStatus(tor.Status()), true
 }
 
 func (d torrentService) Set(hash, title, poster, category, data string) contracts.TorrentHandle {
@@ -82,20 +81,20 @@ func (d torrentService) List() []contracts.TorrentHandle {
 	return handles
 }
 
-func (d torrentService) Statuses() []*state.TorrentStatus {
+func (d torrentService) Statuses() []*contracts.TorrentStatus {
 	list := d.backend.ListTorrents()
 	if len(list) == 0 {
-		return []*state.TorrentStatus{}
+		return []*contracts.TorrentStatus{}
 	}
 
-	stats := make([]*state.TorrentStatus, 0, len(list))
+	stats := make([]*contracts.TorrentStatus, 0, len(list))
 
 	for _, tr := range list {
 		if tr == nil {
 			continue
 		}
 
-		stats = append(stats, tr.Status())
+		stats = append(stats, mapTorrentStatus(tr.Status()))
 	}
 
 	return stats
@@ -128,7 +127,7 @@ func (d torrentService) Drop(hash string) {
 }
 
 func (torrentService) IsStored(tor contracts.TorrentHandle) bool {
-	return tor != nil && tor.State() == state.TorrentInDB
+	return tor != nil && tor.State() == contracts.TorrentInDB
 }
 
 func (d torrentService) DropReadiness(hash string) contracts.DropReadiness {

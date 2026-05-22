@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"server/torr/state"
 )
 
 type playbackStub struct {
@@ -28,7 +26,7 @@ func (s playbackStub) BuildPlaylistByHash(hash, requestedName string, fromLast b
 	return s.playlistRes, s.playlistErr
 }
 
-func (s playbackStub) BuildM3UFromStatus(tor *state.TorrentStatus, host string, fromLast bool, viewed contracts.ViewedService) string {
+func (s playbackStub) BuildM3UFromStatus(tor *contracts.TorrentStatus, host string, fromLast bool, viewed contracts.ViewedService) string {
 	return s.m3uResult
 }
 

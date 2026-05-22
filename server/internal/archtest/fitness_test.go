@@ -257,6 +257,63 @@ func TestAppContractsDoNotExposeSearchInfrastructureDTOs(t *testing.T) {
 	}
 }
 
+func TestAppContractsDoNotExposeMediaProbeInfrastructureDTOs(t *testing.T) {
+	path := filepath.Join(projectRoot(t), "internal", "app", "contracts", "contracts.go")
+	f := parseFile(t, path)
+
+	for _, imp := range f.Imports {
+		pkg := importPath(t, path, imp)
+		if pkg == "gopkg.in/vansante/go-ffprobe.v2" {
+			t.Errorf("app contracts must expose application-owned media probe DTOs instead of %q in %s", pkg, path)
+		}
+	}
+}
+
+func TestAppContractsDoNotExposeViewedSettingsDTOs(t *testing.T) {
+	path := filepath.Join(projectRoot(t), "internal", "app", "contracts", "contracts.go")
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+
+	source := string(content)
+	for _, forbidden := range []string{
+		"*sets.Viewed",
+		"[]*sets.Viewed",
+		"*settings.Viewed",
+		"[]*settings.Viewed",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("app contracts must expose application-owned viewed DTOs instead of %q in %s", forbidden, path)
+		}
+	}
+}
+
+func TestAppContractsDoNotImportSettingsPackage(t *testing.T) {
+	path := filepath.Join(projectRoot(t), "internal", "app", "contracts", "contracts.go")
+	f := parseFile(t, path)
+
+	for _, imp := range f.Imports {
+		pkg := importPath(t, path, imp)
+		if pkg == "server/settings" || strings.HasPrefix(pkg, "server/settings/") {
+			t.Errorf("app contracts must expose application-owned settings DTOs instead of importing %q in %s", pkg, path)
+		}
+	}
+}
+
+func TestAppContractsDoNotImportTorrentStatePackage(t *testing.T) {
+	path := filepath.Join(projectRoot(t), "internal", "app", "contracts", "contracts.go")
+	f := parseFile(t, path)
+
+	for _, imp := range f.Imports {
+		pkg := importPath(t, path, imp)
+		if pkg == "server/torr/state" || strings.HasPrefix(pkg, "server/torr/state/") {
+			t.Errorf("app contracts must expose application-owned torrent status DTOs instead of importing %q in %s", pkg, path)
+		}
+	}
+}
+
 func TestTorrentsHandlerDoesNotImportParsingAdapters(t *testing.T) {
 	path := filepath.Join(projectRoot(t), "web", "api", "torrents.go")
 	f := parseFile(t, path)
@@ -356,6 +413,63 @@ func TestRuntimeAPIServicesFactoryDoesNotCaptureGlobalProviders(t *testing.T) {
 	} {
 		if strings.Contains(source, forbidden) {
 			t.Errorf("default API service composition must use injected runtime deps instead of %q", forbidden)
+		}
+	}
+}
+
+func TestGlobalProviderCompatibilityCallsStayInAllowedFiles(t *testing.T) {
+	allowed := map[string]bool{
+		filepath.Join("bootstrap", "bootstrap.go"):                 true,
+		filepath.Join("bootstrap", "cleanup.go"):                   true,
+		filepath.Join("dlna", "dlna.go"):                           true,
+		filepath.Join("internal", "app", "runtime_server.go"):      true,
+		filepath.Join("internal", "startup", "checks.go"):          true,
+		filepath.Join("settings", "args_provider.go"):              true,
+		filepath.Join("settings", "provider.go"):                   true,
+		filepath.Join("settings", "runtime_state.go"):              true,
+		filepath.Join("settings", "settings.go"):                   true,
+		filepath.Join("torr", "btserver.go"):                       true,
+		filepath.Join("torr", "storage", "torrstor", "storage.go"): true,
+		filepath.Join("torrfs", "torrfs.go"):                       true,
+		filepath.Join("torrfs", "webdav", "webdav.go"):             true,
+		filepath.Join("torznab", "torznab.go"):                     true,
+		filepath.Join("web", "webinfra", "webinfra.go"):            true,
+	}
+
+	for _, path := range collectGoFiles(t, projectRoot(t), func(path string) bool {
+		return !strings.HasSuffix(path, "_test.go")
+	}) {
+		rel, err := filepath.Rel(projectRoot(t), path)
+		if err != nil {
+			t.Fatalf("rel %s: %v", path, err)
+		}
+
+		if allowed[rel] {
+			continue
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+
+		source := string(content)
+		for _, forbidden := range []string{
+			"settings.DefaultSettingsProvider",
+			"settings.DefaultArgsProvider",
+			"settings.DefaultRuntimeStateProvider",
+			"settings.GetRuntimeState(",
+			"settings.UpdateRuntimeState(",
+			"settings.SetArgs(",
+			"torr.NewBTS(",
+			"dlna.Start(",
+			"torrfs.New(",
+			"torznab.Search(",
+			"torrstor.NewStorage(",
+		} {
+			if strings.Contains(source, forbidden) {
+				t.Errorf("global compatibility call %q must stay in approved composition/compatibility files, found in %s", forbidden, path)
+			}
 		}
 	}
 }

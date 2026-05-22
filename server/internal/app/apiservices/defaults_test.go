@@ -31,7 +31,7 @@ func (s *ensureTorrentServiceStub) Get(hash string) contracts.TorrentHandle {
 	return s.getResult
 }
 
-func (s *ensureTorrentServiceStub) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+func (s *ensureTorrentServiceStub) Status(tor contracts.TorrentHandle) *contracts.TorrentStatus {
 	if tor == nil {
 		return nil
 	}
@@ -39,7 +39,7 @@ func (s *ensureTorrentServiceStub) Status(tor contracts.TorrentHandle) *state.To
 	return tor.Status()
 }
 
-func (s *ensureTorrentServiceStub) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+func (s *ensureTorrentServiceStub) StatusByHash(hash string) (*contracts.TorrentStatus, bool) {
 	if s.getResult == nil {
 		return nil, false
 	}
@@ -54,13 +54,13 @@ func (s *ensureTorrentServiceStub) Set(hash, title, poster, category, data strin
 func (s *ensureTorrentServiceStub) SaveToDB(tor contracts.TorrentHandle) {}
 func (s *ensureTorrentServiceStub) Remove(hash string)                   {}
 func (s *ensureTorrentServiceStub) List() []contracts.TorrentHandle      { return nil }
-func (s *ensureTorrentServiceStub) Statuses() []*state.TorrentStatus {
-	return []*state.TorrentStatus{}
+func (s *ensureTorrentServiceStub) Statuses() []*contracts.TorrentStatus {
+	return []*contracts.TorrentStatus{}
 }
 func (s *ensureTorrentServiceStub) ListHashes() []string { return []string{} }
 func (s *ensureTorrentServiceStub) Drop(hash string)     {}
 func (s *ensureTorrentServiceStub) IsStored(tor contracts.TorrentHandle) bool {
-	return tor != nil && tor.State() == state.TorrentInDB
+	return tor != nil && tor.State() == contracts.TorrentInDB
 }
 func (s *ensureTorrentServiceStub) DropReadiness(hash string) contracts.DropReadiness {
 	return contracts.DropReadiness{}

@@ -21,6 +21,8 @@ import (
 
 var dmsServer *dms.Server
 
+// Start is a legacy compatibility entrypoint backed by process-global providers.
+// Production composition should call StartWithProviders.
 func Start() error {
 	return StartWithProviders(settings.DefaultSettingsProvider, settings.DefaultArgsProvider)
 }

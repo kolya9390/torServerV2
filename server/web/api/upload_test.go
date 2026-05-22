@@ -13,8 +13,6 @@ import (
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/gin-gonic/gin"
-
-	"server/torr/state"
 )
 
 type uploadTorrentService struct {
@@ -34,11 +32,11 @@ func (s *uploadTorrentService) Add(spec contracts.TorrentSpec, title, poster, da
 	return nil, nil
 }
 
-func (s *uploadTorrentService) Status(contracts.TorrentHandle) *state.TorrentStatus {
-	return &state.TorrentStatus{
+func (s *uploadTorrentService) Status(contracts.TorrentHandle) *contracts.TorrentStatus {
+	return &contracts.TorrentStatus{
 		Title: "uploaded",
 		Hash:  "0123456789abcdef0123456789abcdef01234567",
-		Stat:  state.TorrentAdded,
+		Stat:  contracts.TorrentAdded,
 	}
 }
 

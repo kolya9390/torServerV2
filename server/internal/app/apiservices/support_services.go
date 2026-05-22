@@ -1,6 +1,7 @@
 package apiservices
 
 import (
+	"encoding/json"
 	"fmt"
 
 	goffprobe "gopkg.in/vansante/go-ffprobe.v2"
@@ -19,20 +20,52 @@ func (d systemService) Shutdown() {
 	}
 }
 
-func (d viewedService) SetViewed(v *sets.Viewed) {
-	d.setViewed(v)
+func (d viewedService) SetViewed(v *contracts.ViewedItem) {
+	d.setViewed(mapViewedItemToSettings(v))
 }
 
-func (d viewedService) RemoveViewed(v *sets.Viewed) {
-	d.removeViewed(v)
+func (d viewedService) RemoveViewed(v *contracts.ViewedItem) {
+	d.removeViewed(mapViewedItemToSettings(v))
 }
 
-func (d viewedService) ListViewed(hash string) []*sets.Viewed {
+func (d viewedService) ListViewed(hash string) []*contracts.ViewedItem {
 	log.TLogln("viewedService.ListViewed: calling backend with hash:", hash)
-	result := d.listViewed(hash)
+	result := mapViewedItemsFromSettings(d.listViewed(hash))
 	log.TLogln("viewedService.ListViewed: got result:", result)
 
 	return result
+}
+
+func mapViewedItemToSettings(item *contracts.ViewedItem) *sets.Viewed {
+	if item == nil {
+		return nil
+	}
+
+	return &sets.Viewed{
+		Hash:      item.Hash,
+		FileIndex: item.FileIndex,
+	}
+}
+
+func mapViewedItemsFromSettings(items []*sets.Viewed) []*contracts.ViewedItem {
+	if len(items) == 0 {
+		return nil
+	}
+
+	mapped := make([]*contracts.ViewedItem, 0, len(items))
+
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+
+		mapped = append(mapped, &contracts.ViewedItem{
+			Hash:      item.Hash,
+			FileIndex: item.FileIndex,
+		})
+	}
+
+	return mapped
 }
 
 func (d searchService) EnableTorznabSearch() bool {
@@ -81,7 +114,7 @@ func mapTorznabResults(results []*torznab.TorrentDetails) []*contracts.SearchRes
 	return mapped
 }
 
-func (d mediaService) ProbePlayURL(hash, fileID string) (*goffprobe.ProbeData, error) {
+func (d mediaService) ProbePlayURL(hash, fileID string) (contracts.MediaProbe, error) {
 	serverCfg := d.runtimeState().ServerConfig()
 	link := fmt.Sprintf("http://127.0.0.1:%s/play/%s/%s", serverCfg.Port, hash, fileID)
 
@@ -89,7 +122,30 @@ func (d mediaService) ProbePlayURL(hash, fileID string) (*goffprobe.ProbeData, e
 		link = fmt.Sprintf("https://127.0.0.1:%s/play/%s/%s", serverCfg.SSLPort, hash, fileID)
 	}
 
-	return ffprobe.ProbeURL(link)
+	probe, err := ffprobe.ProbeURL(link)
+	if err != nil {
+		return nil, err
+	}
+
+	return mapMediaProbe(probe)
+}
+
+func mapMediaProbe(probe *goffprobe.ProbeData) (contracts.MediaProbe, error) {
+	if probe == nil {
+		return nil, nil
+	}
+
+	raw, err := json.Marshal(probe)
+	if err != nil {
+		return nil, fmt.Errorf("marshal media probe: %w", err)
+	}
+
+	var mapped contracts.MediaProbe
+	if err := json.Unmarshal(raw, &mapped); err != nil {
+		return nil, fmt.Errorf("unmarshal media probe: %w", err)
+	}
+
+	return mapped, nil
 }
 
 func (d modulesService) RestartDLNA(enable bool) error {

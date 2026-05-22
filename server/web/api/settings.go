@@ -6,13 +6,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	sets "server/settings"
+	"server/internal/app/contracts"
 )
 
 // Action: get, set, def.
 type setsReqJS struct {
 	requestI
-	Sets *sets.BTSets `json:"sets,omitempty"`
+	Sets *contracts.Settings `json:"sets,omitempty"`
 }
 
 // settings godoc
@@ -26,7 +26,7 @@ type setsReqJS struct {
 //
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	sets.BTSets	"Settings JSON or nothing. Depends on what action has been asked."
+//	@Success		200	{object}	contracts.Settings	"Settings JSON or nothing. Depends on what action has been asked."
 //	@Router			/settings [post]
 func settings(c *gin.Context) {
 	deps := settingsDepsFromContext(c)

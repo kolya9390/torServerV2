@@ -14,11 +14,8 @@ import (
 	http "net/http"
 	reflect "reflect"
 	contracts "server/internal/app/contracts"
-	settings "server/settings"
-	state "server/torr/state"
 
 	gomock "go.uber.org/mock/gomock"
-	ffprobe "gopkg.in/vansante/go-ffprobe.v2"
 )
 
 // MockTorrentSpecPayload is a mock of TorrentSpecPayload interface.
@@ -164,10 +161,10 @@ func (mr *MockAPITorrentHandleMockRecorder) Ready() *gomock.Call {
 }
 
 // State mocks base method.
-func (m *MockAPITorrentHandle) State() state.TorrentStat {
+func (m *MockAPITorrentHandle) State() contracts.TorrentState {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "State")
-	ret0, _ := ret[0].(state.TorrentStat)
+	ret0, _ := ret[0].(contracts.TorrentState)
 	return ret0
 }
 
@@ -178,10 +175,10 @@ func (mr *MockAPITorrentHandleMockRecorder) State() *gomock.Call {
 }
 
 // Status mocks base method.
-func (m *MockAPITorrentHandle) Status() *state.TorrentStatus {
+func (m *MockAPITorrentHandle) Status() *contracts.TorrentStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Status")
-	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret0, _ := ret[0].(*contracts.TorrentStatus)
 	return ret0
 }
 
@@ -297,10 +294,10 @@ func (mr *MockTorrentLookupMockRecorder) IsStored(tor any) *gomock.Call {
 }
 
 // Status mocks base method.
-func (m *MockTorrentLookup) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+func (m *MockTorrentLookup) Status(tor contracts.TorrentHandle) *contracts.TorrentStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Status", tor)
-	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret0, _ := ret[0].(*contracts.TorrentStatus)
 	return ret0
 }
 
@@ -311,10 +308,10 @@ func (mr *MockTorrentLookupMockRecorder) Status(tor any) *gomock.Call {
 }
 
 // StatusByHash mocks base method.
-func (m *MockTorrentLookup) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+func (m *MockTorrentLookup) StatusByHash(hash string) (*contracts.TorrentStatus, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StatusByHash", hash)
-	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret0, _ := ret[0].(*contracts.TorrentStatus)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
@@ -378,10 +375,10 @@ func (mr *MockTorrentCatalogMockRecorder) ListHashes() *gomock.Call {
 }
 
 // Statuses mocks base method.
-func (m *MockTorrentCatalog) Statuses() []*state.TorrentStatus {
+func (m *MockTorrentCatalog) Statuses() []*contracts.TorrentStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Statuses")
-	ret0, _ := ret[0].([]*state.TorrentStatus)
+	ret0, _ := ret[0].([]*contracts.TorrentStatus)
 	return ret0
 }
 
@@ -680,10 +677,10 @@ func (mr *MockTorrentQueryServiceMockRecorder) ListHashes() *gomock.Call {
 }
 
 // Status mocks base method.
-func (m *MockTorrentQueryService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+func (m *MockTorrentQueryService) Status(tor contracts.TorrentHandle) *contracts.TorrentStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Status", tor)
-	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret0, _ := ret[0].(*contracts.TorrentStatus)
 	return ret0
 }
 
@@ -694,10 +691,10 @@ func (mr *MockTorrentQueryServiceMockRecorder) Status(tor any) *gomock.Call {
 }
 
 // StatusByHash mocks base method.
-func (m *MockTorrentQueryService) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+func (m *MockTorrentQueryService) StatusByHash(hash string) (*contracts.TorrentStatus, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StatusByHash", hash)
-	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret0, _ := ret[0].(*contracts.TorrentStatus)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
@@ -709,10 +706,10 @@ func (mr *MockTorrentQueryServiceMockRecorder) StatusByHash(hash any) *gomock.Ca
 }
 
 // Statuses mocks base method.
-func (m *MockTorrentQueryService) Statuses() []*state.TorrentStatus {
+func (m *MockTorrentQueryService) Statuses() []*contracts.TorrentStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Statuses")
-	ret0, _ := ret[0].([]*state.TorrentStatus)
+	ret0, _ := ret[0].([]*contracts.TorrentStatus)
 	return ret0
 }
 
@@ -935,10 +932,10 @@ func (mr *MockTorrentStreamServiceMockRecorder) LoadFromDB(tor any) *gomock.Call
 }
 
 // Status mocks base method.
-func (m *MockTorrentStreamService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+func (m *MockTorrentStreamService) Status(tor contracts.TorrentHandle) *contracts.TorrentStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Status", tor)
-	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret0, _ := ret[0].(*contracts.TorrentStatus)
 	return ret0
 }
 
@@ -949,10 +946,10 @@ func (mr *MockTorrentStreamServiceMockRecorder) Status(tor any) *gomock.Call {
 }
 
 // StatusByHash mocks base method.
-func (m *MockTorrentStreamService) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+func (m *MockTorrentStreamService) StatusByHash(hash string) (*contracts.TorrentStatus, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StatusByHash", hash)
-	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret0, _ := ret[0].(*contracts.TorrentStatus)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
@@ -1108,10 +1105,10 @@ func (mr *MockTorrentPlaylistServiceMockRecorder) LoadFromDB(tor any) *gomock.Ca
 }
 
 // Status mocks base method.
-func (m *MockTorrentPlaylistService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+func (m *MockTorrentPlaylistService) Status(tor contracts.TorrentHandle) *contracts.TorrentStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Status", tor)
-	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret0, _ := ret[0].(*contracts.TorrentStatus)
 	return ret0
 }
 
@@ -1122,10 +1119,10 @@ func (mr *MockTorrentPlaylistServiceMockRecorder) Status(tor any) *gomock.Call {
 }
 
 // StatusByHash mocks base method.
-func (m *MockTorrentPlaylistService) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+func (m *MockTorrentPlaylistService) StatusByHash(hash string) (*contracts.TorrentStatus, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StatusByHash", hash)
-	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret0, _ := ret[0].(*contracts.TorrentStatus)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
@@ -1137,10 +1134,10 @@ func (mr *MockTorrentPlaylistServiceMockRecorder) StatusByHash(hash any) *gomock
 }
 
 // Statuses mocks base method.
-func (m *MockTorrentPlaylistService) Statuses() []*state.TorrentStatus {
+func (m *MockTorrentPlaylistService) Statuses() []*contracts.TorrentStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Statuses")
-	ret0, _ := ret[0].([]*state.TorrentStatus)
+	ret0, _ := ret[0].([]*contracts.TorrentStatus)
 	return ret0
 }
 
@@ -1218,10 +1215,10 @@ func (mr *MockTorrentPlayServiceMockRecorder) IsStored(tor any) *gomock.Call {
 }
 
 // Status mocks base method.
-func (m *MockTorrentPlayService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+func (m *MockTorrentPlayService) Status(tor contracts.TorrentHandle) *contracts.TorrentStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Status", tor)
-	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret0, _ := ret[0].(*contracts.TorrentStatus)
 	return ret0
 }
 
@@ -1232,10 +1229,10 @@ func (mr *MockTorrentPlayServiceMockRecorder) Status(tor any) *gomock.Call {
 }
 
 // StatusByHash mocks base method.
-func (m *MockTorrentPlayService) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+func (m *MockTorrentPlayService) StatusByHash(hash string) (*contracts.TorrentStatus, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StatusByHash", hash)
-	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret0, _ := ret[0].(*contracts.TorrentStatus)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
@@ -1463,10 +1460,10 @@ func (mr *MockAPITorrentServiceMockRecorder) Set(hash, title, poster, category, 
 }
 
 // Status mocks base method.
-func (m *MockAPITorrentService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+func (m *MockAPITorrentService) Status(tor contracts.TorrentHandle) *contracts.TorrentStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Status", tor)
-	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret0, _ := ret[0].(*contracts.TorrentStatus)
 	return ret0
 }
 
@@ -1477,10 +1474,10 @@ func (mr *MockAPITorrentServiceMockRecorder) Status(tor any) *gomock.Call {
 }
 
 // StatusByHash mocks base method.
-func (m *MockAPITorrentService) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+func (m *MockAPITorrentService) StatusByHash(hash string) (*contracts.TorrentStatus, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StatusByHash", hash)
-	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret0, _ := ret[0].(*contracts.TorrentStatus)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
@@ -1492,10 +1489,10 @@ func (mr *MockAPITorrentServiceMockRecorder) StatusByHash(hash any) *gomock.Call
 }
 
 // Statuses mocks base method.
-func (m *MockAPITorrentService) Statuses() []*state.TorrentStatus {
+func (m *MockAPITorrentService) Statuses() []*contracts.TorrentStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Statuses")
-	ret0, _ := ret[0].([]*state.TorrentStatus)
+	ret0, _ := ret[0].([]*contracts.TorrentStatus)
 	return ret0
 }
 
@@ -1544,10 +1541,10 @@ func (mr *MockAPISettingsServiceMockRecorder) BuildPlayURL(hash, fileID any) *go
 }
 
 // Current mocks base method.
-func (m *MockAPISettingsService) Current() *settings.BTSets {
+func (m *MockAPISettingsService) Current() *contracts.Settings {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Current")
-	ret0, _ := ret[0].(*settings.BTSets)
+	ret0, _ := ret[0].(*contracts.Settings)
 	return ret0
 }
 
@@ -1614,7 +1611,7 @@ func (mr *MockAPISettingsServiceMockRecorder) ReadOnly() *gomock.Call {
 }
 
 // Set mocks base method.
-func (m *MockAPISettingsService) Set(arg0 *settings.BTSets) {
+func (m *MockAPISettingsService) Set(arg0 *contracts.Settings) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Set", arg0)
 }
@@ -1652,10 +1649,10 @@ func (mr *MockAPISettingsServiceMockRecorder) SetStoragePreferences(arg0 any) *g
 }
 
 // TMDBConfig mocks base method.
-func (m *MockAPISettingsService) TMDBConfig() (settings.TMDBConfig, bool) {
+func (m *MockAPISettingsService) TMDBConfig() (contracts.TMDBConfig, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "TMDBConfig")
-	ret0, _ := ret[0].(settings.TMDBConfig)
+	ret0, _ := ret[0].(contracts.TMDBConfig)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
@@ -1691,10 +1688,10 @@ func (m *MockAPIViewedService) EXPECT() *MockAPIViewedServiceMockRecorder {
 }
 
 // ListViewed mocks base method.
-func (m *MockAPIViewedService) ListViewed(hash string) []*settings.Viewed {
+func (m *MockAPIViewedService) ListViewed(hash string) []*contracts.ViewedItem {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListViewed", hash)
-	ret0, _ := ret[0].([]*settings.Viewed)
+	ret0, _ := ret[0].([]*contracts.ViewedItem)
 	return ret0
 }
 
@@ -1705,7 +1702,7 @@ func (mr *MockAPIViewedServiceMockRecorder) ListViewed(hash any) *gomock.Call {
 }
 
 // RemoveViewed mocks base method.
-func (m *MockAPIViewedService) RemoveViewed(v *settings.Viewed) {
+func (m *MockAPIViewedService) RemoveViewed(v *contracts.ViewedItem) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "RemoveViewed", v)
 }
@@ -1717,7 +1714,7 @@ func (mr *MockAPIViewedServiceMockRecorder) RemoveViewed(v any) *gomock.Call {
 }
 
 // SetViewed mocks base method.
-func (m *MockAPIViewedService) SetViewed(v *settings.Viewed) {
+func (m *MockAPIViewedService) SetViewed(v *contracts.ViewedItem) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "SetViewed", v)
 }
@@ -1855,10 +1852,10 @@ func (m *MockAPIMediaService) EXPECT() *MockAPIMediaServiceMockRecorder {
 }
 
 // ProbePlayURL mocks base method.
-func (m *MockAPIMediaService) ProbePlayURL(hash, fileID string) (*ffprobe.ProbeData, error) {
+func (m *MockAPIMediaService) ProbePlayURL(hash, fileID string) (contracts.MediaProbe, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ProbePlayURL", hash, fileID)
-	ret0, _ := ret[0].(*ffprobe.ProbeData)
+	ret0, _ := ret[0].(contracts.MediaProbe)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -2204,7 +2201,7 @@ func (mr *MockAPIPlaybackServiceMockRecorder) BuildAllPlaylist(host, torrents an
 }
 
 // BuildM3UFromStatus mocks base method.
-func (m *MockAPIPlaybackService) BuildM3UFromStatus(tor *state.TorrentStatus, host string, fromLast bool, viewed contracts.ViewedService) string {
+func (m *MockAPIPlaybackService) BuildM3UFromStatus(tor *contracts.TorrentStatus, host string, fromLast bool, viewed contracts.ViewedService) string {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BuildM3UFromStatus", tor, host, fromLast, viewed)
 	ret0, _ := ret[0].(string)

@@ -26,6 +26,8 @@ func defaultCacheCleanupDeps() cacheCleanupDeps {
 	}
 }
 
+// runCacheCleanup is a legacy compatibility entrypoint.
+// Production composition should pass explicit dependencies through runCacheCleanupWithDeps.
 func runCacheCleanup(ctx context.Context) {
 	runCacheCleanupWithDeps(ctx, defaultCacheCleanupDeps())
 }

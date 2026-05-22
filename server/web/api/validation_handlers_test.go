@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"server/internal/app/contracts"
 )
 
 func TestSettingsValidationRequiresAction(t *testing.T) {
@@ -91,6 +93,49 @@ func TestViewedValidationRequiresPayload(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"field":"viewed"`) {
 		t.Fatalf("expected viewed validation error, got %s", w.Body.String())
 	}
+}
+
+func TestViewedListUsesInjectedService(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	viewedSvc := &viewedListStub{
+		items: []*contracts.ViewedItem{{Hash: "abc", FileIndex: 2}},
+	}
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{Viewed: viewedSvc})))
+	r.POST("/viewed", viewed)
+
+	req := httptest.NewRequest(http.MethodPost, "/viewed", strings.NewReader(`{"action":"list","hash":"abc"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if viewedSvc.requestedHash != "abc" {
+		t.Fatalf("expected injected viewed service to receive hash abc, got %q", viewedSvc.requestedHash)
+	}
+
+	if !strings.Contains(w.Body.String(), `"file_index":2`) {
+		t.Fatalf("expected viewed response from injected service, got %s", w.Body.String())
+	}
+}
+
+type viewedListStub struct {
+	requestedHash string
+	items         []*contracts.ViewedItem
+}
+
+func (s *viewedListStub) SetViewed(*contracts.ViewedItem) {}
+
+func (s *viewedListStub) RemoveViewed(*contracts.ViewedItem) {}
+
+func (s *viewedListStub) ListViewed(hash string) []*contracts.ViewedItem {
+	s.requestedHash = hash
+
+	return s.items
 }
 
 func TestStorageValidationRejectsInvalidValues(t *testing.T) {

@@ -3,8 +3,7 @@ package apiservices
 import (
 	"testing"
 
-	sets "server/settings"
-	"server/torr/state"
+	"server/internal/app/contracts"
 )
 
 type mockViewedService struct {
@@ -16,15 +15,15 @@ type mockViewed struct {
 	fileIndex int
 }
 
-func (m *mockViewedService) SetViewed(v *sets.Viewed)    {}
-func (m *mockViewedService) RemoveViewed(v *sets.Viewed) {}
+func (m *mockViewedService) SetViewed(v *contracts.ViewedItem)    {}
+func (m *mockViewedService) RemoveViewed(v *contracts.ViewedItem) {}
 
-func (m *mockViewedService) ListViewed(hash string) []*sets.Viewed {
-	var result []*sets.Viewed
+func (m *mockViewedService) ListViewed(hash string) []*contracts.ViewedItem {
+	var result []*contracts.ViewedItem
 
 	for _, v := range m.viewed {
 		if v.hash == hash {
-			result = append(result, &sets.Viewed{Hash: v.hash, FileIndex: v.fileIndex})
+			result = append(result, &contracts.ViewedItem{Hash: v.hash, FileIndex: v.fileIndex})
 		}
 	}
 
@@ -56,7 +55,7 @@ func TestNormalizePlaylistName(t *testing.T) {
 }
 
 func TestFindFileNamesakes(t *testing.T) {
-	files := []*state.TorrentFileStat{
+	files := []*contracts.TorrentFile{
 		{ID: 1, Path: "movie.avi"},
 		{ID: 2, Path: "movie.avi.srt"},
 		{ID: 3, Path: "movie.avi.eng.srt"},
@@ -75,7 +74,7 @@ func TestFindFileNamesakes(t *testing.T) {
 }
 
 func TestFindFileNamesakes_NoMatches(t *testing.T) {
-	files := []*state.TorrentFileStat{
+	files := []*contracts.TorrentFile{
 		{ID: 1, Path: "video.mp4"},
 		{ID: 2, Path: "audio.mp3"},
 	}
@@ -89,9 +88,9 @@ func TestFindFileNamesakes_NoMatches(t *testing.T) {
 
 func TestSearchLastPlayed_NoViewed(t *testing.T) {
 	viewedSvc := &mockViewedService{viewed: []*mockViewed{}}
-	tor := &state.TorrentStatus{
+	tor := &contracts.TorrentStatus{
 		Hash: "abc123",
-		FileStats: []*state.TorrentFileStat{
+		FileStats: []*contracts.TorrentFile{
 			{ID: 1, Path: "video.mp4"},
 		},
 	}
@@ -110,9 +109,9 @@ func TestSearchLastPlayed_Found(t *testing.T) {
 			{hash: "abc123", fileIndex: 1},
 		},
 	}
-	tor := &state.TorrentStatus{
+	tor := &contracts.TorrentStatus{
 		Hash: "abc123",
-		FileStats: []*state.TorrentFileStat{
+		FileStats: []*contracts.TorrentFile{
 			{ID: 1, Path: "video1.mp4"},
 			{ID: 2, Path: "video2.mp4"},
 		},
@@ -131,9 +130,9 @@ func TestSearchLastPlayed_IndexOutOfBounds(t *testing.T) {
 			{hash: "abc123", fileIndex: 99},
 		},
 	}
-	tor := &state.TorrentStatus{
+	tor := &contracts.TorrentStatus{
 		Hash: "abc123",
-		FileStats: []*state.TorrentFileStat{
+		FileStats: []*contracts.TorrentFile{
 			{ID: 1, Path: "video1.mp4"},
 		},
 	}

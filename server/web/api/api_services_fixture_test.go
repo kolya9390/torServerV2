@@ -7,8 +7,6 @@ import (
 
 	"server/internal/app/contracts"
 	"server/internal/mocks"
-	sets "server/settings"
-	"server/torr/state"
 )
 
 type mockTorrentService = mocks.MockAPITorrentService
@@ -53,7 +51,7 @@ func newDefaultAPIServicesFixture(ctrl *gomock.Controller) *contracts.APIService
 	torrents.EXPECT().SaveToDB(gomock.Any()).AnyTimes()
 	torrents.EXPECT().Remove(gomock.Any()).AnyTimes()
 	torrents.EXPECT().List().Return([]contracts.TorrentHandle{}).AnyTimes()
-	torrents.EXPECT().Statuses().Return([]*state.TorrentStatus{}).AnyTimes()
+	torrents.EXPECT().Statuses().Return([]*contracts.TorrentStatus{}).AnyTimes()
 	torrents.EXPECT().ListHashes().Return([]string{}).AnyTimes()
 	torrents.EXPECT().Drop(gomock.Any()).AnyTimes()
 	torrents.EXPECT().IsStored(gomock.Any()).Return(false).AnyTimes()
@@ -71,7 +69,7 @@ func newDefaultAPIServicesFixture(ctrl *gomock.Controller) *contracts.APIService
 	settings.EXPECT().ReadOnly().Return(false).AnyTimes()
 	settings.EXPECT().GetStoragePreferences().Return(map[string]any{}).AnyTimes()
 	settings.EXPECT().SetStoragePreferences(gomock.Any()).Return(nil).AnyTimes()
-	settings.EXPECT().TMDBConfig().Return(sets.TMDBConfig{}, false).AnyTimes()
+	settings.EXPECT().TMDBConfig().Return(contracts.TMDBConfig{}, false).AnyTimes()
 	settings.EXPECT().BuildPlayURL(gomock.Any(), gomock.Any()).Return("").AnyTimes()
 	settings.EXPECT().EnableDLNA().Return(false).AnyTimes()
 	settings.EXPECT().EnableDebug().Return(false).AnyTimes()

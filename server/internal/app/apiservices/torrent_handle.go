@@ -5,7 +5,6 @@ import (
 
 	"server/internal/app/contracts"
 	"server/torr"
-	"server/torr/state"
 )
 
 type torrentHandle struct {
@@ -35,20 +34,20 @@ func unwrapTorrent(handle contracts.TorrentHandle) *torr.Torrent {
 	}
 }
 
-func (h torrentHandle) Status() *state.TorrentStatus {
+func (h torrentHandle) Status() *contracts.TorrentStatus {
 	if h.tor == nil {
 		return nil
 	}
 
-	return h.tor.Status()
+	return mapTorrentStatus(h.tor.Status())
 }
 
-func (h torrentHandle) State() state.TorrentStat {
+func (h torrentHandle) State() contracts.TorrentState {
 	if h.tor == nil {
-		return state.TorrentClosed
+		return contracts.TorrentClosed
 	}
 
-	return h.tor.Stat
+	return mapTorrentState(h.tor.Stat)
 }
 
 func (h torrentHandle) HashHex() string {

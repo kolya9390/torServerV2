@@ -9,10 +9,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	goffprobe "gopkg.in/vansante/go-ffprobe.v2"
 
 	sets "server/settings"
-	"server/torr/state"
 	wauth "server/web/auth"
 )
 
@@ -20,7 +18,7 @@ type contractTorrentService struct{ mockTorrentService }
 
 type contractSettingsService struct {
 	mockSettingsService
-	current    *sets.BTSets
+	current    *contracts.Settings
 	defaultSet bool
 	enableDLNA bool
 }
@@ -40,9 +38,9 @@ type contractViewedService struct{ mockViewedService }
 type contractSystemService struct{ mockSystemService }
 type contractMediaService struct{ mockMediaService } //nolint:unused // embedded to document interface contract
 
-func (s *contractSettingsService) Current() *sets.BTSets {
+func (s *contractSettingsService) Current() *contracts.Settings {
 	if s.current == nil {
-		return &sets.BTSets{}
+		return &contracts.Settings{}
 	}
 
 	return s.current
@@ -74,7 +72,7 @@ func (s *contractSearchService) TorznabSearch(query string, index int) []*contra
 	return []*contracts.SearchResult{}
 }
 
-func (s *contractMediaService) ProbePlayURL(hash, fileID string) (*goffprobe.ProbeData, error) {
+func (s *contractMediaService) ProbePlayURL(hash, fileID string) (contracts.MediaProbe, error) {
 	return nil, nil
 }
 
@@ -296,13 +294,13 @@ func TestTorrentsAddExistingActiveFastPathEnqueuesSaveFinalize(t *testing.T) {
 	const hash = "0102030405060708090a0b0c0d0e0f1011121314"
 
 	existing := testTorrentHandle{
-		status: &state.TorrentStatus{
+		status: &contracts.TorrentStatus{
 			Hash:  hash,
 			Title: "existing-title",
-			Stat:  state.TorrentWorking,
+			Stat:  contracts.TorrentWorking,
 		},
 		hash:  hash,
-		state: state.TorrentWorking,
+		state: contracts.TorrentWorking,
 		name:  "existing-title",
 		files: 1,
 	}

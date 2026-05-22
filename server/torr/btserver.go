@@ -53,6 +53,8 @@ func init() {
 	}
 }
 
+// NewBTS is a legacy compatibility constructor backed by process-global settings.
+// Production composition should use NewBTSWithProvidersRuntimeAndDB.
 func NewBTS() *BTServer {
 	bts := new(BTServer)
 	bts.registry = newBTTorrentRegistry()
@@ -85,6 +87,8 @@ func NewBTSWithProvidersRuntimeAndDB(
 	return bts
 }
 
+// defaultBTServerDeps keeps legacy NewBTS callers working.
+// New composition code should pass explicit providers through NewBTSWithProvidersRuntimeAndDB.
 func defaultBTServerDeps() btServerDeps {
 	return btServerDeps{
 		settingsProvider: settings.DefaultSettingsProvider,

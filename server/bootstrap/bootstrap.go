@@ -17,7 +17,9 @@ const defaultStopTimeout = 30 * time.Second
 
 // Bootstrap wires application runtime and provides lifecycle operations.
 type Bootstrap struct {
-	app *internalapp.App
+	app            *internalapp.App
+	cleanupDeps    cacheCleanupDeps
+	cleanupDepsSet bool
 
 	cleanupMu     sync.Mutex
 	cleanupCancel context.CancelFunc
@@ -30,21 +32,30 @@ func New(args *settings.ExecArgs, cfg *config.Config) (*Bootstrap, error) {
 		return nil, errors.New("nil exec args")
 	}
 
+	// Keep the legacy process-global args snapshot in sync for compatibility wrappers.
 	settings.SetArgs(args)
 
 	runtime := internalapp.NewRuntimeWithConfig(cfg)
 
-	return newWithRuntime(runtime)
+	return newWithRuntimeAndCleanupDeps(runtime, defaultCacheCleanupDeps())
 }
 
 func newWithRuntime(runtime internalapp.Runtime) (*Bootstrap, error) {
+	return newWithRuntimeAndCleanupDeps(runtime, cacheCleanupDeps{})
+}
+
+func newWithRuntimeAndCleanupDeps(runtime internalapp.Runtime, cleanupDeps cacheCleanupDeps) (*Bootstrap, error) {
 	if runtime == nil {
 		return nil, errors.New("runtime is not initialized")
 	}
 
 	app := internalapp.New(runtime, defaultStopTimeout)
 
-	return &Bootstrap{app: app}, nil
+	return &Bootstrap{
+		app:            app,
+		cleanupDeps:    cleanupDeps,
+		cleanupDepsSet: cleanupDeps.settingsProvider != nil || cleanupDeps.readDir != nil || cleanupDeps.remove != nil || cleanupDeps.listTorrents != nil,
+	}, nil
 }
 
 // Start starts the application runtime.
@@ -107,6 +118,13 @@ func (b *Bootstrap) startCleanupWorker() {
 			}
 		}()
 		defer b.cleanupWG.Done()
+
+		if b.cleanupDepsSet {
+			runCacheCleanupWithDeps(cleanupCtx, b.cleanupDeps)
+
+			return
+		}
+
 		runCacheCleanup(cleanupCtx)
 	}()
 }

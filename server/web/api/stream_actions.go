@@ -25,7 +25,7 @@ type streamMeta struct {
 //	@Tags			API
 //	@Param			link		query	string	true	"Magnet/hash/link to torrent"
 //	@Produce		application/json
-//	@Success		200	{object}	state.TorrentStatus
+//	@Success		200	{object}	contracts.TorrentStatus
 //	@Router			/streams/stat [get]
 func streamStat(c *gin.Context) {
 	deps := streamDepsFromContext(c)

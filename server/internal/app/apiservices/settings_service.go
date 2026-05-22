@@ -3,11 +3,12 @@ package apiservices
 import (
 	"fmt"
 
+	"server/internal/app/contracts"
 	sets "server/settings"
 )
 
-func (d settingsService) Current() *sets.BTSets {
-	return d.provider.Get()
+func (d settingsService) Current() *contracts.Settings {
+	return mapSettingsFromBTSets(d.provider.Get())
 }
 
 func (d settingsService) currentSettings() *sets.BTSets {
@@ -38,9 +39,9 @@ func (d settingsService) currentTLSConfig() sets.TLSConfig {
 	return d.currentSettings().TLSConfig()
 }
 
-func (d settingsService) Set(v *sets.BTSets) {
+func (d settingsService) Set(v *contracts.Settings) {
 	if d.runtimeController != nil {
-		d.runtimeController.ApplySettings(v)
+		d.runtimeController.ApplySettings(mapSettingsToBTSets(v))
 	}
 }
 
@@ -62,8 +63,8 @@ func (d settingsService) SetStoragePreferences(prefs map[string]any) error {
 	return d.provider.SetStoragePreferences(prefs)
 }
 
-func (d settingsService) TMDBConfig() (sets.TMDBConfig, bool) {
-	return d.currentSettings().TMDBSettings, true
+func (d settingsService) TMDBConfig() (contracts.TMDBConfig, bool) {
+	return mapTMDBConfigFromSettings(d.currentSettings().TMDBSettings), true
 }
 
 func (d settingsService) BuildPlayURL(hash, fileID string) string {

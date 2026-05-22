@@ -88,6 +88,8 @@ func getBreaker() *circuitbreaker.CircuitBreaker {
 	return breaker
 }
 
+// Search is a legacy compatibility wrapper backed by the process-global settings provider.
+// Application services should call SearchWithProvider.
 func Search(query string, index int) []*TorrentDetails {
 	return SearchWithProvider(query, index, settings.DefaultSettingsProvider)
 }

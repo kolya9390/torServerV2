@@ -11,7 +11,6 @@ import (
 	"server/internal/app/contracts"
 	"server/internal/torrentparse"
 	"server/log"
-	"server/torr/state"
 	"server/torrshash"
 )
 
@@ -122,7 +121,7 @@ func (streamService) EnsureTorrent(
 		meta.Data = tMeta.Data
 		// Torrent already in memory and working/preloading — skip GotInfo() to avoid deadlock.
 		// The streaming layer (tor.Stream) will call GotInfo() internally if needed.
-		if torStat == state.TorrentWorking || torStat == state.TorrentPreload {
+		if torStat == contracts.TorrentWorking || torStat == contracts.TorrentPreload {
 			log.Debug("EnsureTorrent: torrent already working/preloading, skipping GotInfo")
 
 			tor.EnsureTitleFromInfo()
@@ -130,7 +129,7 @@ func (streamService) EnsureTorrent(
 			return tor, nil
 		}
 
-		if torStat == state.TorrentInDB {
+		if torStat == contracts.TorrentInDB {
 			if !allowCreate {
 				return nil, contracts.ErrStreamUnauthorized
 			}
@@ -142,7 +141,7 @@ func (streamService) EnsureTorrent(
 				return nil, contracts.ErrStreamConnectionTimeout
 			}
 
-			if tor.State() == state.TorrentWorking || tor.State() == state.TorrentPreload {
+			if tor.State() == contracts.TorrentWorking || tor.State() == contracts.TorrentPreload {
 				tor.EnsureTitleFromInfo()
 
 				return tor, nil

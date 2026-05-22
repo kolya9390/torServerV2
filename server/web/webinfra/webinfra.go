@@ -53,7 +53,8 @@ type sslService struct {
 	srv      *http.Server
 }
 
-// NewCORSService creates a new instance of CORSService.
+// NewCORSService is a legacy compatibility constructor backed by process-global args.
+// Production composition should call NewCORSServiceWithProviders.
 func NewCORSService() CORSService {
 	return NewCORSServiceWithProviders(settings.DefaultArgsProvider)
 }
@@ -62,11 +63,14 @@ func NewCORSServiceWithProviders(argsProvider settings.ArgsProvider) CORSService
 	return &corsService{argsProvider: argsProvider}
 }
 
-// NewSSLService creates a new instance of SSLService.
+// NewSSLService is a legacy compatibility constructor backed by process-global providers.
+// Production composition should call NewSSLServiceWithProvidersAndRuntime.
 func NewSSLService() SSLService {
 	return NewSSLServiceWithProvidersAndRuntime(settings.DefaultSettingsProvider, settings.DefaultArgsProvider, settings.DefaultRuntimeStateProvider)
 }
 
+// NewSSLServiceWithProviders is a compatibility constructor for callers that do not yet own runtime state.
+// New composition code should prefer NewSSLServiceWithProvidersAndRuntime.
 func NewSSLServiceWithProviders(provider settings.SettingsProvider, argsProvider settings.ArgsProvider) SSLService {
 	return NewSSLServiceWithProvidersAndRuntime(provider, argsProvider, settings.DefaultRuntimeStateProvider)
 }

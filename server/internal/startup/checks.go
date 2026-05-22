@@ -18,6 +18,7 @@ var listenTCP = net.Listen
 
 // PrepareNetwork validates web network settings and resolves final runtime ports.
 // It mutates args/BT settings with defaults for compatibility with existing flow.
+// PrepareNetwork is a legacy compatibility wrapper; production composition should call PrepareNetworkWithProvider.
 func PrepareNetwork(args *settings.ExecArgs) error {
 	return PrepareNetworkWithProvider(args, settings.DefaultSettingsProvider)
 }

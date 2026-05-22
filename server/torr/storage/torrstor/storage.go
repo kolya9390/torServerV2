@@ -16,6 +16,8 @@ type Storage struct {
 	manager *storageCacheManager
 }
 
+// NewStorage is a legacy compatibility constructor backed by the process-global settings provider.
+// Production composition should call NewStorageWithProvider.
 func NewStorage(capacity int64) *Storage {
 	return NewStorageWithProvider(capacity, settings.DefaultSettingsProvider)
 }

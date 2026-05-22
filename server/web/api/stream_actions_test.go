@@ -10,27 +10,25 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"server/torr/state"
 )
 
 type testTorrentHandle struct {
-	status *state.TorrentStatus
-	state  state.TorrentStat
+	status *contracts.TorrentStatus
+	state  contracts.TorrentState
 	hash   string
 	name   string
 	files  int
 }
 
-func (h testTorrentHandle) Status() *state.TorrentStatus {
+func (h testTorrentHandle) Status() *contracts.TorrentStatus {
 	if h.status != nil {
 		return h.status
 	}
 
-	return &state.TorrentStatus{Hash: h.hash, Stat: h.state}
+	return &contracts.TorrentStatus{Hash: h.hash, Stat: h.state}
 }
 
-func (h testTorrentHandle) State() state.TorrentStat       { return h.state }
+func (h testTorrentHandle) State() contracts.TorrentState  { return h.state }
 func (h testTorrentHandle) HashHex() string                { return h.hash }
 func (h testTorrentHandle) Name() string                   { return h.name }
 func (h testTorrentHandle) FileCount() int                 { return h.files }
@@ -128,13 +126,13 @@ func (m *testTorrentService) Add(spec contracts.TorrentSpec, title, poster, data
 	}
 
 	return testTorrentHandle{
-		status: &state.TorrentStatus{
+		status: &contracts.TorrentStatus{
 			Hash:  spec.HashHex(),
 			Title: title,
-			Stat:  state.TorrentAdded,
+			Stat:  contracts.TorrentAdded,
 		},
 		hash:  spec.HashHex(),
-		state: state.TorrentAdded,
+		state: contracts.TorrentAdded,
 		name:  title,
 		files: 1,
 	}, m.addErr
@@ -144,7 +142,7 @@ func (m *testTorrentService) Get(hash string) contracts.TorrentHandle {
 	return m.getResult
 }
 
-func (m *testTorrentService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+func (m *testTorrentService) Status(tor contracts.TorrentHandle) *contracts.TorrentStatus {
 	if tor == nil {
 		return nil
 	}
@@ -152,7 +150,7 @@ func (m *testTorrentService) Status(tor contracts.TorrentHandle) *state.TorrentS
 	return tor.Status()
 }
 
-func (m *testTorrentService) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+func (m *testTorrentService) StatusByHash(hash string) (*contracts.TorrentStatus, bool) {
 	if m.getResult == nil {
 		return nil, false
 	}
@@ -174,8 +172,8 @@ func (m *testTorrentService) List() []contracts.TorrentHandle {
 	return m.listResult
 }
 
-func (m *testTorrentService) Statuses() []*state.TorrentStatus {
-	stats := make([]*state.TorrentStatus, 0, len(m.listResult))
+func (m *testTorrentService) Statuses() []*contracts.TorrentStatus {
+	stats := make([]*contracts.TorrentStatus, 0, len(m.listResult))
 
 	for _, tor := range m.listResult {
 		if tor != nil {
@@ -195,7 +193,7 @@ func (m *testTorrentService) Drop(hash string) {
 }
 
 func (m *testTorrentService) IsStored(tor contracts.TorrentHandle) bool {
-	return tor != nil && tor.State() == state.TorrentInDB
+	return tor != nil && tor.State() == contracts.TorrentInDB
 }
 
 func (m *testTorrentService) DropReadiness(hash string) contracts.DropReadiness {
@@ -388,7 +386,7 @@ func TestLegacyStreamStatSaveCombinationKeepsCompatibility(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tor := testTorrentHandle{
-		status: &state.TorrentStatus{Hash: "0102030405060708090a0b0c0d0e0f1011121314", Title: "Demo"},
+		status: &contracts.TorrentStatus{Hash: "0102030405060708090a0b0c0d0e0f1011121314", Title: "Demo"},
 		hash:   "0102030405060708090a0b0c0d0e0f1011121314",
 		name:   "Demo",
 		files:  1,
@@ -424,9 +422,9 @@ func TestLegacyStreamUnauthenticatedM3UUsesReadOnlyActivation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tor := testTorrentHandle{
-		status: &state.TorrentStatus{
+		status: &contracts.TorrentStatus{
 			Hash: "0102030405060708090a0b0c0d0e0f1011121314",
-			FileStats: []*state.TorrentFileStat{
+			FileStats: []*contracts.TorrentFile{
 				{ID: 1, Path: "demo.mp4"},
 			},
 		},
@@ -468,7 +466,7 @@ func TestLegacyStreamPreloadOnlyReturnsAccepted(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tor := testTorrentHandle{
-		status: &state.TorrentStatus{Hash: "0102030405060708090a0b0c0d0e0f1011121314", Title: "Demo"},
+		status: &contracts.TorrentStatus{Hash: "0102030405060708090a0b0c0d0e0f1011121314", Title: "Demo"},
 		hash:   "0102030405060708090a0b0c0d0e0f1011121314",
 		name:   "Demo",
 		files:  2,
@@ -504,7 +502,7 @@ func TestLegacyStreamPreloadQueueFullReturnsServiceUnavailable(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tor := testTorrentHandle{
-		status: &state.TorrentStatus{Hash: "0102030405060708090a0b0c0d0e0f1011121314", Title: "Demo"},
+		status: &contracts.TorrentStatus{Hash: "0102030405060708090a0b0c0d0e0f1011121314", Title: "Demo"},
 		hash:   "0102030405060708090a0b0c0d0e0f1011121314",
 		name:   "Demo",
 		files:  1,

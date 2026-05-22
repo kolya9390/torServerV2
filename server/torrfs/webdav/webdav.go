@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"server/log"
+	"server/settings"
 
 	"server/torrfs"
 
@@ -21,10 +22,16 @@ var missingMethods = []string{
 	"PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK",
 }
 
+// MountWebDAV is a legacy compatibility wrapper backed by the process-global settings provider.
+// Production composition should call MountWebDAVWithProvider.
 func MountWebDAV(r *gin.Engine) {
+	MountWebDAVWithProvider(r, settings.DefaultSettingsProvider)
+}
+
+func MountWebDAVWithProvider(r *gin.Engine, provider settings.SettingsProvider) {
 	log.TLogln("Starting WebDAV")
 
-	tfs := torrfs.AsFS(torrfs.New())
+	tfs := torrfs.AsFS(torrfs.NewWithProvider(provider))
 
 	h := &webdav.Handler{
 		Prefix:     "/dav",
