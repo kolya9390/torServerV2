@@ -5,6 +5,9 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"server/log"
+	"server/settings"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -106,6 +109,77 @@ func TestShippedConfigDisablesFullDebugByDefault(t *testing.T) {
 
 	if cfg.Debug.Enabled {
 		t.Fatal("release config template must keep debug.enabled=false")
+	}
+
+	if cfg.Debug.ServiceOnly {
+		t.Fatal("release config template must keep debug.service_only=false")
+	}
+}
+
+func TestApplyDebugSettingsMapsFullDebugMode(t *testing.T) {
+	t.Cleanup(func() { _ = log.SetLevel("info") })
+
+	cfg := &Config{
+		Debug: DebugConfig{
+			Enabled:          true,
+			ServiceOnly:      false,
+			ShowFSActiveTorr: true,
+		},
+	}
+	sets := &settings.BTSets{}
+
+	cfg.ApplyToBTSets(sets)
+
+	if !sets.EnableDebug {
+		t.Fatal("debug.enabled=true must set BTSets.EnableDebug")
+	}
+
+	if sets.ServiceOnlyDebug {
+		t.Fatal("debug.service_only=false must keep BTSets.ServiceOnlyDebug=false")
+	}
+
+	if !sets.ShowFSActiveTorr {
+		t.Fatal("debug.show_fs_active_torr=true must set BTSets.ShowFSActiveTorr")
+	}
+}
+
+func TestApplyDebugSettingsMapsServiceOnlyMode(t *testing.T) {
+	t.Cleanup(func() { _ = log.SetLevel("info") })
+
+	cfg := &Config{
+		Debug: DebugConfig{
+			Enabled:     false,
+			ServiceOnly: true,
+		},
+	}
+	sets := &settings.BTSets{}
+
+	cfg.ApplyToBTSets(sets)
+
+	if sets.EnableDebug {
+		t.Fatal("debug.enabled=false must keep BTSets.EnableDebug=false")
+	}
+
+	if !sets.ServiceOnlyDebug {
+		t.Fatal("debug.service_only=true must set BTSets.ServiceOnlyDebug")
+	}
+}
+
+func TestToStaticConfigPreservesDebugServiceOnly(t *testing.T) {
+	cfg := &Config{
+		Debug: DebugConfig{
+			Enabled:     true,
+			ServiceOnly: true,
+		},
+	}
+
+	staticCfg := cfg.ToStaticConfig()
+	if !staticCfg.EnableDebug {
+		t.Fatal("ToStaticConfig must preserve debug.enabled")
+	}
+
+	if !staticCfg.ServiceOnlyDebug {
+		t.Fatal("ToStaticConfig must preserve debug.service_only")
 	}
 }
 

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"net/http"
+
 	"server/internal/app/contracts"
 
 	"github.com/gin-gonic/gin"
@@ -103,13 +105,26 @@ type tmdbHandlerDeps struct {
 	Settings contracts.SettingsService
 }
 
-func servicesMiddleware(s *contracts.APIServices) gin.HandlerFunc {
+func buildServicesMiddleware(s *contracts.APIServices) (gin.HandlerFunc, error) {
 	if err := validateAPIServices(s); err != nil {
-		panic("api services are not configured: " + err.Error())
+		return nil, err
 	}
 
-	deps := newHandlerDeps(s)
+	return servicesMiddlewareForDeps(newHandlerDeps(s)), nil
+}
 
+func servicesMiddleware(s *contracts.APIServices) gin.HandlerFunc {
+	middleware, err := buildServicesMiddleware(s)
+	if err != nil {
+		return func(c *gin.Context) {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "api services are not configured: " + err.Error()})
+		}
+	}
+
+	return middleware
+}
+
+func servicesMiddlewareForDeps(deps *handlerDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set(servicesContextKey, deps)
 		c.Next()

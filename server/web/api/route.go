@@ -17,23 +17,26 @@ type requestI struct {
 	Action string `json:"action,omitempty"`
 }
 
-func SetupRouteWithServices(route gin.IRouter, runtimeState func() sets.RuntimeState, services *contracts.APIServices) {
-	if err := validateAPIServices(services); err != nil {
-		panic(fmt.Sprintf("api services are not configured: %v", err))
+func SetupRouteWithServices(route gin.IRouter, runtimeState func() sets.RuntimeState, services *contracts.APIServices) error {
+	middleware, err := buildServicesMiddleware(services)
+	if err != nil {
+		return fmt.Errorf("api services are not configured: %w", err)
 	}
 
 	route.GET("/api/version", apiVersion)
 	route.GET("/api/v1/version", apiVersion)
 
 	legacy := route.Group("/", legacyDeprecationHeaders())
-	registerAPIRoutes(legacy, runtimeState, services)
+	registerAPIRoutes(legacy, runtimeState, middleware)
 
 	v1 := route.Group("/api/v1")
-	registerAPIRoutes(v1, runtimeState, services)
+	registerAPIRoutes(v1, runtimeState, middleware)
+
+	return nil
 }
 
-func registerAPIRoutes(route gin.IRouter, runtimeState func() sets.RuntimeState, services *contracts.APIServices) {
-	route.Use(servicesMiddleware(services))
+func registerAPIRoutes(route gin.IRouter, runtimeState func() sets.RuntimeState, middleware gin.HandlerFunc) {
+	route.Use(middleware)
 	authorized := route.Group("/", auth.CheckAuth())
 
 	if runtimeState == nil {

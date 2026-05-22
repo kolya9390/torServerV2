@@ -10,7 +10,6 @@ import (
 
 	sets "server/settings"
 	"server/torr/state"
-	"server/torznab"
 )
 
 // TorrentSpecPayload is an adapter-owned payload for a torrent engine implementation.
@@ -177,7 +176,7 @@ type SystemService interface {
 // SearchService defines external search integrations.
 type SearchService interface {
 	EnableTorznabSearch() bool
-	TorznabSearch(query string, index int) []*torznab.TorrentDetails
+	TorznabSearch(query string, index int) []*SearchResult
 	TorznabTest(host, key string) error
 }
 
@@ -198,6 +197,22 @@ type StreamMeta struct {
 	Poster   string
 	Category string
 	Data     string
+}
+
+// SearchResult is an application-owned torrent search result DTO.
+// Keep JSON tags compatible with the legacy Torznab HTTP response shape.
+type SearchResult struct {
+	Title      string    `json:"title,omitempty"`
+	Name       string    `json:"name,omitempty"`
+	Link       string    `json:"link,omitempty"`
+	Magnet     string    `json:"magnet,omitempty"`
+	Hash       string    `json:"hash,omitempty"`
+	Size       string    `json:"size,omitempty"`
+	Seed       int       `json:"seed,omitempty"`
+	Peer       int       `json:"peer,omitempty"`
+	CreateDate time.Time `json:"createDate"`
+	Categories []string  `json:"categories,omitempty"`
+	Year       int       `json:"year,omitempty"`
 }
 
 var (

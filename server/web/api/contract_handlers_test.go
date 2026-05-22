@@ -13,7 +13,6 @@ import (
 
 	sets "server/settings"
 	"server/torr/state"
-	"server/torznab"
 	wauth "server/web/auth"
 )
 
@@ -71,8 +70,8 @@ func (s *contractSearchService) EnableTorznabSearch() bool {
 	return s.enabled
 }
 
-func (s *contractSearchService) TorznabSearch(query string, index int) []*torznab.TorrentDetails {
-	return []*torznab.TorrentDetails{}
+func (s *contractSearchService) TorznabSearch(query string, index int) []*contracts.SearchResult {
+	return []*contracts.SearchResult{}
 }
 
 func (s *contractMediaService) ProbePlayURL(hash, fileID string) (*goffprobe.ProbeData, error) {
@@ -138,7 +137,9 @@ func TestSetupRouteWithServicesUsesScopedServices(t *testing.T) {
 	services.Search = &contractSearchService{}
 	services.Media = &contractMediaService{}
 	services.Modules = modulesSvc
-	SetupRouteWithServices(r, func() sets.RuntimeState { return sets.RuntimeState{} }, services)
+	if err := SetupRouteWithServices(r, func() sets.RuntimeState { return sets.RuntimeState{} }, services); err != nil {
+		t.Fatalf("SetupRouteWithServices returned error: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings", strings.NewReader(`{"action":"def"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -162,35 +163,27 @@ func TestSetupRouteWithServicesUsesScopedServices(t *testing.T) {
 func TestSetupRouteWithServicesRequiresCompleteDependencies(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	defer func() {
-		recovered := recover()
-		if recovered == nil {
-			t.Fatal("expected SetupRouteWithServices to panic on incomplete services")
-		}
+	err := SetupRouteWithServices(gin.New(), func() sets.RuntimeState { return sets.RuntimeState{} }, &contracts.APIServices{})
+	if err == nil {
+		t.Fatal("expected SetupRouteWithServices to return incomplete services error")
+	}
 
-		if !strings.Contains(recovered.(string), "missing") {
-			t.Fatalf("expected missing dependency panic, got %v", recovered)
-		}
-	}()
-
-	SetupRouteWithServices(gin.New(), func() sets.RuntimeState { return sets.RuntimeState{} }, &contracts.APIServices{})
+	if !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("expected missing dependency error, got %v", err)
+	}
 }
 
 func TestServicesMiddlewareRequiresCompleteServices(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	defer func() {
-		recovered := recover()
-		if recovered == nil {
-			t.Fatal("expected servicesMiddleware to panic on incomplete services")
-		}
+	_, err := buildServicesMiddleware(&contracts.APIServices{})
+	if err == nil {
+		t.Fatal("expected buildServicesMiddleware to return incomplete services error")
+	}
 
-		if !strings.Contains(recovered.(string), "missing") {
-			t.Fatalf("expected missing dependency panic, got %v", recovered)
-		}
-	}()
-
-	_ = servicesMiddleware(&contracts.APIServices{})
+	if !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("expected missing dependency error, got %v", err)
+	}
 }
 
 func TestTorznabSearchDisabledLegacyContract(t *testing.T) {

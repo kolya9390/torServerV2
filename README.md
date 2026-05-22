@@ -339,8 +339,8 @@ docker build -t torrserver .  # Docker
 
 ### Production / public deployment
 
-- Keep `debug.enabled: false` in release and internet-exposed deployments. Full debug mode exposes `/debug/pprof/*`, `/debug/vars`, heap, and goroutine diagnostics and should be used only for local profiling.
-- For local diagnostics, temporarily set `debug.enabled: true`, collect the profile, then switch it back to `false`.
+- Keep `debug.enabled: false` in release and internet-exposed deployments. Full debug mode exposes `/debug/pprof/*`, `/debug/vars`, heap, and goroutine diagnostics and should be used only for trusted local profiling.
+- For local diagnostics, temporarily set `debug.enabled: true`, collect the profile, then switch it back to `false`. Use `debug.service_only: true` only when you need TorrServerV2 debug logs without HTTP debug endpoints or torrent library debug noise.
 - CORS allow-all is the compatibility mode for home media clients and Smart TV apps. For VPS, reverse proxy, or internet-exposed deployments, set `TS_CORS_ALLOW_ORIGINS` to a comma-separated allowlist, for example `https://example.com,https://app.example.com`.
 - `TS_CORS_ALLOW_PRIVATE_NETWORK=1` should be enabled only when browsers on trusted local networks need Private Network Access preflight support.
 

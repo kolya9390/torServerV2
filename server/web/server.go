@@ -83,16 +83,6 @@ func NewServerWithDeps(deps ServerDeps) *Server {
 	}
 }
 
-func (s *Server) SetAPIServices(services *contracts.APIServices) {
-	if s == nil || services == nil {
-		return
-	}
-
-	s.mu.Lock()
-	s.apiSvc = services
-	s.mu.Unlock()
-}
-
 func (s *Server) currentSettings() *settings.BTSets {
 	if s != nil && s.settings != nil {
 		return s.settings.Get()
@@ -174,7 +164,9 @@ func (s *Server) Start() error {
 	// Swagger UI (accessible at /swagger/index.html)
 	route.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	s.registerAppRoutes(route)
+	if err := s.registerAppRoutes(route); err != nil {
+		return err
+	}
 
 	if err := s.startHTTPSServer(route, ips); err != nil {
 		return err
@@ -250,12 +242,14 @@ func (s *Server) registerDebugRoutes(route *gin.Engine) {
 }
 
 // registerAppRoutes registers API routes and optional WebDAV/DLNA/FUSE modules.
-func (s *Server) registerAppRoutes(route *gin.Engine) {
+func (s *Server) registerAppRoutes(route *gin.Engine) error {
 	s.mu.RLock()
 	apiServices := s.apiSvc
 	s.mu.RUnlock()
 
-	api.SetupRouteWithServices(route, s.currentRuntimeState, apiServices)
+	if err := api.SetupRouteWithServices(route, s.currentRuntimeState, apiServices); err != nil {
+		return fmt.Errorf("register api routes: %w", err)
+	}
 
 	args := s.currentArgs()
 	if args != nil && args.WebDAV {
@@ -268,6 +262,8 @@ func (s *Server) registerAppRoutes(route *gin.Engine) {
 	}
 
 	modules.LogPeripheralFailure("fuse", modules.StartFUSEWithProviders(s.settings, s.args))
+
+	return nil
 }
 
 // startHTTPSServer starts the HTTPS server if SSL is enabled.

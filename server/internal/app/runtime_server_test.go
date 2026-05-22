@@ -2,12 +2,13 @@ package app
 
 import (
 	"errors"
-	"strings"
 	"testing"
 
 	"server/config"
 	"server/internal/app/contracts"
 	"server/settings"
+	"server/torr"
+	"server/web"
 )
 
 type fakeWebRuntime struct {
@@ -18,13 +19,59 @@ type fakeWebRuntime struct {
 	waited   bool
 }
 
-type fakeAPIWebRuntime struct {
-	fakeWebRuntime
-	apiServices *contracts.APIServices
+type runtimeTestSettingsProvider struct {
+	sets *settings.BTSets
 }
 
-func (f *fakeAPIWebRuntime) SetAPIServices(services *contracts.APIServices) {
-	f.apiServices = services
+func (p *runtimeTestSettingsProvider) Get() *settings.BTSets {
+	if p.sets == nil {
+		return &settings.BTSets{}
+	}
+
+	cp := *p.sets
+
+	return &cp
+}
+
+func (p *runtimeTestSettingsProvider) Set(sets *settings.BTSets) {
+	if sets == nil {
+		p.sets = nil
+
+		return
+	}
+
+	cp := *sets
+	p.sets = &cp
+}
+
+func (p *runtimeTestSettingsProvider) ReadOnly() bool {
+	return false
+}
+
+func (p *runtimeTestSettingsProvider) GetStaticConfig() settings.StaticConfig {
+	return settings.StaticConfig{}
+}
+
+func (p *runtimeTestSettingsProvider) GetStoragePreferences() map[string]any {
+	return map[string]any{}
+}
+
+func (p *runtimeTestSettingsProvider) SetStoragePreferences(map[string]any) error {
+	return nil
+}
+
+type runtimeTestArgsProvider struct {
+	args *settings.ExecArgs
+}
+
+func (p runtimeTestArgsProvider) Get() *settings.ExecArgs {
+	if p.args == nil {
+		return nil
+	}
+
+	cp := *p.args
+
+	return &cp
 }
 
 func (f *fakeWebRuntime) Start() error {
@@ -55,24 +102,109 @@ func TestServerRuntimeStartRequiresArgs(t *testing.T) {
 	}
 }
 
-func TestServerRuntimeStartReturnsIncompleteDefaultAPIServicesErrorForAPIWeb(t *testing.T) {
-	apiWeb := &fakeAPIWebRuntime{}
+func TestServerRuntimeStartReturnsAPIServicesFactoryError(t *testing.T) {
+	apiErr := errors.New("api services failed")
+	fakeWeb := &fakeWebRuntime{}
 	deps := serverRuntimeDeps{
-		newWebServer: func() webRuntime { return apiWeb },
+		newWebServer: func(web.ServerDeps) webRuntime { return fakeWeb },
+		newAPIServices: func(*torr.BTServer) (*contracts.APIServices, error) {
+			return nil, apiErr
+		},
 	}
 
 	rt := newServerRuntime(deps, nil)
 	err := rt.Start()
-	if err == nil {
-		t.Fatal("expected incomplete API service wiring error")
+	if !errors.Is(err, apiErr) {
+		t.Fatalf("expected API services error, got %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "TorrentBackend") {
-		t.Fatalf("expected missing TorrentBackend error, got %q", err.Error())
+	if fakeWeb.started {
+		t.Fatal("expected web runtime not to start when API services factory fails")
+	}
+}
+
+func TestServerRuntimePassesAPIServicesThroughWebServerDeps(t *testing.T) {
+	apiServices := &contracts.APIServices{}
+
+	var captured web.ServerDeps
+
+	deps := serverRuntimeDeps{
+		newAPIServices: func(bt *torr.BTServer) (*contracts.APIServices, error) {
+			if bt == nil {
+				t.Fatal("expected BTServer to be built before APIServices")
+			}
+
+			return apiServices, nil
+		},
+		newWebServer: func(deps web.ServerDeps) webRuntime {
+			captured = deps
+
+			return &fakeWebRuntime{}
+		},
 	}
 
-	if apiWeb.apiServices != nil {
-		t.Fatalf("api services = %v, want nil", apiWeb.apiServices)
+	rt := newServerRuntime(deps, nil)
+	serverRt, ok := rt.(*serverRuntime)
+	if !ok {
+		t.Fatalf("runtime type = %T, want *serverRuntime", rt)
+	}
+
+	if serverRt.APIServices() != apiServices {
+		t.Fatal("expected runtime to retain constructed APIServices")
+	}
+
+	if captured.APIServices != apiServices {
+		t.Fatal("expected APIServices to be passed through web.ServerDeps")
+	}
+
+	if captured.BTServer == nil {
+		t.Fatal("expected BTServer to be passed through web.ServerDeps")
+	}
+}
+
+func TestServerRuntimeDefaultAPIServicesUseInjectedProviders(t *testing.T) {
+	provider := &runtimeTestSettingsProvider{
+		sets: &settings.BTSets{
+			EnableDebug: true,
+		},
+	}
+	argsProvider := runtimeTestArgsProvider{args: &settings.ExecArgs{Port: "18090"}}
+	runtimeState := settings.RuntimeState{Port: "18090"}
+
+	var captured web.ServerDeps
+
+	deps := serverRuntimeDeps{
+		argsProvider:   argsProvider,
+		settingsSource: provider,
+		runtimeState:   func() settings.RuntimeState { return runtimeState },
+		newWebServer: func(deps web.ServerDeps) webRuntime {
+			captured = deps
+
+			return &fakeWebRuntime{}
+		},
+	}
+
+	rt := newServerRuntime(deps, nil)
+	serverRt, ok := rt.(*serverRuntime)
+	if !ok {
+		t.Fatalf("runtime type = %T, want *serverRuntime", rt)
+	}
+
+	if serverRt.servicesErr != nil {
+		t.Fatalf("expected default API services to be built, got %v", serverRt.servicesErr)
+	}
+
+	if captured.APIServices == nil || captured.APIServices.Settings == nil {
+		t.Fatal("expected API services to be passed through web deps")
+	}
+
+	current := captured.APIServices.Settings.Current()
+	if current == nil || !current.EnableDebug {
+		t.Fatalf("expected API settings service to use injected provider, got %#v", current)
+	}
+
+	if captured.ArgsProvider != argsProvider {
+		t.Fatal("expected web deps to retain injected args provider")
 	}
 }
 
@@ -132,7 +264,7 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 	})
 
 	webErr := errors.New("web start failed")
-	web := &fakeWebRuntime{startErr: webErr}
+	fakeWeb := &fakeWebRuntime{startErr: webErr}
 
 	var runtime settings.RuntimeState
 
@@ -147,7 +279,7 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 		},
 		initSettings:   func(readOnly, searchWA bool) error { return nil },
 		prepareStartup: func(_ *settings.ExecArgs, _ settings.SettingsProvider) error { return nil },
-		newWebServer:   func() webRuntime { return web },
+		newWebServer:   func(web.ServerDeps) webRuntime { return fakeWeb },
 		setShutdown: func(fn func()) {
 			shutdownHookSet = fn != nil
 		},
@@ -176,7 +308,7 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 		t.Fatalf("expected ssl cert/key to be applied, got cert=%q key=%q", curSets.SslCert, curSets.SslKey)
 	}
 
-	if !web.started {
+	if !fakeWeb.started {
 		t.Fatal("expected web start to be called")
 	}
 }
@@ -191,7 +323,7 @@ func TestServerRuntimeStartAppliesConfigToArgsBeforeStartup(t *testing.T) {
 	})
 
 	webErr := errors.New("stop before binding test server")
-	web := &fakeWebRuntime{startErr: webErr}
+	fakeWeb := &fakeWebRuntime{startErr: webErr}
 
 	var runtime settings.RuntimeState
 
@@ -213,7 +345,7 @@ func TestServerRuntimeStartAppliesConfigToArgsBeforeStartup(t *testing.T) {
 
 			return nil
 		},
-		newWebServer: func() webRuntime { return web },
+		newWebServer: func(web.ServerDeps) webRuntime { return fakeWeb },
 		setShutdown:  func(func()) {},
 	}
 	cfg := &config.Config{
@@ -246,11 +378,11 @@ func TestServerRuntimeStartAppliesConfigToArgsBeforeStartup(t *testing.T) {
 
 func TestServerRuntimeWaitAndStop(t *testing.T) {
 	waitErr := errors.New("wait failed")
-	web := &fakeWebRuntime{waitErr: waitErr}
+	fakeWeb := &fakeWebRuntime{waitErr: waitErr}
 	closedDB := false
 
 	deps := serverRuntimeDeps{
-		newWebServer:  func() webRuntime { return web },
+		newWebServer:  func(web.ServerDeps) webRuntime { return fakeWeb },
 		closeSettings: func() { closedDB = true },
 	}
 	rt := newServerRuntime(deps, nil)
@@ -261,7 +393,7 @@ func TestServerRuntimeWaitAndStop(t *testing.T) {
 
 	rt.Stop()
 
-	if !web.stopped || !closedDB {
-		t.Fatalf("expected stop chain to be called, web=%v db=%v", web.stopped, closedDB)
+	if !fakeWeb.stopped || !closedDB {
+		t.Fatalf("expected stop chain to be called, web=%v db=%v", fakeWeb.stopped, closedDB)
 	}
 }

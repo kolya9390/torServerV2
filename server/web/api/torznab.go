@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"server/torznab"
+	"server/internal/app/contracts"
 )
 
 // torznabSearch godoc
@@ -20,7 +20,7 @@ import (
 //	@Param			query	query	string	true	"Torznab query"
 //
 //	@Produce		json
-//	@Success		200	{array}	torznab.TorrentDetails	"Torznab torrent search result(s)"
+//	@Success		200	{array}	contracts.SearchResult	"Torznab torrent search result(s)"
 //	@Router			/torznab/search [get]
 func torznabSearch(c *gin.Context) {
 	deps := searchDepsFromContext(c)
@@ -49,7 +49,7 @@ func torznabSearch(c *gin.Context) {
 
 	list := deps.Search.TorznabSearch(query, index)
 	if list == nil {
-		list = []*torznab.TorrentDetails{}
+		list = []*contracts.SearchResult{}
 	}
 
 	c.JSON(200, list)

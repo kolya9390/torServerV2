@@ -143,7 +143,10 @@ func setupAuthRouter(t *testing.T, searchWA bool) *gin.Engine {
 
 	r := gin.New()
 	wauth.SetupAuth(r)
-	SetupRouteWithServices(r, sets.GetRuntimeState, newAPIServicesFixture(t, nil))
+
+	if err := SetupRouteWithServices(r, sets.GetRuntimeState, newAPIServicesFixture(t, nil)); err != nil {
+		t.Fatalf("SetupRouteWithServices returned error: %v", err)
+	}
 
 	return r
 }

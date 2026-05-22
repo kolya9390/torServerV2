@@ -6,6 +6,7 @@ import (
 	goffprobe "gopkg.in/vansante/go-ffprobe.v2"
 
 	"server/ffprobe"
+	"server/internal/app/contracts"
 	"server/log"
 	"server/modules"
 	sets "server/settings"
@@ -42,12 +43,42 @@ func (d searchService) EnableTorznabSearch() bool {
 	return d.provider.Get().SearchConfig().EnableTorznab
 }
 
-func (d searchService) TorznabSearch(query string, index int) []*torznab.TorrentDetails {
-	return torznab.SearchWithProvider(query, index, d.provider)
+func (d searchService) TorznabSearch(query string, index int) []*contracts.SearchResult {
+	return mapTorznabResults(torznab.SearchWithProvider(query, index, d.provider))
 }
 
 func (searchService) TorznabTest(host, key string) error {
 	return torznab.Test(host, key)
+}
+
+func mapTorznabResults(results []*torznab.TorrentDetails) []*contracts.SearchResult {
+	if len(results) == 0 {
+		return nil
+	}
+
+	mapped := make([]*contracts.SearchResult, 0, len(results))
+
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+
+		mapped = append(mapped, &contracts.SearchResult{
+			Title:      result.Title,
+			Name:       result.Name,
+			Link:       result.Link,
+			Magnet:     result.Magnet,
+			Hash:       result.Hash,
+			Size:       result.Size,
+			Seed:       result.Seed,
+			Peer:       result.Peer,
+			CreateDate: result.CreateDate,
+			Categories: result.Categories,
+			Year:       result.Year,
+		})
+	}
+
+	return mapped
 }
 
 func (d mediaService) ProbePlayURL(hash, fileID string) (*goffprobe.ProbeData, error) {

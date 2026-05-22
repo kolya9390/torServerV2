@@ -16,11 +16,46 @@ import (
 	contracts "server/internal/app/contracts"
 	settings "server/settings"
 	state "server/torr/state"
-	torznab "server/torznab"
 
 	gomock "go.uber.org/mock/gomock"
 	ffprobe "gopkg.in/vansante/go-ffprobe.v2"
 )
+
+// MockTorrentSpecPayload is a mock of TorrentSpecPayload interface.
+type MockTorrentSpecPayload struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentSpecPayloadMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentSpecPayloadMockRecorder is the mock recorder for MockTorrentSpecPayload.
+type MockTorrentSpecPayloadMockRecorder struct {
+	mock *MockTorrentSpecPayload
+}
+
+// NewMockTorrentSpecPayload creates a new mock instance.
+func NewMockTorrentSpecPayload(ctrl *gomock.Controller) *MockTorrentSpecPayload {
+	mock := &MockTorrentSpecPayload{ctrl: ctrl}
+	mock.recorder = &MockTorrentSpecPayloadMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentSpecPayload) EXPECT() *MockTorrentSpecPayloadMockRecorder {
+	return m.recorder
+}
+
+// TorrentSpecPayload mocks base method.
+func (m *MockTorrentSpecPayload) TorrentSpecPayload() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "TorrentSpecPayload")
+}
+
+// TorrentSpecPayload indicates an expected call of TorrentSpecPayload.
+func (mr *MockTorrentSpecPayloadMockRecorder) TorrentSpecPayload() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TorrentSpecPayload", reflect.TypeOf((*MockTorrentSpecPayload)(nil).TorrentSpecPayload))
+}
 
 // MockAPITorrentHandle is a mock of TorrentHandle interface.
 type MockAPITorrentHandle struct {
@@ -1768,10 +1803,10 @@ func (mr *MockAPISearchServiceMockRecorder) EnableTorznabSearch() *gomock.Call {
 }
 
 // TorznabSearch mocks base method.
-func (m *MockAPISearchService) TorznabSearch(query string, index int) []*torznab.TorrentDetails {
+func (m *MockAPISearchService) TorznabSearch(query string, index int) []*contracts.SearchResult {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "TorznabSearch", query, index)
-	ret0, _ := ret[0].([]*torznab.TorrentDetails)
+	ret0, _ := ret[0].([]*contracts.SearchResult)
 	return ret0
 }
 
@@ -1882,6 +1917,153 @@ func (m *MockAPIModulesService) StopDLNA() {
 func (mr *MockAPIModulesServiceMockRecorder) StopDLNA() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopDLNA", reflect.TypeOf((*MockAPIModulesService)(nil).StopDLNA))
+}
+
+// MockTorrentParserService is a mock of TorrentParserService interface.
+type MockTorrentParserService struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentParserServiceMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentParserServiceMockRecorder is the mock recorder for MockTorrentParserService.
+type MockTorrentParserServiceMockRecorder struct {
+	mock *MockTorrentParserService
+}
+
+// NewMockTorrentParserService creates a new mock instance.
+func NewMockTorrentParserService(ctrl *gomock.Controller) *MockTorrentParserService {
+	mock := &MockTorrentParserService{ctrl: ctrl}
+	mock.recorder = &MockTorrentParserServiceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentParserService) EXPECT() *MockTorrentParserServiceMockRecorder {
+	return m.recorder
+}
+
+// ParseLink mocks base method.
+func (m *MockTorrentParserService) ParseLink(link, title, poster, category string) (contracts.TorrentSpec, contracts.StreamMeta, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ParseLink", link, title, poster, category)
+	ret0, _ := ret[0].(contracts.TorrentSpec)
+	ret1, _ := ret[1].(contracts.StreamMeta)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ParseLink indicates an expected call of ParseLink.
+func (mr *MockTorrentParserServiceMockRecorder) ParseLink(link, title, poster, category any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ParseLink", reflect.TypeOf((*MockTorrentParserService)(nil).ParseLink), link, title, poster, category)
+}
+
+// ParseTorrentFile mocks base method.
+func (m *MockTorrentParserService) ParseTorrentFile(reader io.Reader) (contracts.TorrentSpec, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ParseTorrentFile", reader)
+	ret0, _ := ret[0].(contracts.TorrentSpec)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ParseTorrentFile indicates an expected call of ParseTorrentFile.
+func (mr *MockTorrentParserServiceMockRecorder) ParseTorrentFile(reader any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ParseTorrentFile", reflect.TypeOf((*MockTorrentParserService)(nil).ParseTorrentFile), reader)
+}
+
+// MockStreamOrchestratorService is a mock of StreamOrchestratorService interface.
+type MockStreamOrchestratorService struct {
+	ctrl     *gomock.Controller
+	recorder *MockStreamOrchestratorServiceMockRecorder
+	isgomock struct{}
+}
+
+// MockStreamOrchestratorServiceMockRecorder is the mock recorder for MockStreamOrchestratorService.
+type MockStreamOrchestratorServiceMockRecorder struct {
+	mock *MockStreamOrchestratorService
+}
+
+// NewMockStreamOrchestratorService creates a new mock instance.
+func NewMockStreamOrchestratorService(ctrl *gomock.Controller) *MockStreamOrchestratorService {
+	mock := &MockStreamOrchestratorService{ctrl: ctrl}
+	mock.recorder = &MockStreamOrchestratorServiceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockStreamOrchestratorService) EXPECT() *MockStreamOrchestratorServiceMockRecorder {
+	return m.recorder
+}
+
+// EnsureTorrent mocks base method.
+func (m *MockStreamOrchestratorService) EnsureTorrent(torrents contracts.TorrentStreamService, spec contracts.TorrentSpec, meta contracts.StreamMeta, allowCreate bool) (contracts.TorrentHandle, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnsureTorrent", torrents, spec, meta, allowCreate)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// EnsureTorrent indicates an expected call of EnsureTorrent.
+func (mr *MockStreamOrchestratorServiceMockRecorder) EnsureTorrent(torrents, spec, meta, allowCreate any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnsureTorrent", reflect.TypeOf((*MockStreamOrchestratorService)(nil).EnsureTorrent), torrents, spec, meta, allowCreate)
+}
+
+// MockStreamHelperService is a mock of StreamHelperService interface.
+type MockStreamHelperService struct {
+	ctrl     *gomock.Controller
+	recorder *MockStreamHelperServiceMockRecorder
+	isgomock struct{}
+}
+
+// MockStreamHelperServiceMockRecorder is the mock recorder for MockStreamHelperService.
+type MockStreamHelperServiceMockRecorder struct {
+	mock *MockStreamHelperService
+}
+
+// NewMockStreamHelperService creates a new mock instance.
+func NewMockStreamHelperService(ctrl *gomock.Controller) *MockStreamHelperService {
+	mock := &MockStreamHelperService{ctrl: ctrl}
+	mock.recorder = &MockStreamHelperServiceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockStreamHelperService) EXPECT() *MockStreamHelperServiceMockRecorder {
+	return m.recorder
+}
+
+// NormalizePlaylistName mocks base method.
+func (m *MockStreamHelperService) NormalizePlaylistName(rawName, fallback string) string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NormalizePlaylistName", rawName, fallback)
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// NormalizePlaylistName indicates an expected call of NormalizePlaylistName.
+func (mr *MockStreamHelperServiceMockRecorder) NormalizePlaylistName(rawName, fallback any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NormalizePlaylistName", reflect.TypeOf((*MockStreamHelperService)(nil).NormalizePlaylistName), rawName, fallback)
+}
+
+// ParseFileIndex mocks base method.
+func (m *MockStreamHelperService) ParseFileIndex(index string, fileCount int) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ParseFileIndex", index, fileCount)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ParseFileIndex indicates an expected call of ParseFileIndex.
+func (mr *MockStreamHelperServiceMockRecorder) ParseFileIndex(index, fileCount any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ParseFileIndex", reflect.TypeOf((*MockStreamHelperService)(nil).ParseFileIndex), index, fileCount)
 }
 
 // MockAPIStreamService is a mock of StreamService interface.

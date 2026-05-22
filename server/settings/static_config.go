@@ -50,7 +50,8 @@ type StaticConfig struct {
 	TMDBAPIKey string
 
 	// Debug
-	EnableDebug bool
+	EnableDebug      bool
+	ServiceOnlyDebug bool
 }
 
 // staticConfig is the global static configuration loaded from config.yaml.

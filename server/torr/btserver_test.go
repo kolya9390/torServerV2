@@ -10,6 +10,38 @@ import (
 	"server/torr/state"
 )
 
+type btTestSettingsProvider struct {
+	sets *settings.BTSets
+}
+
+func (p btTestSettingsProvider) Get() *settings.BTSets {
+	if p.sets == nil {
+		return &settings.BTSets{}
+	}
+
+	cp := *p.sets
+
+	return &cp
+}
+
+func (p btTestSettingsProvider) Set(*settings.BTSets) {}
+
+func (p btTestSettingsProvider) ReadOnly() bool {
+	return false
+}
+
+func (p btTestSettingsProvider) GetStaticConfig() settings.StaticConfig {
+	return settings.StaticConfig{}
+}
+
+func (p btTestSettingsProvider) GetStoragePreferences() map[string]any {
+	return map[string]any{}
+}
+
+func (p btTestSettingsProvider) SetStoragePreferences(map[string]any) error {
+	return nil
+}
+
 func setupTestSettings() {
 	sets := &settings.BTSets{
 		CacheSize:                64 * 1024 * 1024,
@@ -55,6 +87,55 @@ func TestBTServerConnectDisconnect(t *testing.T) {
 
 	if bts.client != nil {
 		t.Fatal("client not nil after Disconnect")
+	}
+}
+
+func TestBuildClientConfigDebugModes(t *testing.T) {
+	tests := []struct {
+		name      string
+		sets      *settings.BTSets
+		wantDebug bool
+	}{
+		{
+			name: "full debug enables torrent library debug",
+			sets: &settings.BTSets{
+				EnableDebug:      true,
+				ServiceOnlyDebug: false,
+			},
+			wantDebug: true,
+		},
+		{
+			name: "service-only debug keeps torrent library debug disabled",
+			sets: &settings.BTSets{
+				EnableDebug:      false,
+				ServiceOnlyDebug: true,
+			},
+			wantDebug: false,
+		},
+		{
+			name: "both debug flags keeps torrent library debug disabled for service-only",
+			sets: &settings.BTSets{
+				EnableDebug:      true,
+				ServiceOnlyDebug: true,
+			},
+			wantDebug: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bt := NewBTSWithProvidersRuntimeAndDB(
+				btTestSettingsProvider{sets: tt.sets},
+				settings.NewNoopArgsProvider(),
+				func() settings.RuntimeState { return settings.RuntimeState{} },
+				NewNoopTorrentDBStore(),
+			)
+
+			cfg := bt.buildClientConfig()
+			if cfg.Debug != tt.wantDebug {
+				t.Fatalf("ClientConfig.Debug = %v, want %v", cfg.Debug, tt.wantDebug)
+			}
+		})
 	}
 }
 

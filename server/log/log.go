@@ -20,7 +20,7 @@ var (
 	logger      *zap.SugaredLogger
 	errorLogger *zap.SugaredLogger
 	once        sync.Once
-	globalLevel zapcore.Level = zapcore.InfoLevel
+	globalLevel = zap.NewAtomicLevelAt(zapcore.InfoLevel)
 )
 
 // Init инициализирует логгер с указанными путями.
@@ -28,7 +28,7 @@ func Init(logPath, webLogPath string) {
 	once.Do(func() {
 		config := zap.NewProductionConfig()
 
-		config.Level = zap.NewAtomicLevelAt(globalLevel)
+		config.Level = globalLevel
 
 		config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
@@ -144,7 +144,7 @@ func SetLevel(level string) error {
 		return fmt.Errorf("unknown log level: %s", level)
 	}
 
-	globalLevel = l
+	globalLevel.SetLevel(l)
 
 	return nil
 }

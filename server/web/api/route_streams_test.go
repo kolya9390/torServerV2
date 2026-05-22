@@ -13,7 +13,9 @@ import (
 func TestExplicitStreamsRoutesRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	SetupRouteWithServices(r, func() sets.RuntimeState { return sets.RuntimeState{} }, newAPIServicesFixture(t, nil))
+	if err := SetupRouteWithServices(r, func() sets.RuntimeState { return sets.RuntimeState{} }, newAPIServicesFixture(t, nil)); err != nil {
+		t.Fatalf("SetupRouteWithServices returned error: %v", err)
+	}
 
 	cases := []string{
 		"/streams/stat",

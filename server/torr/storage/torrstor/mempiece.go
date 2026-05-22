@@ -9,6 +9,10 @@ const memPieceChunkSize = 16 << 10
 
 type memPieceChunk []byte
 
+// memPieceChunkPool reduces allocation churn for full-size 16 KiB in-memory
+// cache chunks on the streaming hot path. It is an opportunistic GC optimization,
+// not part of strict cache capacity accounting; Piece.Size/cache.filled track
+// logical residency while the runtime may keep pooled chunks alive temporarily.
 var memPieceChunkPool = sync.Pool{
 	New: func() any {
 		chunk := make(memPieceChunk, memPieceChunkSize)

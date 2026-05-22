@@ -173,6 +173,35 @@ func TestAPIHandlersDoNotDependOnComposedStreamService(t *testing.T) {
 	}
 }
 
+func TestLegacyStreamEndpointUsesCompatibilityAdapter(t *testing.T) {
+	path := filepath.Join(projectRoot(t), "web", "api", "stream_legacy.go")
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+
+	source := string(content)
+	if !strings.Contains(source, "newLegacyStreamAdapter(streamDepsFromContext(c)).Handle(c)") {
+		t.Fatalf("legacy stream endpoint must delegate to the compatibility adapter")
+	}
+
+	for _, forbidden := range []string{
+		`GetQuery("preload")`,
+		`GetQuery("stat")`,
+		`GetQuery("save")`,
+		`GetQuery("m3u")`,
+		`GetQuery("play")`,
+		"EnsureTorrent(",
+		"SaveToDB(",
+		"EnqueuePreload(",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("legacy stream parsing/orchestration must stay out of stream_legacy.go, found %q", forbidden)
+		}
+	}
+}
+
 func TestTransportAndAppDoNotCallGlobalRuntimeStateDirectly(t *testing.T) {
 	for _, relDir := range []string{
 		filepath.Join("internal", "app"),
@@ -212,6 +241,18 @@ func TestAppContractsDoNotImportTransportPackages(t *testing.T) {
 			if pkg == "server/web" || strings.HasPrefix(pkg, "server/web/") {
 				t.Errorf("forbidden transport import %q in app contract file %s", pkg, path)
 			}
+		}
+	}
+}
+
+func TestAppContractsDoNotExposeSearchInfrastructureDTOs(t *testing.T) {
+	path := filepath.Join(projectRoot(t), "internal", "app", "contracts", "contracts.go")
+	f := parseFile(t, path)
+
+	for _, imp := range f.Imports {
+		pkg := importPath(t, path, imp)
+		if pkg == "server/torznab" || strings.HasPrefix(pkg, "server/torznab/") {
+			t.Errorf("app contracts must expose application-owned search DTOs instead of %q in %s", pkg, path)
 		}
 	}
 }
@@ -294,6 +335,27 @@ func TestInternalAppDoesNotImportRootServerPackage(t *testing.T) {
 			if pkg == "server" {
 				t.Errorf("forbidden internal/app import %q in %s", pkg, path)
 			}
+		}
+	}
+}
+
+func TestRuntimeAPIServicesFactoryDoesNotCaptureGlobalProviders(t *testing.T) {
+	path := filepath.Join(projectRoot(t), "internal", "app", "runtime_server.go")
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+
+	source := string(content)
+	for _, forbidden := range []string{
+		"SettingsProvider:  settings.DefaultSettingsProvider",
+		"ArgsProvider:      settings.DefaultArgsProvider",
+		"RuntimeState:      settings.DefaultRuntimeStateProvider",
+		"runtimeState := settings.DefaultRuntimeStateProvider",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("default API service composition must use injected runtime deps instead of %q", forbidden)
 		}
 	}
 }

@@ -22,14 +22,6 @@ type webRuntime interface {
 	Stop()
 }
 
-type btServerProvider interface {
-	BTServer() *torr.BTServer
-}
-
-type apiServicesSetter interface {
-	SetAPIServices(*contracts.APIServices)
-}
-
 type serverRuntimeDeps struct {
 	argsProvider   settings.ArgsProvider
 	settingsSource settings.SettingsProvider
@@ -38,7 +30,7 @@ type serverRuntimeDeps struct {
 	updateRuntime  func(func(*settings.RuntimeState))
 	initSettings   func(readOnly, searchWA bool) error
 	prepareStartup func(args *settings.ExecArgs, provider settings.SettingsProvider) error
-	newWebServer   func() webRuntime
+	newWebServer   func(web.ServerDeps) webRuntime
 	newAPIServices func(*torr.BTServer) (*contracts.APIServices, error)
 	closeSettings  func()
 	setShutdown    func(func())
@@ -53,30 +45,8 @@ func defaultServerRuntimeDeps() serverRuntimeDeps {
 		updateRuntime:  settings.DefaultRuntimeStateUpdater,
 		initSettings:   settings.InitSets,
 		prepareStartup: startup.PrepareNetworkWithProvider,
-		newWebServer: func() webRuntime {
-			runtimeState := settings.DefaultRuntimeStateProvider
-
-			return web.NewServerWithDeps(web.ServerDeps{
-				TorrentDBStore:   torr.NewSettingsTorrentDBStore(),
-				SettingsProvider: settings.DefaultSettingsProvider,
-				ArgsProvider:     settings.DefaultArgsProvider,
-				RuntimeState:     runtimeState,
-			})
-		},
-		newAPIServices: func(bt *torr.BTServer) (*contracts.APIServices, error) {
-			runtimeState := settings.DefaultRuntimeStateProvider
-
-			return apiservices.NewDefaultWithDeps(apiservices.DefaultDeps{
-				TorrentBackend:    torr.NewTorrentServiceWithBT(bt),
-				SettingsProvider:  settings.DefaultSettingsProvider,
-				RuntimeSignals:    torr.NewRuntimeSignalsWithBT(bt),
-				RuntimeController: torr.NewRuntimeControllerWithBT(bt),
-				RuntimeState:      runtimeState,
-				ArgsProvider:      settings.DefaultArgsProvider,
-				SetViewed:         settings.SetViewed,
-				RemoveViewed:      settings.RemViewed,
-				ListViewed:        settings.ListViewed,
-			})
+		newWebServer: func(deps web.ServerDeps) webRuntime {
+			return web.NewServerWithDeps(deps)
 		},
 		closeSettings: settings.CloseDB,
 		setShutdown:   api.SetShutdownHook,
@@ -246,7 +216,7 @@ func newServerRuntime(deps serverRuntimeDeps, cfg *config.Config) Runtime {
 	}
 
 	if deps.newWebServer == nil {
-		deps.newWebServer = func() webRuntime { return newDefaultWebRuntime(deps) }
+		deps.newWebServer = func(webDeps web.ServerDeps) webRuntime { return web.NewServerWithDeps(webDeps) }
 	}
 
 	if deps.newAPIServices == nil {
@@ -259,29 +229,18 @@ func newServerRuntime(deps serverRuntimeDeps, cfg *config.Config) Runtime {
 		deps.closeSettings = settings.CloseDB
 	}
 
-	runtimeWeb := deps.newWebServer()
+	bt := newDefaultBTServer(deps)
+
+	apiServices, apiServicesErr := deps.newAPIServices(bt)
+	if apiServicesErr == nil && apiServices == nil {
+		apiServices, apiServicesErr = newDefaultAPIServices(deps, bt)
+	}
+
+	webDeps := newDefaultWebDeps(deps, bt, apiServices)
+
+	runtimeWeb := deps.newWebServer(webDeps)
 	if runtimeWeb == nil {
-		runtimeWeb = newDefaultWebRuntime(deps)
-	}
-
-	var bt *torr.BTServer
-	if provider, ok := runtimeWeb.(btServerProvider); ok {
-		bt = provider.BTServer()
-	}
-
-	var apiServices *contracts.APIServices
-
-	var apiServicesErr error
-
-	if setter, ok := runtimeWeb.(apiServicesSetter); ok {
-		apiServices, apiServicesErr = deps.newAPIServices(bt)
-		if apiServicesErr == nil && apiServices == nil {
-			apiServices, apiServicesErr = newDefaultAPIServices(deps, bt)
-		}
-
-		if apiServicesErr == nil {
-			setter.SetAPIServices(apiServices)
-		}
+		runtimeWeb = web.NewServerWithDeps(webDeps)
 	}
 
 	return &serverRuntime{
@@ -293,13 +252,19 @@ func newServerRuntime(deps serverRuntimeDeps, cfg *config.Config) Runtime {
 	}
 }
 
-func newDefaultWebRuntime(deps serverRuntimeDeps) webRuntime {
-	return web.NewServerWithDeps(web.ServerDeps{
+func newDefaultBTServer(deps serverRuntimeDeps) *torr.BTServer {
+	return torr.NewBTSWithProvidersRuntimeAndDB(deps.settingsSource, deps.argsProvider, deps.runtimeState, deps.dbStore)
+}
+
+func newDefaultWebDeps(deps serverRuntimeDeps, bt *torr.BTServer, apiServices *contracts.APIServices) web.ServerDeps {
+	return web.ServerDeps{
+		BTServer:         bt,
 		TorrentDBStore:   deps.dbStore,
 		SettingsProvider: deps.settingsSource,
 		ArgsProvider:     deps.argsProvider,
 		RuntimeState:     deps.runtimeState,
-	})
+		APIServices:      apiServices,
+	}
 }
 
 func newDefaultAPIServices(deps serverRuntimeDeps, bt *torr.BTServer) (*contracts.APIServices, error) {

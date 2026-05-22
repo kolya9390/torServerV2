@@ -106,6 +106,9 @@ type testTorrentService struct {
 	saveToDBCalled bool
 	dropCalled     bool
 	readiness      contracts.DropReadiness
+	preloadResult  bool
+	preloadCalled  bool
+	preloadIndex   int
 
 	finalizeCalled bool
 	finalizeTor    contracts.TorrentHandle
@@ -204,7 +207,10 @@ func (m *testTorrentService) CacheStateByHash(hash string) (any, bool) {
 }
 
 func (m *testTorrentService) EnqueuePreload(tor contracts.TorrentHandle, index int) bool {
-	return true
+	m.preloadCalled = true
+	m.preloadIndex = index
+
+	return m.preloadResult
 }
 
 func (m *testTorrentService) EnqueueMetadataFinalize(tor contracts.TorrentHandle, spec *contracts.TorrentSpec, saveToDB bool) bool {
@@ -455,6 +461,74 @@ func TestLegacyStreamUnauthenticatedM3UUsesReadOnlyActivation(t *testing.T) {
 
 	if !strings.Contains(w.Body.String(), "#EXTM3U") {
 		t.Fatalf("expected m3u body, got %s", w.Body.String())
+	}
+}
+
+func TestLegacyStreamPreloadOnlyReturnsAccepted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tor := testTorrentHandle{
+		status: &state.TorrentStatus{Hash: "0102030405060708090a0b0c0d0e0f1011121314", Title: "Demo"},
+		hash:   "0102030405060708090a0b0c0d0e0f1011121314",
+		name:   "Demo",
+		files:  2,
+	}
+	torrentsSvc := &testTorrentService{getResult: tor, preloadResult: true}
+	streamSvc := &testStreamService{ensureTorrentTor: tor, parseFileIndexVal: 1}
+
+	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
+		Torrents: torrentsSvc,
+		Streams:  streamSvc,
+	})))
+	r.GET("/stream", stream)
+
+	req := httptest.NewRequest(http.MethodGet, "/stream?link=magnet:?xt=urn:btih:abc123&index=1&preload", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if !torrentsSvc.preloadCalled || torrentsSvc.preloadIndex != 1 {
+		t.Fatalf("expected preload queue with index 1, called=%v index=%d", torrentsSvc.preloadCalled, torrentsSvc.preloadIndex)
+	}
+
+	if !strings.Contains(w.Body.String(), `"status":"preload accepted"`) {
+		t.Fatalf("expected accepted response, got %s", w.Body.String())
+	}
+}
+
+func TestLegacyStreamPreloadQueueFullReturnsServiceUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tor := testTorrentHandle{
+		status: &state.TorrentStatus{Hash: "0102030405060708090a0b0c0d0e0f1011121314", Title: "Demo"},
+		hash:   "0102030405060708090a0b0c0d0e0f1011121314",
+		name:   "Demo",
+		files:  1,
+	}
+	torrentsSvc := &testTorrentService{getResult: tor, preloadResult: false}
+	streamSvc := &testStreamService{ensureTorrentTor: tor}
+
+	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
+		Torrents: torrentsSvc,
+		Streams:  streamSvc,
+	})))
+	r.GET("/stream", stream)
+
+	req := httptest.NewRequest(http.MethodGet, "/stream?link=magnet:?xt=urn:btih:abc123&preload", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if !torrentsSvc.preloadCalled {
+		t.Fatal("expected preload queue attempt")
 	}
 }
 
