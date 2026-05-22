@@ -2,9 +2,11 @@ package app
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"server/config"
+	"server/internal/app/contracts"
 	"server/settings"
 )
 
@@ -14,6 +16,15 @@ type fakeWebRuntime struct {
 	started  bool
 	stopped  bool
 	waited   bool
+}
+
+type fakeAPIWebRuntime struct {
+	fakeWebRuntime
+	apiServices *contracts.APIServices
+}
+
+func (f *fakeAPIWebRuntime) SetAPIServices(services *contracts.APIServices) {
+	f.apiServices = services
 }
 
 func (f *fakeWebRuntime) Start() error {
@@ -41,6 +52,27 @@ func TestServerRuntimeStartRequiresArgs(t *testing.T) {
 	err := rt.Start()
 	if err == nil || err.Error() != "exec args are not initialized" {
 		t.Fatalf("expected nil-args error, got %v", err)
+	}
+}
+
+func TestServerRuntimeStartReturnsIncompleteDefaultAPIServicesErrorForAPIWeb(t *testing.T) {
+	apiWeb := &fakeAPIWebRuntime{}
+	deps := serverRuntimeDeps{
+		newWebServer: func() webRuntime { return apiWeb },
+	}
+
+	rt := newServerRuntime(deps, nil)
+	err := rt.Start()
+	if err == nil {
+		t.Fatal("expected incomplete API service wiring error")
+	}
+
+	if !strings.Contains(err.Error(), "TorrentBackend") {
+		t.Fatalf("expected missing TorrentBackend error, got %q", err.Error())
+	}
+
+	if apiWeb.apiServices != nil {
+		t.Fatalf("api services = %v, want nil", apiWeb.apiServices)
 	}
 }
 
@@ -101,10 +133,18 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 
 	webErr := errors.New("web start failed")
 	web := &fakeWebRuntime{startErr: webErr}
+
+	var runtime settings.RuntimeState
+
 	shutdownHookSet := false
+
 	deps := serverRuntimeDeps{
 		argsProvider:   settings.DefaultArgsProvider,
 		settingsSource: settings.DefaultSettingsProvider,
+		runtimeState:   func() settings.RuntimeState { return runtime },
+		updateRuntime: func(update func(*settings.RuntimeState)) {
+			update(&runtime)
+		},
 		initSettings:   func(readOnly, searchWA bool) error { return nil },
 		prepareStartup: func(_ *settings.ExecArgs, _ settings.SettingsProvider) error { return nil },
 		newWebServer:   func() webRuntime { return web },
@@ -123,7 +163,6 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 		t.Fatal("expected shutdown hook to be set")
 	}
 
-	runtime := settings.GetRuntimeState()
 	if runtime.Port != "18090" || runtime.SslPort != "18443" || runtime.IP != "127.0.0.1" {
 		t.Fatalf("runtime settings were not applied: port=%s ssl=%s ip=%s", runtime.Port, runtime.SslPort, runtime.IP)
 	}
@@ -153,11 +192,19 @@ func TestServerRuntimeStartAppliesConfigToArgsBeforeStartup(t *testing.T) {
 
 	webErr := errors.New("stop before binding test server")
 	web := &fakeWebRuntime{startErr: webErr}
+
+	var runtime settings.RuntimeState
+
 	prepareSawConfigPort := false
+
 	deps := serverRuntimeDeps{
 		argsProvider:   settings.DefaultArgsProvider,
 		settingsSource: settings.DefaultSettingsProvider,
-		initSettings:   func(readOnly, searchWA bool) error { return nil },
+		runtimeState:   func() settings.RuntimeState { return runtime },
+		updateRuntime: func(update func(*settings.RuntimeState)) {
+			update(&runtime)
+		},
+		initSettings: func(readOnly, searchWA bool) error { return nil },
 		prepareStartup: func(args *settings.ExecArgs, _ settings.SettingsProvider) error {
 			prepareSawConfigPort = args.Port == "19090" &&
 				args.SslPort == "19443" &&
@@ -188,7 +235,6 @@ func TestServerRuntimeStartAppliesConfigToArgsBeforeStartup(t *testing.T) {
 		t.Fatal("expected config server values to be applied before prepare startup")
 	}
 
-	runtime := settings.GetRuntimeState()
 	if runtime.Port != "19090" || runtime.SslPort != "19443" {
 		t.Fatalf("runtime state did not receive config ports: port=%q ssl_port=%q", runtime.Port, runtime.SslPort)
 	}

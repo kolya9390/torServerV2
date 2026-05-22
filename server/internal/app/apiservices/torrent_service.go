@@ -27,7 +27,7 @@ func (d torrentService) Get(hash string) contracts.TorrentHandle {
 	return wrapTorrent(d.backend.GetTorrent(hash))
 }
 
-func (d torrentService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+func (torrentService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
 	if tor == nil {
 		return nil
 	}
@@ -127,7 +127,7 @@ func (d torrentService) Drop(hash string) {
 	d.backend.DropTorrent(hash)
 }
 
-func (d torrentService) IsStored(tor contracts.TorrentHandle) bool {
+func (torrentService) IsStored(tor contracts.TorrentHandle) bool {
 	return tor != nil && tor.State() == state.TorrentInDB
 }
 

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"testing"
-	"time"
 
 	"server/settings"
 
@@ -317,40 +316,39 @@ func TestStorageCloseHash(t *testing.T) {
 	}
 }
 
-func TestClearPriorityDelay(t *testing.T) {
+func TestClearPriorityAsyncSchedulesSingleTimer(t *testing.T) {
 	setupStorageTest()
 
 	stor := NewStorage(1 * 1024 * 1024)
 	cache := NewCache(1*1024*1024, stor)
+	cache.SetTorrent(&torrent.Torrent{})
 
-	settings.DefaultSettingsProvider.Get().TorrentDisconnectTimeout = 0
+	cache.clearPriorityAsync()
 
-	if got := cache.clearPriorityDelay(); got != time.Second {
-		t.Fatalf("clearPriorityDelay() with timeout=0 = %v, want %v", got, time.Second)
+	cache.priorities.clearMu.Lock()
+	firstTimer := cache.priorities.clearTimer
+	cache.priorities.clearMu.Unlock()
+
+	if firstTimer == nil {
+		t.Fatal("clear priority timer was not scheduled")
 	}
 
-	settings.DefaultSettingsProvider.Get().TorrentDisconnectTimeout = 1
+	t.Cleanup(func() {
+		firstTimer.Stop()
+	})
 
-	if got := cache.clearPriorityDelay(); got != time.Second {
-		t.Fatalf("clearPriorityDelay() with timeout=1 = %v, want %v", got, time.Second)
+	cache.clearPriorityAsync()
+
+	cache.priorities.clearMu.Lock()
+	secondTimer := cache.priorities.clearTimer
+	cache.priorities.clearMu.Unlock()
+
+	if secondTimer == nil {
+		t.Fatal("clear priority timer was not rescheduled")
 	}
 
-	settings.DefaultSettingsProvider.Get().TorrentDisconnectTimeout = 10
-
-	if got := cache.clearPriorityDelay(); got != time.Second {
-		t.Fatalf("clearPriorityDelay() with timeout=10 = %v, want %v", got, time.Second)
-	}
-
-	settings.DefaultSettingsProvider.Get().TorrentDisconnectTimeout = 30
-
-	if got := cache.clearPriorityDelay(); got != time.Second {
-		t.Fatalf("clearPriorityDelay() with timeout=30 = %v, want %v", got, time.Second)
-	}
-
-	settings.DefaultSettingsProvider.Get().TorrentDisconnectTimeout = 120
-
-	if got := cache.clearPriorityDelay(); got != time.Second {
-		t.Fatalf("clearPriorityDelay() with timeout=120 = %v, want %v", got, time.Second)
+	if secondTimer == firstTimer {
+		t.Fatal("clear priority timer was reused instead of being replaced")
 	}
 }
 

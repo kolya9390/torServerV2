@@ -136,6 +136,7 @@ docker-compose.local.yml
 
 # Analysis documents (internal research/analysis)
 ANALYSIS/
+docs/
 
 # Temporary docs
 *.tmp.md

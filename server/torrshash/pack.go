@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/zlib"
 	"encoding/hex"
+	"errors"
 	"io"
 	"strings"
 )
@@ -61,14 +62,16 @@ func pack(t *TorrsHash) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-func unpack(data []byte) (*TorrsHash, error) {
+func unpack(data []byte) (hash *TorrsHash, err error) {
 	zr, err := zlib.NewReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
 
 	defer func() {
-		_ = zr.Close()
+		if closeErr := zr.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
 	}()
 
 	hashBuf := make([]byte, 20)

@@ -29,7 +29,7 @@ type setsReqJS struct {
 //	@Success		200	{object}	sets.BTSets	"Settings JSON or nothing. Depends on what action has been asked."
 //	@Router			/settings [post]
 func settings(c *gin.Context) {
-	svc := servicesFromContext(c)
+	deps := settingsDepsFromContext(c)
 
 	var req setsReqJS
 
@@ -48,7 +48,7 @@ func settings(c *gin.Context) {
 
 	switch req.Action {
 	case "get":
-		current := svc.Settings.Current()
+		current := deps.Settings.Current()
 
 		etag := generateSettingsETag(current)
 		if match := c.GetHeader("If-None-Match"); match == etag {
@@ -82,9 +82,9 @@ func settings(c *gin.Context) {
 		// This prevents runtime toggling and ensures debug is set at startup.
 		req.Sets.EnableDebug = false
 
-		svc.Settings.Set(req.Sets)
+		deps.Settings.Set(req.Sets)
 
-		if err := svc.Modules.RestartDLNA(req.Sets.EnableDLNA); err != nil {
+		if err := deps.Modules.RestartDLNA(req.Sets.EnableDLNA); err != nil {
 			abortAPIError(c, http.StatusInternalServerError, newInternalError("dlna start failed", err))
 
 			return
@@ -94,8 +94,8 @@ func settings(c *gin.Context) {
 
 		return
 	case "def":
-		svc.Settings.SetDefault()
-		svc.Modules.StopDLNA()
+		deps.Settings.SetDefault()
+		deps.Modules.StopDLNA()
 		c.Status(200)
 
 		return

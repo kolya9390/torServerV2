@@ -105,35 +105,6 @@ func (c *Cache) queueCleanPieces() {
 	}()
 }
 
-func (c *Cache) cleanHeadroom() int64 {
-	if c == nil {
-		return 8 << 20
-	}
-
-	headroom := c.pieceLength * 8
-	if headroom < 8<<20 {
-		headroom = 8 << 20
-	}
-
-	if headroom > 64<<20 {
-		headroom = 64 << 20
-	}
-
-	c.mu.RLock()
-	capacity := c.capacity
-	c.mu.RUnlock()
-
-	if capacity > 0 && headroom > capacity/2 {
-		headroom = capacity / 2
-	}
-
-	if headroom < c.pieceLength {
-		headroom = c.pieceLength
-	}
-
-	return headroom
-}
-
 func (c *Cache) isIDInFileBE(ranges []Range, id int) bool {
 	fileRangeNotDelete := max(c.pieceLength, 8<<20)
 

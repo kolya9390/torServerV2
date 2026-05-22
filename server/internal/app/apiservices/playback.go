@@ -14,7 +14,7 @@ import (
 	"server/utils"
 )
 
-func (d playbackService) BuildAllPlaylist(host string, torrents contracts.TorrentService) contracts.PlaylistPayload {
+func (d playbackService) BuildAllPlaylist(host string, torrents contracts.TorrentPlaylistService) contracts.PlaylistPayload {
 	torrs := torrents.List()
 
 	var body strings.Builder
@@ -61,7 +61,7 @@ func (d playbackService) BuildAllPlaylist(host string, torrents contracts.Torren
 }
 
 func (d playbackService) BuildPlaylistByHash(hash, requestedName string, fromLast bool,
-	host string, torrents contracts.TorrentService, viewed contracts.ViewedService) (contracts.PlaylistPayload, error) {
+	host string, torrents contracts.TorrentPlaylistService, viewed contracts.ViewedService) (contracts.PlaylistPayload, error) {
 	if hash == "" {
 		return contracts.PlaylistPayload{}, contracts.ErrPlaylistHashRequired
 	}
@@ -88,7 +88,7 @@ func (d playbackService) BuildPlaylistByHash(hash, requestedName string, fromLas
 	}, nil
 }
 
-func (d playbackService) ResolvePlay(hash, index string, unauthorized bool, torrents contracts.TorrentService) (contracts.PlayTarget, error) {
+func (d playbackService) ResolvePlay(hash, index string, unauthorized bool, torrents contracts.TorrentPlayService) (contracts.PlayTarget, error) {
 	if hash == "" || index == "" {
 		return contracts.PlayTarget{}, contracts.ErrPlayPathRequired
 	}

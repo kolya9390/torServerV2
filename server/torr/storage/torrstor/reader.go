@@ -183,14 +183,12 @@ func (r *Reader) Close() {
 	}
 
 	if len(r.file.Torrent().Files()) > 0 {
-		_ = r.Reader.Close()
+		if err := r.Reader.Close(); err != nil {
+			log.TLogln("Error close torrent reader:", err)
+		}
 	}
 
 	r.cache.queueCleanPieces()
-}
-
-func (r *Reader) getPiecesRange() Range {
-	return r.getPiecesRangeForReaders(r.getUseReaders())
 }
 
 func (r *Reader) getPiecesRangeForReaders(activeReaders int) Range {
@@ -209,10 +207,6 @@ func (r *Reader) getReaderRAHPiece() int {
 
 func (r *Reader) getPieceNum(offset int64) int {
 	return int((offset + r.file.Offset()) / r.cache.pieceLength)
-}
-
-func (r *Reader) getOffsetRange() (int64, int64) {
-	return r.getOffsetRangeForReaders(r.getUseReaders())
 }
 
 func (r *Reader) getOffsetRangeForReaders(activeReaders int) (int64, int64) {
@@ -287,14 +281,6 @@ func (r *Reader) readerOffLocked() {
 			}
 		}
 	}
-}
-
-func (r *Reader) getUseReaders() int {
-	if r.cache == nil {
-		return 0
-	}
-
-	return r.cache.GetUseReaders()
 }
 
 func (r *Reader) isActive() bool {

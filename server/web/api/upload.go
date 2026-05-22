@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/http"
-	"server/internal/app/contracts"
 
 	"server/log"
 
@@ -47,7 +46,7 @@ func parseUploadForm(form *multipart.Form) (save bool, title, category, poster, 
 // Returns torSet flag, torrent status, and any error encountered.
 func processUploadFile(
 	file *multipart.FileHeader,
-	svc *contracts.APIServices,
+	deps uploadHandlerDeps,
 	save bool,
 	title, category, poster, data string,
 ) (torSet bool, status any, err error) {
@@ -62,26 +61,26 @@ func processUploadFile(
 		}
 	}()
 
-	spec, parseErr := svc.Streams.ParseTorrentFile(torrFile)
+	spec, parseErr := deps.Parser.ParseTorrentFile(torrFile)
 	if parseErr != nil {
 		return false, nil, parseErr
 	}
 
-	tor, addErr := svc.Torrents.Add(spec, title, poster, data, category)
+	tor, addErr := deps.Commands.Add(spec, title, poster, data, category)
 	if addErr != nil {
 		return false, nil, addErr
 	}
 
-	torStatus := svc.Torrents.Status(tor)
-	if torStatus != nil && torStatus.Data != "" && svc.Settings.EnableDebug() {
+	torStatus := deps.Queries.Status(tor)
+	if torStatus != nil && torStatus.Data != "" && deps.Settings.EnableDebug() {
 		log.TLogln("torrent data:", torStatus.Data)
 	}
 
-	if torStatus != nil && torStatus.Category != "" && svc.Settings.EnableDebug() {
+	if torStatus != nil && torStatus.Category != "" && deps.Settings.EnableDebug() {
 		log.TLogln("torrent category:", torStatus.Category)
 	}
 
-	if queued := svc.Torrents.EnqueueMetadataFinalize(tor, &spec, save); !queued {
+	if queued := deps.Commands.EnqueueMetadataFinalize(tor, &spec, save); !queued {
 		log.TLogln("metadata finalize queue is full, skipping async finalize")
 	}
 
@@ -108,7 +107,7 @@ func processUploadFile(
 //	@Success		200	{object}	object	"Torrent status"
 //	@Router			/torrent/upload [post]
 func torrentUpload(c *gin.Context) {
-	svc := servicesFromContext(c)
+	deps := uploadDepsFromContext(c)
 	limitUploadRequestBody(c)
 
 	form, err := c.MultipartForm()
@@ -155,7 +154,7 @@ func torrentUpload(c *gin.Context) {
 
 		var procErr error
 
-		torSet, status, procErr = processUploadFile(file[0], svc, save, title, category, poster, data)
+		torSet, status, procErr = processUploadFile(file[0], deps, save, title, category, poster, data)
 		if procErr != nil {
 			log.TLogln("error upload torrent:", procErr)
 

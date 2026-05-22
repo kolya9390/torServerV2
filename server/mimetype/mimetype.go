@@ -157,7 +157,9 @@ func mimeTypeByContent(path string) (ret mimeType, err error) {
 	}
 
 	defer func() {
-		_ = file.Close()
+		if closeErr := file.Close(); closeErr != nil {
+			log.TLogln("Could not close MIME probe file:", closeErr)
+		}
 	}()
 
 	var data [512]byte

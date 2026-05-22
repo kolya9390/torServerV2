@@ -66,17 +66,9 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 
 	defer closeReader()
 
-	streamID := atomic.LoadInt32(&activeStreams)
-	host, port, clerr := net.SplitHostPort(req.RemoteAddr)
-
 	logStreamLifecycle := debugCfg.EnableDebug && !strings.HasPrefix(req.Header.Get("Range"), "bytes=")
-	if logStreamLifecycle {
-		if clerr != nil {
-			log.TLogln("[Stream:", streamID, "] Connect client")
-		} else {
-			log.TLogln("[Stream:", streamID, "] Connect", host+":"+port)
-		}
-	}
+	streamID := atomic.LoadInt32(&activeStreams)
+	logStreamConnect(logStreamLifecycle, streamID, req.RemoteAddr)
 
 	sets.SetViewed(&sets.Viewed{
 		Hash:      t.Hash().HexString(),
@@ -91,28 +83,55 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 	http.ServeContent(metricsWriter, req, file.Path(), time.Unix(t.Timestamp, 0), content)
 	markStreamActivity()
 
-	if logStreamLifecycle {
-		if clerr != nil {
-			log.TLogln("[Stream:", streamID, "] Disconnect client")
-		} else {
-			log.TLogln("[Stream:", streamID, "] Disconnect client", host+":"+port)
-		}
-	}
-
-	if debugCfg.EnableDebug {
-		firstByteNS := metricsWriter.firstWriteUnixNano.Load()
-		firstByteMS := int64(-1)
-
-		if firstByteNS != 0 {
-			firstByteMS = time.Unix(0, firstByteNS).Sub(streamStarted).Milliseconds()
-		}
-
-		log.TLogln(
-			"[Stream:", streamID, "] Metrics",
-			" first_byte_ms=", firstByteMS,
-			" bytes_written=", metricsWriter.bytesWritten.Load(),
-		)
-	}
+	logStreamDisconnect(logStreamLifecycle, streamID, req.RemoteAddr)
+	logStreamMetrics(debugCfg.EnableDebug, streamID, streamStarted, metricsWriter)
 
 	return nil
+}
+
+func logStreamConnect(enabled bool, streamID int32, remoteAddr string) {
+	if !enabled {
+		return
+	}
+
+	if host, port, err := net.SplitHostPort(remoteAddr); err == nil {
+		log.TLogln("[Stream:", streamID, "] Connect", host+":"+port)
+
+		return
+	}
+
+	log.TLogln("[Stream:", streamID, "] Connect client")
+}
+
+func logStreamDisconnect(enabled bool, streamID int32, remoteAddr string) {
+	if !enabled {
+		return
+	}
+
+	if host, port, err := net.SplitHostPort(remoteAddr); err == nil {
+		log.TLogln("[Stream:", streamID, "] Disconnect client", host+":"+port)
+
+		return
+	}
+
+	log.TLogln("[Stream:", streamID, "] Disconnect client")
+}
+
+func logStreamMetrics(enabled bool, streamID int32, streamStarted time.Time, metricsWriter *streamMetricsWriter) {
+	if !enabled {
+		return
+	}
+
+	firstByteNS := metricsWriter.firstWriteUnixNano.Load()
+	firstByteMS := int64(-1)
+
+	if firstByteNS != 0 {
+		firstByteMS = time.Unix(0, firstByteNS).Sub(streamStarted).Milliseconds()
+	}
+
+	log.TLogln(
+		"[Stream:", streamID, "] Metrics",
+		" first_byte_ms=", firstByteMS,
+		" bytes_written=", metricsWriter.bytesWritten.Load(),
+	)
 }

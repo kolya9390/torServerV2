@@ -335,7 +335,11 @@ func (n *tfsNode) Open(ctx context.Context, flags uint32) (gofusefs.FileHandle, 
 	}
 
 	if _, ok := f.(io.ReadSeeker); !ok {
-		_ = f.Close()
+		if closeErr := f.Close(); closeErr != nil {
+			log.TLogln("Error close unsupported FUSE file:", closeErr)
+
+			return nil, 0, errno(closeErr)
+		}
 
 		return nil, 0, syscall.ENOSYS
 	}
@@ -373,7 +377,11 @@ func (h *tfsHandle) Read(ctx context.Context, dest []byte, off int64) (fuse.Read
 }
 
 func (h *tfsHandle) Release(ctx context.Context) syscall.Errno {
-	_ = h.f.Close()
+	if err := h.f.Close(); err != nil {
+		log.TLogln("Error release FUSE file:", err)
+
+		return errno(err)
+	}
 
 	return 0
 }

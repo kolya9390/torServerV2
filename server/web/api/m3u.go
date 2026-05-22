@@ -27,9 +27,9 @@ import (
 //	@Success		200	{file}	file
 //	@Router			/playlistall/all.m3u [get]
 func allPlayList(c *gin.Context) {
-	svc := servicesFromContext(c)
+	deps := playlistDepsFromContext(c)
 	host := utils.GetScheme(c) + "://" + utils.GetHost(c)
-	res := svc.Playback.BuildAllPlaylist(host, svc.Torrents)
+	res := deps.Playback.BuildAllPlaylist(host, deps.Torrents)
 	sendM3U(c, res.Name, res.Hash, res.Body)
 }
 
@@ -47,7 +47,7 @@ func allPlayList(c *gin.Context) {
 //	@Success		200	{file}	file
 //	@Router			/playlist [get]
 func playList(c *gin.Context) {
-	svc := servicesFromContext(c)
+	deps := playlistDepsFromContext(c)
 	hash, _ := c.GetQuery("hash")
 	_, fromlast := c.GetQuery("fromlast")
 
@@ -59,7 +59,7 @@ func playList(c *gin.Context) {
 
 	host := utils.GetScheme(c) + "://" + utils.GetHost(c)
 
-	res, err := svc.Playback.BuildPlaylistByHash(hash, c.Param("fname"), fromlast, host, svc.Torrents, svc.Viewed)
+	res, err := deps.Playback.BuildPlaylistByHash(hash, c.Param("fname"), fromlast, host, deps.Torrents, deps.Viewed)
 	if err != nil {
 		switch {
 		case errors.Is(err, contracts.ErrPlaylistHashRequired):

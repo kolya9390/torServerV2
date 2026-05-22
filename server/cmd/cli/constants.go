@@ -19,7 +19,7 @@ const (
 	envConfig   = "TSCTL_CONFIG"
 	envUser     = "TS_USER"
 	envPassword = "TS_PASSWORD"
-	envToken    = "TS_SHUTDOWN_TOKEN"
+	envToken    = "TS_SHUTDOWN_TOKEN" // #nosec G101 -- environment variable name, not a secret value.
 
 	// Output formats.
 	outputTable = "table"

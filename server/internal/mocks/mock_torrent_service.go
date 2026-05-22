@@ -111,18 +111,6 @@ func (mr *MockTorrentServiceMockRecorder) LoadTorrent(tor any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadTorrent", reflect.TypeOf((*MockTorrentService)(nil).LoadTorrent), tor)
 }
 
-// SaveTorrentDB mocks base method.
-func (m *MockTorrentService) SaveTorrentDB(tor *torr.Torrent) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SaveTorrentDB", tor)
-}
-
-// SaveTorrentDB indicates an expected call of SaveTorrentDB.
-func (mr *MockTorrentServiceMockRecorder) SaveTorrentDB(tor any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveTorrentDB", reflect.TypeOf((*MockTorrentService)(nil).SaveTorrentDB), tor)
-}
-
 // RemoveTorrent mocks base method.
 func (m *MockTorrentService) RemoveTorrent(hash string) {
 	m.ctrl.T.Helper()
@@ -133,6 +121,18 @@ func (m *MockTorrentService) RemoveTorrent(hash string) {
 func (mr *MockTorrentServiceMockRecorder) RemoveTorrent(hash any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveTorrent", reflect.TypeOf((*MockTorrentService)(nil).RemoveTorrent), hash)
+}
+
+// SaveTorrentDB mocks base method.
+func (m *MockTorrentService) SaveTorrentDB(tor *torr.Torrent) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SaveTorrentDB", tor)
+}
+
+// SaveTorrentDB indicates an expected call of SaveTorrentDB.
+func (mr *MockTorrentServiceMockRecorder) SaveTorrentDB(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveTorrentDB", reflect.TypeOf((*MockTorrentService)(nil).SaveTorrentDB), tor)
 }
 
 // SetTorrent mocks base method.

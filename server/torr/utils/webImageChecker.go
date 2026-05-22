@@ -44,7 +44,11 @@ func CheckImgURL(link string) bool {
 		return false
 	}
 
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.TLogln("Error close image response body:", closeErr)
+		}
+	}()
 
 	limitedReader := io.LimitReader(resp.Body, 2*1024*1024)
 

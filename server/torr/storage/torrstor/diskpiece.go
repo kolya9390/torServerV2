@@ -1,6 +1,7 @@
 package torrstor
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -48,11 +49,16 @@ func (p *DiskPiece) WriteAt(data []byte, off int64) (n int, err error) {
 		return 0, err
 	}
 
-	defer func() { _ = ff.Close() }()
+	defer func() {
+		if closeErr := ff.Close(); closeErr != nil {
+			log.TLogln("Error close disk piece file:", closeErr)
+			err = errors.Join(err, closeErr)
+		}
+	}()
 
 	// Check if this is first write (file is new/empty)
-	stat, _ := ff.Stat()
-	isFirstWrite := stat == nil || stat.Size() == 0
+	stat, statErr := ff.Stat()
+	isFirstWrite := statErr != nil || stat.Size() == 0
 
 	n, err = ff.WriteAt(data, off)
 	if n > 0 {
@@ -93,7 +99,11 @@ func (p *DiskPiece) ReadAt(b []byte, off int64) (n int, err error) {
 		return 0, err
 	}
 
-	defer func() { _ = ff.Close() }()
+	defer func() {
+		if closeErr := ff.Close(); closeErr != nil {
+			log.TLogln("Error close disk piece file:", closeErr)
+		}
+	}()
 
 	n, err = ff.ReadAt(b, off)
 

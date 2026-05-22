@@ -170,6 +170,1047 @@ func (mr *MockAPITorrentHandleMockRecorder) Stream(index, request, writer any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stream", reflect.TypeOf((*MockAPITorrentHandle)(nil).Stream), index, request, writer)
 }
 
+// MockTorrentCreator is a mock of TorrentCreator interface.
+type MockTorrentCreator struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentCreatorMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentCreatorMockRecorder is the mock recorder for MockTorrentCreator.
+type MockTorrentCreatorMockRecorder struct {
+	mock *MockTorrentCreator
+}
+
+// NewMockTorrentCreator creates a new mock instance.
+func NewMockTorrentCreator(ctrl *gomock.Controller) *MockTorrentCreator {
+	mock := &MockTorrentCreator{ctrl: ctrl}
+	mock.recorder = &MockTorrentCreatorMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentCreator) EXPECT() *MockTorrentCreatorMockRecorder {
+	return m.recorder
+}
+
+// Add mocks base method.
+func (m *MockTorrentCreator) Add(spec contracts.TorrentSpec, title, poster, data, category string) (contracts.TorrentHandle, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Add", spec, title, poster, data, category)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Add indicates an expected call of Add.
+func (mr *MockTorrentCreatorMockRecorder) Add(spec, title, poster, data, category any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Add", reflect.TypeOf((*MockTorrentCreator)(nil).Add), spec, title, poster, data, category)
+}
+
+// MockTorrentLookup is a mock of TorrentLookup interface.
+type MockTorrentLookup struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentLookupMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentLookupMockRecorder is the mock recorder for MockTorrentLookup.
+type MockTorrentLookupMockRecorder struct {
+	mock *MockTorrentLookup
+}
+
+// NewMockTorrentLookup creates a new mock instance.
+func NewMockTorrentLookup(ctrl *gomock.Controller) *MockTorrentLookup {
+	mock := &MockTorrentLookup{ctrl: ctrl}
+	mock.recorder = &MockTorrentLookupMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentLookup) EXPECT() *MockTorrentLookupMockRecorder {
+	return m.recorder
+}
+
+// Get mocks base method.
+func (m *MockTorrentLookup) Get(hash string) contracts.TorrentHandle {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get", hash)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	return ret0
+}
+
+// Get indicates an expected call of Get.
+func (mr *MockTorrentLookupMockRecorder) Get(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockTorrentLookup)(nil).Get), hash)
+}
+
+// IsStored mocks base method.
+func (m *MockTorrentLookup) IsStored(tor contracts.TorrentHandle) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsStored", tor)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsStored indicates an expected call of IsStored.
+func (mr *MockTorrentLookupMockRecorder) IsStored(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsStored", reflect.TypeOf((*MockTorrentLookup)(nil).IsStored), tor)
+}
+
+// Status mocks base method.
+func (m *MockTorrentLookup) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Status", tor)
+	ret0, _ := ret[0].(*state.TorrentStatus)
+	return ret0
+}
+
+// Status indicates an expected call of Status.
+func (mr *MockTorrentLookupMockRecorder) Status(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockTorrentLookup)(nil).Status), tor)
+}
+
+// StatusByHash mocks base method.
+func (m *MockTorrentLookup) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StatusByHash", hash)
+	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
+}
+
+// StatusByHash indicates an expected call of StatusByHash.
+func (mr *MockTorrentLookupMockRecorder) StatusByHash(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StatusByHash", reflect.TypeOf((*MockTorrentLookup)(nil).StatusByHash), hash)
+}
+
+// MockTorrentCatalog is a mock of TorrentCatalog interface.
+type MockTorrentCatalog struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentCatalogMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentCatalogMockRecorder is the mock recorder for MockTorrentCatalog.
+type MockTorrentCatalogMockRecorder struct {
+	mock *MockTorrentCatalog
+}
+
+// NewMockTorrentCatalog creates a new mock instance.
+func NewMockTorrentCatalog(ctrl *gomock.Controller) *MockTorrentCatalog {
+	mock := &MockTorrentCatalog{ctrl: ctrl}
+	mock.recorder = &MockTorrentCatalogMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentCatalog) EXPECT() *MockTorrentCatalogMockRecorder {
+	return m.recorder
+}
+
+// List mocks base method.
+func (m *MockTorrentCatalog) List() []contracts.TorrentHandle {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "List")
+	ret0, _ := ret[0].([]contracts.TorrentHandle)
+	return ret0
+}
+
+// List indicates an expected call of List.
+func (mr *MockTorrentCatalogMockRecorder) List() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockTorrentCatalog)(nil).List))
+}
+
+// ListHashes mocks base method.
+func (m *MockTorrentCatalog) ListHashes() []string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListHashes")
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+// ListHashes indicates an expected call of ListHashes.
+func (mr *MockTorrentCatalogMockRecorder) ListHashes() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListHashes", reflect.TypeOf((*MockTorrentCatalog)(nil).ListHashes))
+}
+
+// Statuses mocks base method.
+func (m *MockTorrentCatalog) Statuses() []*state.TorrentStatus {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Statuses")
+	ret0, _ := ret[0].([]*state.TorrentStatus)
+	return ret0
+}
+
+// Statuses indicates an expected call of Statuses.
+func (mr *MockTorrentCatalogMockRecorder) Statuses() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Statuses", reflect.TypeOf((*MockTorrentCatalog)(nil).Statuses))
+}
+
+// MockTorrentMutation is a mock of TorrentMutation interface.
+type MockTorrentMutation struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentMutationMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentMutationMockRecorder is the mock recorder for MockTorrentMutation.
+type MockTorrentMutationMockRecorder struct {
+	mock *MockTorrentMutation
+}
+
+// NewMockTorrentMutation creates a new mock instance.
+func NewMockTorrentMutation(ctrl *gomock.Controller) *MockTorrentMutation {
+	mock := &MockTorrentMutation{ctrl: ctrl}
+	mock.recorder = &MockTorrentMutationMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentMutation) EXPECT() *MockTorrentMutationMockRecorder {
+	return m.recorder
+}
+
+// Drop mocks base method.
+func (m *MockTorrentMutation) Drop(hash string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Drop", hash)
+}
+
+// Drop indicates an expected call of Drop.
+func (mr *MockTorrentMutationMockRecorder) Drop(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Drop", reflect.TypeOf((*MockTorrentMutation)(nil).Drop), hash)
+}
+
+// DropReadiness mocks base method.
+func (m *MockTorrentMutation) DropReadiness(hash string) contracts.DropReadiness {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DropReadiness", hash)
+	ret0, _ := ret[0].(contracts.DropReadiness)
+	return ret0
+}
+
+// DropReadiness indicates an expected call of DropReadiness.
+func (mr *MockTorrentMutationMockRecorder) DropReadiness(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DropReadiness", reflect.TypeOf((*MockTorrentMutation)(nil).DropReadiness), hash)
+}
+
+// EnqueueMetadataFinalize mocks base method.
+func (m *MockTorrentMutation) EnqueueMetadataFinalize(tor contracts.TorrentHandle, spec *contracts.TorrentSpec, saveToDB bool) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnqueueMetadataFinalize", tor, spec, saveToDB)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// EnqueueMetadataFinalize indicates an expected call of EnqueueMetadataFinalize.
+func (mr *MockTorrentMutationMockRecorder) EnqueueMetadataFinalize(tor, spec, saveToDB any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnqueueMetadataFinalize", reflect.TypeOf((*MockTorrentMutation)(nil).EnqueueMetadataFinalize), tor, spec, saveToDB)
+}
+
+// EnqueuePreload mocks base method.
+func (m *MockTorrentMutation) EnqueuePreload(tor contracts.TorrentHandle, index int) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnqueuePreload", tor, index)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// EnqueuePreload indicates an expected call of EnqueuePreload.
+func (mr *MockTorrentMutationMockRecorder) EnqueuePreload(tor, index any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnqueuePreload", reflect.TypeOf((*MockTorrentMutation)(nil).EnqueuePreload), tor, index)
+}
+
+// Remove mocks base method.
+func (m *MockTorrentMutation) Remove(hash string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Remove", hash)
+}
+
+// Remove indicates an expected call of Remove.
+func (mr *MockTorrentMutationMockRecorder) Remove(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Remove", reflect.TypeOf((*MockTorrentMutation)(nil).Remove), hash)
+}
+
+// SaveToDB mocks base method.
+func (m *MockTorrentMutation) SaveToDB(tor contracts.TorrentHandle) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SaveToDB", tor)
+}
+
+// SaveToDB indicates an expected call of SaveToDB.
+func (mr *MockTorrentMutationMockRecorder) SaveToDB(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveToDB", reflect.TypeOf((*MockTorrentMutation)(nil).SaveToDB), tor)
+}
+
+// Set mocks base method.
+func (m *MockTorrentMutation) Set(hash, title, poster, category, data string) contracts.TorrentHandle {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Set", hash, title, poster, category, data)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	return ret0
+}
+
+// Set indicates an expected call of Set.
+func (mr *MockTorrentMutationMockRecorder) Set(hash, title, poster, category, data any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Set", reflect.TypeOf((*MockTorrentMutation)(nil).Set), hash, title, poster, category, data)
+}
+
+// MockTorrentStorage is a mock of TorrentStorage interface.
+type MockTorrentStorage struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentStorageMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentStorageMockRecorder is the mock recorder for MockTorrentStorage.
+type MockTorrentStorageMockRecorder struct {
+	mock *MockTorrentStorage
+}
+
+// NewMockTorrentStorage creates a new mock instance.
+func NewMockTorrentStorage(ctrl *gomock.Controller) *MockTorrentStorage {
+	mock := &MockTorrentStorage{ctrl: ctrl}
+	mock.recorder = &MockTorrentStorageMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentStorage) EXPECT() *MockTorrentStorageMockRecorder {
+	return m.recorder
+}
+
+// CacheStateByHash mocks base method.
+func (m *MockTorrentStorage) CacheStateByHash(hash string) (any, bool) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CacheStateByHash", hash)
+	ret0, _ := ret[0].(any)
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
+}
+
+// CacheStateByHash indicates an expected call of CacheStateByHash.
+func (mr *MockTorrentStorageMockRecorder) CacheStateByHash(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CacheStateByHash", reflect.TypeOf((*MockTorrentStorage)(nil).CacheStateByHash), hash)
+}
+
+// MockTorrentLoader is a mock of TorrentLoader interface.
+type MockTorrentLoader struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentLoaderMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentLoaderMockRecorder is the mock recorder for MockTorrentLoader.
+type MockTorrentLoaderMockRecorder struct {
+	mock *MockTorrentLoader
+}
+
+// NewMockTorrentLoader creates a new mock instance.
+func NewMockTorrentLoader(ctrl *gomock.Controller) *MockTorrentLoader {
+	mock := &MockTorrentLoader{ctrl: ctrl}
+	mock.recorder = &MockTorrentLoaderMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentLoader) EXPECT() *MockTorrentLoaderMockRecorder {
+	return m.recorder
+}
+
+// LoadFromDB mocks base method.
+func (m *MockTorrentLoader) LoadFromDB(tor contracts.TorrentHandle) contracts.TorrentHandle {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadFromDB", tor)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	return ret0
+}
+
+// LoadFromDB indicates an expected call of LoadFromDB.
+func (mr *MockTorrentLoaderMockRecorder) LoadFromDB(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadFromDB", reflect.TypeOf((*MockTorrentLoader)(nil).LoadFromDB), tor)
+}
+
+// MockTorrentQueryService is a mock of TorrentQueryService interface.
+type MockTorrentQueryService struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentQueryServiceMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentQueryServiceMockRecorder is the mock recorder for MockTorrentQueryService.
+type MockTorrentQueryServiceMockRecorder struct {
+	mock *MockTorrentQueryService
+}
+
+// NewMockTorrentQueryService creates a new mock instance.
+func NewMockTorrentQueryService(ctrl *gomock.Controller) *MockTorrentQueryService {
+	mock := &MockTorrentQueryService{ctrl: ctrl}
+	mock.recorder = &MockTorrentQueryServiceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentQueryService) EXPECT() *MockTorrentQueryServiceMockRecorder {
+	return m.recorder
+}
+
+// CacheStateByHash mocks base method.
+func (m *MockTorrentQueryService) CacheStateByHash(hash string) (any, bool) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CacheStateByHash", hash)
+	ret0, _ := ret[0].(any)
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
+}
+
+// CacheStateByHash indicates an expected call of CacheStateByHash.
+func (mr *MockTorrentQueryServiceMockRecorder) CacheStateByHash(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CacheStateByHash", reflect.TypeOf((*MockTorrentQueryService)(nil).CacheStateByHash), hash)
+}
+
+// Get mocks base method.
+func (m *MockTorrentQueryService) Get(hash string) contracts.TorrentHandle {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get", hash)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	return ret0
+}
+
+// Get indicates an expected call of Get.
+func (mr *MockTorrentQueryServiceMockRecorder) Get(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockTorrentQueryService)(nil).Get), hash)
+}
+
+// IsStored mocks base method.
+func (m *MockTorrentQueryService) IsStored(tor contracts.TorrentHandle) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsStored", tor)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsStored indicates an expected call of IsStored.
+func (mr *MockTorrentQueryServiceMockRecorder) IsStored(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsStored", reflect.TypeOf((*MockTorrentQueryService)(nil).IsStored), tor)
+}
+
+// List mocks base method.
+func (m *MockTorrentQueryService) List() []contracts.TorrentHandle {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "List")
+	ret0, _ := ret[0].([]contracts.TorrentHandle)
+	return ret0
+}
+
+// List indicates an expected call of List.
+func (mr *MockTorrentQueryServiceMockRecorder) List() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockTorrentQueryService)(nil).List))
+}
+
+// ListHashes mocks base method.
+func (m *MockTorrentQueryService) ListHashes() []string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListHashes")
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+// ListHashes indicates an expected call of ListHashes.
+func (mr *MockTorrentQueryServiceMockRecorder) ListHashes() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListHashes", reflect.TypeOf((*MockTorrentQueryService)(nil).ListHashes))
+}
+
+// Status mocks base method.
+func (m *MockTorrentQueryService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Status", tor)
+	ret0, _ := ret[0].(*state.TorrentStatus)
+	return ret0
+}
+
+// Status indicates an expected call of Status.
+func (mr *MockTorrentQueryServiceMockRecorder) Status(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockTorrentQueryService)(nil).Status), tor)
+}
+
+// StatusByHash mocks base method.
+func (m *MockTorrentQueryService) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StatusByHash", hash)
+	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
+}
+
+// StatusByHash indicates an expected call of StatusByHash.
+func (mr *MockTorrentQueryServiceMockRecorder) StatusByHash(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StatusByHash", reflect.TypeOf((*MockTorrentQueryService)(nil).StatusByHash), hash)
+}
+
+// Statuses mocks base method.
+func (m *MockTorrentQueryService) Statuses() []*state.TorrentStatus {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Statuses")
+	ret0, _ := ret[0].([]*state.TorrentStatus)
+	return ret0
+}
+
+// Statuses indicates an expected call of Statuses.
+func (mr *MockTorrentQueryServiceMockRecorder) Statuses() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Statuses", reflect.TypeOf((*MockTorrentQueryService)(nil).Statuses))
+}
+
+// MockTorrentCommandService is a mock of TorrentCommandService interface.
+type MockTorrentCommandService struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentCommandServiceMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentCommandServiceMockRecorder is the mock recorder for MockTorrentCommandService.
+type MockTorrentCommandServiceMockRecorder struct {
+	mock *MockTorrentCommandService
+}
+
+// NewMockTorrentCommandService creates a new mock instance.
+func NewMockTorrentCommandService(ctrl *gomock.Controller) *MockTorrentCommandService {
+	mock := &MockTorrentCommandService{ctrl: ctrl}
+	mock.recorder = &MockTorrentCommandServiceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentCommandService) EXPECT() *MockTorrentCommandServiceMockRecorder {
+	return m.recorder
+}
+
+// Add mocks base method.
+func (m *MockTorrentCommandService) Add(spec contracts.TorrentSpec, title, poster, data, category string) (contracts.TorrentHandle, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Add", spec, title, poster, data, category)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Add indicates an expected call of Add.
+func (mr *MockTorrentCommandServiceMockRecorder) Add(spec, title, poster, data, category any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Add", reflect.TypeOf((*MockTorrentCommandService)(nil).Add), spec, title, poster, data, category)
+}
+
+// Drop mocks base method.
+func (m *MockTorrentCommandService) Drop(hash string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Drop", hash)
+}
+
+// Drop indicates an expected call of Drop.
+func (mr *MockTorrentCommandServiceMockRecorder) Drop(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Drop", reflect.TypeOf((*MockTorrentCommandService)(nil).Drop), hash)
+}
+
+// DropReadiness mocks base method.
+func (m *MockTorrentCommandService) DropReadiness(hash string) contracts.DropReadiness {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DropReadiness", hash)
+	ret0, _ := ret[0].(contracts.DropReadiness)
+	return ret0
+}
+
+// DropReadiness indicates an expected call of DropReadiness.
+func (mr *MockTorrentCommandServiceMockRecorder) DropReadiness(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DropReadiness", reflect.TypeOf((*MockTorrentCommandService)(nil).DropReadiness), hash)
+}
+
+// EnqueueMetadataFinalize mocks base method.
+func (m *MockTorrentCommandService) EnqueueMetadataFinalize(tor contracts.TorrentHandle, spec *contracts.TorrentSpec, saveToDB bool) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnqueueMetadataFinalize", tor, spec, saveToDB)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// EnqueueMetadataFinalize indicates an expected call of EnqueueMetadataFinalize.
+func (mr *MockTorrentCommandServiceMockRecorder) EnqueueMetadataFinalize(tor, spec, saveToDB any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnqueueMetadataFinalize", reflect.TypeOf((*MockTorrentCommandService)(nil).EnqueueMetadataFinalize), tor, spec, saveToDB)
+}
+
+// EnqueuePreload mocks base method.
+func (m *MockTorrentCommandService) EnqueuePreload(tor contracts.TorrentHandle, index int) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnqueuePreload", tor, index)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// EnqueuePreload indicates an expected call of EnqueuePreload.
+func (mr *MockTorrentCommandServiceMockRecorder) EnqueuePreload(tor, index any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnqueuePreload", reflect.TypeOf((*MockTorrentCommandService)(nil).EnqueuePreload), tor, index)
+}
+
+// Remove mocks base method.
+func (m *MockTorrentCommandService) Remove(hash string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Remove", hash)
+}
+
+// Remove indicates an expected call of Remove.
+func (mr *MockTorrentCommandServiceMockRecorder) Remove(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Remove", reflect.TypeOf((*MockTorrentCommandService)(nil).Remove), hash)
+}
+
+// SaveToDB mocks base method.
+func (m *MockTorrentCommandService) SaveToDB(tor contracts.TorrentHandle) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SaveToDB", tor)
+}
+
+// SaveToDB indicates an expected call of SaveToDB.
+func (mr *MockTorrentCommandServiceMockRecorder) SaveToDB(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveToDB", reflect.TypeOf((*MockTorrentCommandService)(nil).SaveToDB), tor)
+}
+
+// Set mocks base method.
+func (m *MockTorrentCommandService) Set(hash, title, poster, category, data string) contracts.TorrentHandle {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Set", hash, title, poster, category, data)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	return ret0
+}
+
+// Set indicates an expected call of Set.
+func (mr *MockTorrentCommandServiceMockRecorder) Set(hash, title, poster, category, data any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Set", reflect.TypeOf((*MockTorrentCommandService)(nil).Set), hash, title, poster, category, data)
+}
+
+// MockTorrentStreamService is a mock of TorrentStreamService interface.
+type MockTorrentStreamService struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentStreamServiceMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentStreamServiceMockRecorder is the mock recorder for MockTorrentStreamService.
+type MockTorrentStreamServiceMockRecorder struct {
+	mock *MockTorrentStreamService
+}
+
+// NewMockTorrentStreamService creates a new mock instance.
+func NewMockTorrentStreamService(ctrl *gomock.Controller) *MockTorrentStreamService {
+	mock := &MockTorrentStreamService{ctrl: ctrl}
+	mock.recorder = &MockTorrentStreamServiceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentStreamService) EXPECT() *MockTorrentStreamServiceMockRecorder {
+	return m.recorder
+}
+
+// Add mocks base method.
+func (m *MockTorrentStreamService) Add(spec contracts.TorrentSpec, title, poster, data, category string) (contracts.TorrentHandle, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Add", spec, title, poster, data, category)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Add indicates an expected call of Add.
+func (mr *MockTorrentStreamServiceMockRecorder) Add(spec, title, poster, data, category any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Add", reflect.TypeOf((*MockTorrentStreamService)(nil).Add), spec, title, poster, data, category)
+}
+
+// Get mocks base method.
+func (m *MockTorrentStreamService) Get(hash string) contracts.TorrentHandle {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get", hash)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	return ret0
+}
+
+// Get indicates an expected call of Get.
+func (mr *MockTorrentStreamServiceMockRecorder) Get(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockTorrentStreamService)(nil).Get), hash)
+}
+
+// IsStored mocks base method.
+func (m *MockTorrentStreamService) IsStored(tor contracts.TorrentHandle) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsStored", tor)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsStored indicates an expected call of IsStored.
+func (mr *MockTorrentStreamServiceMockRecorder) IsStored(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsStored", reflect.TypeOf((*MockTorrentStreamService)(nil).IsStored), tor)
+}
+
+// LoadFromDB mocks base method.
+func (m *MockTorrentStreamService) LoadFromDB(tor contracts.TorrentHandle) contracts.TorrentHandle {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadFromDB", tor)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	return ret0
+}
+
+// LoadFromDB indicates an expected call of LoadFromDB.
+func (mr *MockTorrentStreamServiceMockRecorder) LoadFromDB(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadFromDB", reflect.TypeOf((*MockTorrentStreamService)(nil).LoadFromDB), tor)
+}
+
+// Status mocks base method.
+func (m *MockTorrentStreamService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Status", tor)
+	ret0, _ := ret[0].(*state.TorrentStatus)
+	return ret0
+}
+
+// Status indicates an expected call of Status.
+func (mr *MockTorrentStreamServiceMockRecorder) Status(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockTorrentStreamService)(nil).Status), tor)
+}
+
+// StatusByHash mocks base method.
+func (m *MockTorrentStreamService) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StatusByHash", hash)
+	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
+}
+
+// StatusByHash indicates an expected call of StatusByHash.
+func (mr *MockTorrentStreamServiceMockRecorder) StatusByHash(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StatusByHash", reflect.TypeOf((*MockTorrentStreamService)(nil).StatusByHash), hash)
+}
+
+// MockTorrentStreamActions is a mock of TorrentStreamActions interface.
+type MockTorrentStreamActions struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentStreamActionsMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentStreamActionsMockRecorder is the mock recorder for MockTorrentStreamActions.
+type MockTorrentStreamActionsMockRecorder struct {
+	mock *MockTorrentStreamActions
+}
+
+// NewMockTorrentStreamActions creates a new mock instance.
+func NewMockTorrentStreamActions(ctrl *gomock.Controller) *MockTorrentStreamActions {
+	mock := &MockTorrentStreamActions{ctrl: ctrl}
+	mock.recorder = &MockTorrentStreamActionsMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentStreamActions) EXPECT() *MockTorrentStreamActionsMockRecorder {
+	return m.recorder
+}
+
+// EnqueuePreload mocks base method.
+func (m *MockTorrentStreamActions) EnqueuePreload(tor contracts.TorrentHandle, index int) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnqueuePreload", tor, index)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// EnqueuePreload indicates an expected call of EnqueuePreload.
+func (mr *MockTorrentStreamActionsMockRecorder) EnqueuePreload(tor, index any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnqueuePreload", reflect.TypeOf((*MockTorrentStreamActions)(nil).EnqueuePreload), tor, index)
+}
+
+// SaveToDB mocks base method.
+func (m *MockTorrentStreamActions) SaveToDB(tor contracts.TorrentHandle) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SaveToDB", tor)
+}
+
+// SaveToDB indicates an expected call of SaveToDB.
+func (mr *MockTorrentStreamActionsMockRecorder) SaveToDB(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveToDB", reflect.TypeOf((*MockTorrentStreamActions)(nil).SaveToDB), tor)
+}
+
+// MockTorrentPlaylistService is a mock of TorrentPlaylistService interface.
+type MockTorrentPlaylistService struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentPlaylistServiceMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentPlaylistServiceMockRecorder is the mock recorder for MockTorrentPlaylistService.
+type MockTorrentPlaylistServiceMockRecorder struct {
+	mock *MockTorrentPlaylistService
+}
+
+// NewMockTorrentPlaylistService creates a new mock instance.
+func NewMockTorrentPlaylistService(ctrl *gomock.Controller) *MockTorrentPlaylistService {
+	mock := &MockTorrentPlaylistService{ctrl: ctrl}
+	mock.recorder = &MockTorrentPlaylistServiceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentPlaylistService) EXPECT() *MockTorrentPlaylistServiceMockRecorder {
+	return m.recorder
+}
+
+// Get mocks base method.
+func (m *MockTorrentPlaylistService) Get(hash string) contracts.TorrentHandle {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get", hash)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	return ret0
+}
+
+// Get indicates an expected call of Get.
+func (mr *MockTorrentPlaylistServiceMockRecorder) Get(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockTorrentPlaylistService)(nil).Get), hash)
+}
+
+// IsStored mocks base method.
+func (m *MockTorrentPlaylistService) IsStored(tor contracts.TorrentHandle) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsStored", tor)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsStored indicates an expected call of IsStored.
+func (mr *MockTorrentPlaylistServiceMockRecorder) IsStored(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsStored", reflect.TypeOf((*MockTorrentPlaylistService)(nil).IsStored), tor)
+}
+
+// List mocks base method.
+func (m *MockTorrentPlaylistService) List() []contracts.TorrentHandle {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "List")
+	ret0, _ := ret[0].([]contracts.TorrentHandle)
+	return ret0
+}
+
+// List indicates an expected call of List.
+func (mr *MockTorrentPlaylistServiceMockRecorder) List() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockTorrentPlaylistService)(nil).List))
+}
+
+// ListHashes mocks base method.
+func (m *MockTorrentPlaylistService) ListHashes() []string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListHashes")
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+// ListHashes indicates an expected call of ListHashes.
+func (mr *MockTorrentPlaylistServiceMockRecorder) ListHashes() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListHashes", reflect.TypeOf((*MockTorrentPlaylistService)(nil).ListHashes))
+}
+
+// LoadFromDB mocks base method.
+func (m *MockTorrentPlaylistService) LoadFromDB(tor contracts.TorrentHandle) contracts.TorrentHandle {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadFromDB", tor)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	return ret0
+}
+
+// LoadFromDB indicates an expected call of LoadFromDB.
+func (mr *MockTorrentPlaylistServiceMockRecorder) LoadFromDB(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadFromDB", reflect.TypeOf((*MockTorrentPlaylistService)(nil).LoadFromDB), tor)
+}
+
+// Status mocks base method.
+func (m *MockTorrentPlaylistService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Status", tor)
+	ret0, _ := ret[0].(*state.TorrentStatus)
+	return ret0
+}
+
+// Status indicates an expected call of Status.
+func (mr *MockTorrentPlaylistServiceMockRecorder) Status(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockTorrentPlaylistService)(nil).Status), tor)
+}
+
+// StatusByHash mocks base method.
+func (m *MockTorrentPlaylistService) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StatusByHash", hash)
+	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
+}
+
+// StatusByHash indicates an expected call of StatusByHash.
+func (mr *MockTorrentPlaylistServiceMockRecorder) StatusByHash(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StatusByHash", reflect.TypeOf((*MockTorrentPlaylistService)(nil).StatusByHash), hash)
+}
+
+// Statuses mocks base method.
+func (m *MockTorrentPlaylistService) Statuses() []*state.TorrentStatus {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Statuses")
+	ret0, _ := ret[0].([]*state.TorrentStatus)
+	return ret0
+}
+
+// Statuses indicates an expected call of Statuses.
+func (mr *MockTorrentPlaylistServiceMockRecorder) Statuses() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Statuses", reflect.TypeOf((*MockTorrentPlaylistService)(nil).Statuses))
+}
+
+// MockTorrentPlayService is a mock of TorrentPlayService interface.
+type MockTorrentPlayService struct {
+	ctrl     *gomock.Controller
+	recorder *MockTorrentPlayServiceMockRecorder
+	isgomock struct{}
+}
+
+// MockTorrentPlayServiceMockRecorder is the mock recorder for MockTorrentPlayService.
+type MockTorrentPlayServiceMockRecorder struct {
+	mock *MockTorrentPlayService
+}
+
+// NewMockTorrentPlayService creates a new mock instance.
+func NewMockTorrentPlayService(ctrl *gomock.Controller) *MockTorrentPlayService {
+	mock := &MockTorrentPlayService{ctrl: ctrl}
+	mock.recorder = &MockTorrentPlayServiceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTorrentPlayService) EXPECT() *MockTorrentPlayServiceMockRecorder {
+	return m.recorder
+}
+
+// Add mocks base method.
+func (m *MockTorrentPlayService) Add(spec contracts.TorrentSpec, title, poster, data, category string) (contracts.TorrentHandle, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Add", spec, title, poster, data, category)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Add indicates an expected call of Add.
+func (mr *MockTorrentPlayServiceMockRecorder) Add(spec, title, poster, data, category any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Add", reflect.TypeOf((*MockTorrentPlayService)(nil).Add), spec, title, poster, data, category)
+}
+
+// Get mocks base method.
+func (m *MockTorrentPlayService) Get(hash string) contracts.TorrentHandle {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get", hash)
+	ret0, _ := ret[0].(contracts.TorrentHandle)
+	return ret0
+}
+
+// Get indicates an expected call of Get.
+func (mr *MockTorrentPlayServiceMockRecorder) Get(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockTorrentPlayService)(nil).Get), hash)
+}
+
+// IsStored mocks base method.
+func (m *MockTorrentPlayService) IsStored(tor contracts.TorrentHandle) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsStored", tor)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsStored indicates an expected call of IsStored.
+func (mr *MockTorrentPlayServiceMockRecorder) IsStored(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsStored", reflect.TypeOf((*MockTorrentPlayService)(nil).IsStored), tor)
+}
+
+// Status mocks base method.
+func (m *MockTorrentPlayService) Status(tor contracts.TorrentHandle) *state.TorrentStatus {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Status", tor)
+	ret0, _ := ret[0].(*state.TorrentStatus)
+	return ret0
+}
+
+// Status indicates an expected call of Status.
+func (mr *MockTorrentPlayServiceMockRecorder) Status(tor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockTorrentPlayService)(nil).Status), tor)
+}
+
+// StatusByHash mocks base method.
+func (m *MockTorrentPlayService) StatusByHash(hash string) (*state.TorrentStatus, bool) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StatusByHash", hash)
+	ret0, _ := ret[0].(*state.TorrentStatus)
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
+}
+
+// StatusByHash indicates an expected call of StatusByHash.
+func (mr *MockTorrentPlayServiceMockRecorder) StatusByHash(hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StatusByHash", reflect.TypeOf((*MockTorrentPlayService)(nil).StatusByHash), hash)
+}
+
 // MockAPITorrentService is a mock of TorrentService interface.
 type MockAPITorrentService struct {
 	ctrl     *gomock.Controller
@@ -868,7 +1909,7 @@ func (m *MockAPIStreamService) EXPECT() *MockAPIStreamServiceMockRecorder {
 }
 
 // EnsureTorrent mocks base method.
-func (m *MockAPIStreamService) EnsureTorrent(torrents contracts.TorrentService, spec contracts.TorrentSpec, meta contracts.StreamMeta, allowCreate bool) (contracts.TorrentHandle, error) {
+func (m *MockAPIStreamService) EnsureTorrent(torrents contracts.TorrentStreamService, spec contracts.TorrentSpec, meta contracts.StreamMeta, allowCreate bool) (contracts.TorrentHandle, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "EnsureTorrent", torrents, spec, meta, allowCreate)
 	ret0, _ := ret[0].(contracts.TorrentHandle)
@@ -967,7 +2008,7 @@ func (m *MockAPIPlaybackService) EXPECT() *MockAPIPlaybackServiceMockRecorder {
 }
 
 // BuildAllPlaylist mocks base method.
-func (m *MockAPIPlaybackService) BuildAllPlaylist(host string, torrents contracts.TorrentService) contracts.PlaylistPayload {
+func (m *MockAPIPlaybackService) BuildAllPlaylist(host string, torrents contracts.TorrentPlaylistService) contracts.PlaylistPayload {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BuildAllPlaylist", host, torrents)
 	ret0, _ := ret[0].(contracts.PlaylistPayload)
@@ -995,7 +2036,7 @@ func (mr *MockAPIPlaybackServiceMockRecorder) BuildM3UFromStatus(tor, host, from
 }
 
 // BuildPlaylistByHash mocks base method.
-func (m *MockAPIPlaybackService) BuildPlaylistByHash(hash, requestedName string, fromLast bool, host string, torrents contracts.TorrentService, viewed contracts.ViewedService) (contracts.PlaylistPayload, error) {
+func (m *MockAPIPlaybackService) BuildPlaylistByHash(hash, requestedName string, fromLast bool, host string, torrents contracts.TorrentPlaylistService, viewed contracts.ViewedService) (contracts.PlaylistPayload, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BuildPlaylistByHash", hash, requestedName, fromLast, host, torrents, viewed)
 	ret0, _ := ret[0].(contracts.PlaylistPayload)
@@ -1010,7 +2051,7 @@ func (mr *MockAPIPlaybackServiceMockRecorder) BuildPlaylistByHash(hash, requeste
 }
 
 // ResolvePlay mocks base method.
-func (m *MockAPIPlaybackService) ResolvePlay(hash, index string, unauthorized bool, torrents contracts.TorrentService) (contracts.PlayTarget, error) {
+func (m *MockAPIPlaybackService) ResolvePlay(hash, index string, unauthorized bool, torrents contracts.TorrentPlayService) (contracts.PlayTarget, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ResolvePlay", hash, index, unauthorized, torrents)
 	ret0, _ := ret[0].(contracts.PlayTarget)

@@ -22,10 +22,10 @@ func newDLNARuntimeContext(provider settings.SettingsProvider, argsProvider sett
 	}
 }
 
-func (c dlnaRuntimeContext) currentSettings() *settings.BTSets {
-	return c.settingsProvider.Get()
+func (runtimeCtx dlnaRuntimeContext) currentSettings() *settings.BTSets {
+	return runtimeCtx.settingsProvider.Get()
 }
 
-func (c dlnaRuntimeContext) currentArgs() *settings.ExecArgs {
-	return c.argsProvider.Get()
+func (runtimeCtx dlnaRuntimeContext) currentArgs() *settings.ExecArgs {
+	return runtimeCtx.argsProvider.Get()
 }

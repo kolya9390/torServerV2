@@ -253,7 +253,11 @@ func doSearchOne(host, key, query string) ([]*TorrentDetails, error) {
 			return nil, fmt.Errorf("request error: %w", err)
 		}
 
-		defer func() { _ = resp.Body.Close() }()
+		defer func() {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				log.Warn("torznab_search_response_close_failed", "error", closeErr, "host", host)
+			}
+		}()
 
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("status: %d", resp.StatusCode)
@@ -314,7 +318,11 @@ func doTest(host, key string) error {
 			return err
 		}
 
-		defer func() { _ = resp.Body.Close() }()
+		defer func() {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				log.Warn("torznab_test_response_close_failed", "error", closeErr, "host", host)
+			}
+		}()
 
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("status: %s", resp.Status)

@@ -70,7 +70,7 @@ func ParseTorrsHash(token string) (*torrent.TorrentSpec, *torrshash.TorrsHash, e
 	}, th, nil
 }
 
-func fromHTTP(link string) (*torrent.TorrentSpec, error) {
+func fromHTTP(link string) (spec *torrent.TorrentSpec, err error) {
 	req, err := http.NewRequest(http.MethodGet, link, nil)
 	if err != nil {
 		return nil, err
@@ -92,7 +92,9 @@ func fromHTTP(link string) (*torrent.TorrentSpec, error) {
 	}
 
 	defer func() {
-		_ = resp.Body.Close()
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close torrent response body: %w", closeErr))
+		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {

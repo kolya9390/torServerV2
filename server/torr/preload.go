@@ -5,11 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"sync"
 	"time"
-
-	"server/ffprobe"
 
 	"server/log"
 	"server/settings"
@@ -216,26 +213,6 @@ func (t *Torrent) runEndRangePreloadLoop(ctx context.Context, reader torrent.Rea
 	return nil
 }
 
-// probeFileMetadata uses ffprobe to extract metadata (bitrate, duration) for the file.
-// This is only executed if ffprobe is available.
-func (t *Torrent) probeFileMetadata(index int) {
-	if !ffprobe.Exists() {
-		return
-	}
-
-	serverCfg := t.currentRuntimeState().ServerConfig()
-	link := "http://127.0.0.1:" + serverCfg.Port + "/play/" + t.Hash().HexString() + "/" + strconv.Itoa(index)
-
-	if serverCfg.SSL {
-		link = "https://127.0.0.1:" + serverCfg.SSLPort + "/play/" + t.Hash().HexString() + "/" + strconv.Itoa(index)
-	}
-
-	if data, err := ffprobe.ProbeURL(link); err == nil {
-		t.media.bitRate = data.Format.BitRate
-		t.media.durationSeconds = data.Format.DurationSeconds
-	}
-}
-
 // preloadResult holds the outcome of a preload operation.
 type preloadResult struct {
 	file        *torrent.File
@@ -307,7 +284,11 @@ func (t *Torrent) runEndRangePreload(ctx context.Context, result *preloadResult,
 			return
 		}
 
-		defer func() { _ = readerEnd.Close() }()
+		defer func() {
+			if err := readerEnd.Close(); err != nil {
+				log.TLogln("Err preload close end reader:", err)
+			}
+		}()
 
 		*preloadErr = errors.Join(*preloadErr, t.runEndRangePreloadLoop(ctx, readerEnd, result.endStartPos, result.endEndPos))
 	})
@@ -315,7 +296,7 @@ func (t *Torrent) runEndRangePreload(ctx context.Context, result *preloadResult,
 
 // runPreloadSequence orchestrates the complete preload operation including readers,
 // parallel end-range preload and progress monitoring.
-func (t *Torrent) runPreloadSequence(file *torrent.File, size int64, index int) error {
+func (t *Torrent) runPreloadSequence(file *torrent.File, size int64, _ int) error {
 	setup := t.setupPreloadReaders(file, size)
 	if setup.err != nil {
 		log.Debug("End preload:", setup.err)
@@ -323,7 +304,11 @@ func (t *Torrent) runPreloadSequence(file *torrent.File, size int64, index int) 
 		return setup.err
 	}
 
-	defer func() { _ = setup.readerStart.Close() }()
+	defer func() {
+		if err := setup.readerStart.Close(); err != nil {
+			log.TLogln("Err preload close start reader:", err)
+		}
+	}()
 
 	timeout := min(time.Second*time.Duration(t.currentSettings().TorrentDisconnectTimeout), time.Minute)
 

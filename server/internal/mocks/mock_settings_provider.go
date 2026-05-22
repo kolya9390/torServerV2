@@ -107,3 +107,17 @@ func (mr *MockSettingsProviderMockRecorder) Set(sets any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Set", reflect.TypeOf((*MockSettingsProvider)(nil).Set), sets)
 }
+
+// SetStoragePreferences mocks base method.
+func (m *MockSettingsProvider) SetStoragePreferences(prefs map[string]any) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetStoragePreferences", prefs)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetStoragePreferences indicates an expected call of SetStoragePreferences.
+func (mr *MockSettingsProviderMockRecorder) SetStoragePreferences(prefs any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetStoragePreferences", reflect.TypeOf((*MockSettingsProvider)(nil).SetStoragePreferences), prefs)
+}

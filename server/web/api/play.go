@@ -22,12 +22,12 @@ import (
 //	@Success		200	"Torrent data"
 //	@Router			/play/{hash}/{id} [get]
 func play(c *gin.Context) {
-	svc := servicesFromContext(c)
+	deps := playDepsFromContext(c)
 	hash := c.Param("hash")
 	indexStr := c.Param("id")
 	notAuth := c.GetBool("auth_required") && c.GetString(gin.AuthUserKey) == ""
 
-	target, err := svc.Playback.ResolvePlay(hash, indexStr, notAuth, svc.Torrents)
+	target, err := deps.Playback.ResolvePlay(hash, indexStr, notAuth, deps.Torrents)
 	if err != nil {
 		switch {
 		case errors.Is(err, contracts.ErrPlayPathRequired):

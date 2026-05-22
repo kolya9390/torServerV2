@@ -28,107 +28,131 @@ func Start() error {
 func StartWithProviders(provider settings.SettingsProvider, argsProvider settings.ArgsProvider) error {
 	logger := log.Default.WithNames("dlna")
 	runtimeCtx := newDLNARuntimeContext(provider, argsProvider)
+	conn, err := openDLNAHTTPListener(logger, runtimeCtx)
 
-	var connErr error
-
-	dmsServer = &dms.Server{
-		Logger: logger.WithNames("dms", "server"),
-		Interfaces: func() (ifs []net.Interface) {
-			var err error
-			ifaces, err := anet.Interfaces()
-			if err != nil {
-				logger.Levelf(log.Error, "%v", err)
-
-				return
-			}
-			for _, i := range ifaces {
-				// interface flags seem to always be 0 on Windows
-				if runtime.GOOS != "windows" && (i.Flags&net.FlagLoopback != 0 || i.Flags&net.FlagUp == 0 || i.Flags&net.FlagMulticast == 0) {
-					continue
-				}
-				ifs = append(ifs, i)
-			}
-
-			return
-		}(),
-		HTTPConn: func() net.Listener {
-			args := runtimeCtx.currentArgs()
-			bindIP := ""
-			if args != nil {
-				bindIP = args.IP
-			}
-
-			port := 9080
-			for {
-				logger.Levelf(log.Info, "Check dlna port %d", port)
-				m, err := net.Listen("tcp", bindIP+":"+strconv.Itoa(port))
-				if m != nil {
-					_ = m.Close()
-				}
-				if err == nil {
-					break
-				}
-				port++
-			}
-			logger.Levelf(log.Info, "Set dlna port %d", port)
-			conn, err := net.Listen("tcp", bindIP+":"+strconv.Itoa(port))
-			if err != nil {
-				logger.Levelf(log.Error, "%v", err)
-				connErr = err
-
-				return nil
-			}
-
-			return conn
-		}(),
-		FriendlyName:        runtimeCtx.getDefaultFriendlyName(),
-		NoTranscode:         true,
-		NoProbe:             true,
-		StallEventSubscribe: false,
-		Icons:               []dms.Icon{}, // No icons
-		LogHeaders:          runtimeCtx.currentSettings().DebugConfig().EnableDebug,
-		NotifyInterval:      30 * time.Second,
-		AllowedIpNets: func() []*net.IPNet {
-			nets := make([]*net.IPNet, 0, 2)
-			if _, ipnet, err := net.ParseCIDR("0.0.0.0/0"); err == nil {
-				nets = append(nets, ipnet)
-			}
-			if _, ipnet, err := net.ParseCIDR("::/0"); err == nil {
-				nets = append(nets, ipnet)
-			}
-
-			return nets
-		}(),
-		OnBrowseDirectChildren: runtimeCtx.onBrowse,
-		OnBrowseMetadata:       runtimeCtx.onBrowseMeta,
+	if err != nil {
+		return err
 	}
 
-	if connErr != nil {
-		return connErr
+	dmsServer = &dms.Server{
+		Logger:                 logger.WithNames("dms", "server"),
+		Interfaces:             dlnaInterfaces(logger),
+		HTTPConn:               conn,
+		FriendlyName:           runtimeCtx.getDefaultFriendlyName(),
+		NoTranscode:            true,
+		NoProbe:                true,
+		StallEventSubscribe:    false,
+		Icons:                  []dms.Icon{}, // No icons
+		LogHeaders:             runtimeCtx.currentSettings().DebugConfig().EnableDebug,
+		NotifyInterval:         30 * time.Second,
+		AllowedIpNets:          allAllowedIPNets(),
+		OnBrowseDirectChildren: runtimeCtx.onBrowse,
+		OnBrowseMetadata:       onBrowseMeta,
 	}
 
 	if err := dmsServer.Init(); err != nil {
 		return fmt.Errorf("error initing dms server: %w", err)
 	}
 
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Levelf(log.Error, "dlna server goroutine panic: %v", r)
-			}
-		}()
-
-		if err := dmsServer.Run(); err != nil {
-			logger.Levelf(log.Error, "%v", err)
-		}
-	}()
+	go runDLNAServer(logger, dmsServer)
 
 	return nil
 }
 
+func dlnaInterfaces(logger log.Logger) []net.Interface {
+	ifaces, err := anet.Interfaces()
+	if err != nil {
+		logger.Levelf(log.Error, "%v", err)
+
+		return nil
+	}
+
+	filtered := make([]net.Interface, 0, len(ifaces))
+
+	for _, iface := range ifaces {
+		// interface flags seem to always be 0 on Windows
+		if runtime.GOOS != "windows" && (iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagMulticast == 0) {
+			continue
+		}
+
+		filtered = append(filtered, iface)
+	}
+
+	return filtered
+}
+
+func openDLNAHTTPListener(logger log.Logger, runtimeCtx dlnaRuntimeContext) (net.Listener, error) {
+	args := runtimeCtx.currentArgs()
+	bindIP := ""
+
+	if args != nil {
+		bindIP = args.IP
+	}
+
+	port := 9080
+
+	for {
+		logger.Levelf(log.Info, "Check dlna port %d", port)
+		probe, err := net.Listen("tcp", bindIP+":"+strconv.Itoa(port))
+
+		if probe != nil {
+			if closeErr := probe.Close(); closeErr != nil {
+				logger.Levelf(log.Error, "error closing dlna port probe: %v", closeErr)
+
+				return nil, fmt.Errorf("close dlna port probe: %w", closeErr)
+			}
+		}
+
+		if err == nil {
+			break
+		}
+
+		port++
+	}
+
+	logger.Levelf(log.Info, "Set dlna port %d", port)
+
+	conn, err := net.Listen("tcp", bindIP+":"+strconv.Itoa(port))
+	if err != nil {
+		logger.Levelf(log.Error, "%v", err)
+
+		return nil, err
+	}
+
+	return conn, nil
+}
+
+func allAllowedIPNets() []*net.IPNet {
+	nets := make([]*net.IPNet, 0, 2)
+	if _, ipnet, err := net.ParseCIDR("0.0.0.0/0"); err == nil {
+		nets = append(nets, ipnet)
+	}
+
+	if _, ipnet, err := net.ParseCIDR("::/0"); err == nil {
+		nets = append(nets, ipnet)
+	}
+
+	return nets
+}
+
+func runDLNAServer(logger log.Logger, server *dms.Server) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Levelf(log.Error, "dlna server goroutine panic: %v", r)
+		}
+	}()
+
+	if err := server.Run(); err != nil {
+		logger.Levelf(log.Error, "%v", err)
+	}
+}
+
 func Stop() {
 	if dmsServer != nil {
-		_ = dmsServer.Close()
+		if err := dmsServer.Close(); err != nil {
+			log.Default.WithNames("dlna").Levelf(log.Error, "error closing dms server: %v", err)
+		}
+
 		dmsServer = nil
 	}
 }
@@ -153,8 +177,8 @@ func (runtimeCtx dlnaRuntimeContext) onBrowse(path, rootObjectPath, host, userAg
 	return
 }
 
-func (runtimeCtx dlnaRuntimeContext) onBrowseMeta(path string, rootObjectPath string, host, userAgent string) (ret any, err error) {
-	ret = runtimeCtx.getTorrentMeta(path, host)
+func onBrowseMeta(path string, rootObjectPath string, host, userAgent string) (ret any, err error) {
+	ret = getTorrentMeta(path)
 	if ret == nil {
 		err = errors.New("meta not found")
 	}

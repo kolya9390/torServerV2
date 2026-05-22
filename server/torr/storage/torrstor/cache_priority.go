@@ -296,7 +296,6 @@ func (c *Cache) clearPriorityAsync() {
 		return
 	}
 
-	delay := c.clearPriorityDelay()
 	c.priorities.clearMu.Lock()
 	defer c.priorities.clearMu.Unlock()
 
@@ -304,7 +303,7 @@ func (c *Cache) clearPriorityAsync() {
 		c.priorities.clearTimer.Stop()
 	}
 
-	c.priorities.clearTimer = time.AfterFunc(delay, c.runClearPriority)
+	c.priorities.clearTimer = time.AfterFunc(clearPriorityDelay, c.runClearPriority)
 }
 
 func (c *Cache) runClearPriority() {
@@ -318,10 +317,6 @@ func (c *Cache) runClearPriority() {
 	defer c.priorities.clearRunning.Store(false)
 
 	c.clearPriority()
-}
-
-func (c *Cache) clearPriorityDelay() time.Duration {
-	return time.Second
 }
 
 func (c *Cache) clearPriority() {

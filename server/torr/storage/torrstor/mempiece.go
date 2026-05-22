@@ -7,9 +7,13 @@ import (
 
 const memPieceChunkSize = 16 << 10
 
+type memPieceChunk []byte
+
 var memPieceChunkPool = sync.Pool{
 	New: func() any {
-		return make([]byte, memPieceChunkSize)
+		chunk := make(memPieceChunk, memPieceChunkSize)
+
+		return &chunk
 	},
 }
 
@@ -63,12 +67,17 @@ func (p *MemPiece) ensureChunks() {
 }
 
 func getMemPieceChunk() []byte {
-	chunk, _ := memPieceChunkPool.Get().([]byte)
+	chunkPtr, ok := memPieceChunkPool.Get().(*memPieceChunk)
+	if !ok {
+		return make([]byte, memPieceChunkSize)
+	}
+
+	chunk := *chunkPtr
 	if len(chunk) != memPieceChunkSize {
 		return make([]byte, memPieceChunkSize)
 	}
 
-	return chunk
+	return []byte(chunk)
 }
 
 func putMemPieceChunk(chunk []byte) {
@@ -76,7 +85,8 @@ func putMemPieceChunk(chunk []byte) {
 		return
 	}
 
-	memPieceChunkPool.Put(chunk[:memPieceChunkSize])
+	pooled := memPieceChunk(chunk[:memPieceChunkSize])
+	memPieceChunkPool.Put(&pooled)
 }
 
 func (p *MemPiece) WriteAt(b []byte, off int64) (n int, err error) {

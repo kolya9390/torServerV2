@@ -12,6 +12,7 @@ import (
 	goffprobe "gopkg.in/vansante/go-ffprobe.v2"
 
 	sets "server/settings"
+	"server/torr/state"
 	"server/torznab"
 	wauth "server/web/auth"
 )
@@ -279,8 +280,92 @@ func TestTorrentsAddDelegatesLinkParsingToStreamService(t *testing.T) {
 		t.Fatalf("expected request data to be preserved, got %q", torrentsSvc.addData)
 	}
 
+	if !torrentsSvc.finalizeCalled {
+		t.Fatal("expected metadata finalization to be enqueued")
+	}
+
+	if torrentsSvc.finalizeSpec == nil {
+		t.Fatal("expected new torrent path to pass parsed torrent spec to metadata finalization")
+	}
+
+	if !torrentsSvc.finalizeSave {
+		t.Fatal("expected save_to_db=true to be passed to metadata finalization")
+	}
+
 	if !modulesSvc.restartCalled {
 		t.Fatal("expected DLNA restart to be requested through ModulesService")
+	}
+}
+
+func TestTorrentsAddExistingActiveFastPathEnqueuesSaveFinalize(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	const hash = "0102030405060708090a0b0c0d0e0f1011121314"
+
+	existing := testTorrentHandle{
+		status: &state.TorrentStatus{
+			Hash:  hash,
+			Title: "existing-title",
+			Stat:  state.TorrentWorking,
+		},
+		hash:  hash,
+		state: state.TorrentWorking,
+		name:  "existing-title",
+		files: 1,
+	}
+	torrentsSvc := &testTorrentService{getResult: existing}
+	streamSvc := &testStreamService{}
+	modulesSvc := &contractModulesService{}
+
+	r := gin.New()
+	withServices(t, r, &contracts.APIServices{
+		Torrents: torrentsSvc,
+		Settings: &contractSettingsService{enableDLNA: true},
+		Viewed:   &contractViewedService{},
+		System:   &contractSystemService{},
+		Search:   &contractSearchService{},
+		Media:    &contractMediaService{},
+		Modules:  modulesSvc,
+		Streams:  streamSvc,
+	})
+	r.POST("/torrents", torrents)
+
+	req := httptest.NewRequest(http.MethodPost, "/torrents", strings.NewReader(`{"action":"add","link":"magnet:?xt=urn:btih:`+hash+`","save_to_db":true}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if streamSvc.parseLinkCalls != 1 {
+		t.Fatalf("expected StreamService.ParseLink to be called once, got %d", streamSvc.parseLinkCalls)
+	}
+
+	if torrentsSvc.addCalls != 0 {
+		t.Fatalf("existing active torrent fast-path must not call Add, got %d calls", torrentsSvc.addCalls)
+	}
+
+	if !torrentsSvc.finalizeCalled {
+		t.Fatal("expected save_to_db fast-path to enqueue metadata finalization")
+	}
+
+	if torrentsSvc.finalizeTor != existing {
+		t.Fatalf("expected finalize to receive existing torrent handle, got %#v", torrentsSvc.finalizeTor)
+	}
+
+	if torrentsSvc.finalizeSpec != nil {
+		t.Fatal("expected existing fast-path finalization to avoid replacing torrent spec")
+	}
+
+	if !torrentsSvc.finalizeSave {
+		t.Fatal("expected save_to_db=true to be passed to fast-path finalization")
+	}
+
+	if modulesSvc.restartCalled {
+		t.Fatal("existing active fast-path should return before DLNA restart")
 	}
 }
 

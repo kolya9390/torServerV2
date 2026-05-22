@@ -1,7 +1,6 @@
 package torrstor
 
 import (
-	"container/list"
 	"sync/atomic"
 	"time"
 
@@ -25,9 +24,6 @@ type Piece struct {
 	dPiece *DiskPiece
 
 	cache *Cache
-
-	// LRU element for O(1) removal from cache LRU list.
-	lruEl *list.Element
 }
 
 func NewPiece(id int, cache *Cache) *Piece {

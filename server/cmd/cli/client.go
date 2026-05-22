@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -97,11 +98,11 @@ func (c *apiClient) doJSON(ctx context.Context, method, path string, requestBody
 		return fmt.Errorf("request failed: %w", err)
 	}
 
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
 	data, err := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		err = errors.Join(err, fmt.Errorf("close response: %w", closeErr))
+	}
+
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}

@@ -18,8 +18,6 @@ type mockSystemService = mocks.MockAPISystemService
 type mockSearchService = mocks.MockAPISearchService
 type mockMediaService = mocks.MockAPIMediaService
 type mockModulesService = mocks.MockAPIModulesService
-type mockStreamService = mocks.MockAPIStreamService
-type mockPlaybackService = mocks.MockAPIPlaybackService
 
 func newAPIServicesFixture(t *testing.T, overrides *contracts.APIServices) *contracts.APIServices {
 	t.Helper()

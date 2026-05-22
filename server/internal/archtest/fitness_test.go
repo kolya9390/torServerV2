@@ -67,6 +67,139 @@ func TestAPILayerDoesNotImportInfraDirectly(t *testing.T) {
 	}
 }
 
+func TestAPIHandlersDoNotUseBroadAPIServices(t *testing.T) {
+	goFiles := collectGoFiles(t, filepath.Join(projectRoot(t), "web", "api"), func(path string) bool {
+		if strings.HasSuffix(path, "_test.go") {
+			return false
+		}
+
+		base := filepath.Base(path)
+
+		return base != "route.go" && base != "services_registry.go"
+	})
+
+	for _, path := range goFiles {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+
+		source := string(content)
+		if strings.Contains(source, "servicesFromContext(") {
+			t.Errorf("handler must use narrow dependency groups instead of servicesFromContext in %s", path)
+		}
+
+		if strings.Contains(source, "*contracts.APIServices") {
+			t.Errorf("handler must not accept broad *contracts.APIServices in %s", path)
+		}
+	}
+}
+
+func TestAPIHandlersUseNarrowTorrentContracts(t *testing.T) {
+	goFiles := collectGoFiles(t, filepath.Join(projectRoot(t), "web", "api"), func(path string) bool {
+		if strings.HasSuffix(path, "_test.go") {
+			return false
+		}
+
+		base := filepath.Base(path)
+
+		return base != "route.go"
+	})
+
+	for _, path := range goFiles {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+
+		if strings.Contains(string(content), "contracts.TorrentService") {
+			t.Errorf("API handlers must use consumer-driven torrent contracts instead of contracts.TorrentService in %s", path)
+		}
+	}
+}
+
+func TestStreamAndPlaybackServicesUseNarrowTorrentContracts(t *testing.T) {
+	for _, relPath := range []string{
+		filepath.Join("internal", "app", "apiservices", "stream_service.go"),
+		filepath.Join("internal", "app", "apiservices", "playback.go"),
+	} {
+		path := filepath.Join(projectRoot(t), relPath)
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+
+		if strings.Contains(string(content), "contracts.TorrentService") {
+			t.Errorf("service orchestration must accept narrow torrent contracts instead of contracts.TorrentService in %s", path)
+		}
+	}
+}
+
+func TestTorrentSpecDoesNotExposeUntypedNativePayload(t *testing.T) {
+	path := filepath.Join(projectRoot(t), "internal", "app", "contracts", "contracts.go")
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+
+	source := string(content)
+	for _, forbidden := range []string{
+		"native  any",
+		"native any",
+		"Native() any",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("TorrentSpec must use a typed adapter payload instead of %q", forbidden)
+		}
+	}
+}
+
+func TestAPIHandlersDoNotDependOnComposedStreamService(t *testing.T) {
+	goFiles := collectGoFiles(t, filepath.Join(projectRoot(t), "web", "api"), func(path string) bool {
+		return !strings.HasSuffix(path, "_test.go")
+	})
+
+	for _, path := range goFiles {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+
+		if strings.Contains(string(content), "contracts.StreamService") {
+			t.Errorf("API handlers must depend on parser/helper/orchestrator stream interfaces instead of contracts.StreamService in %s", path)
+		}
+	}
+}
+
+func TestTransportAndAppDoNotCallGlobalRuntimeStateDirectly(t *testing.T) {
+	for _, relDir := range []string{
+		filepath.Join("internal", "app"),
+		"web",
+	} {
+		goFiles := collectGoFiles(t, filepath.Join(projectRoot(t), relDir), func(path string) bool {
+			return !strings.HasSuffix(path, "_test.go")
+		})
+
+		for _, path := range goFiles {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", path, err)
+			}
+
+			source := string(content)
+			if strings.Contains(source, "settings.GetRuntimeState") {
+				t.Errorf("use injected runtime-state provider instead of settings.GetRuntimeState in %s", path)
+			}
+
+			if strings.Contains(source, "settings.UpdateRuntimeState") {
+				t.Errorf("use injected runtime-state updater instead of settings.UpdateRuntimeState in %s", path)
+			}
+		}
+	}
+}
+
 func TestAppContractsDoNotImportTransportPackages(t *testing.T) {
 	goFiles := collectGoFiles(t, filepath.Join(projectRoot(t), "internal", "app", "contracts"), func(path string) bool {
 		return !strings.HasSuffix(path, "_test.go")

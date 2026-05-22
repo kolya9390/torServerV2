@@ -23,6 +23,16 @@ type runtimeStateStore struct {
 
 var defaultRuntimeStateStore runtimeStateStore
 
+var (
+	// DefaultRuntimeStateProvider is the legacy global runtime-state provider.
+	// New composition code should pass it explicitly instead of calling GetRuntimeState from leaf packages.
+	DefaultRuntimeStateProvider = GetRuntimeState
+
+	// DefaultRuntimeStateUpdater is the legacy global runtime-state updater.
+	// New composition code should pass it explicitly instead of calling UpdateRuntimeState from leaf packages.
+	DefaultRuntimeStateUpdater = UpdateRuntimeState
+)
+
 func SetRuntimeState(state RuntimeState) {
 	defaultRuntimeStateStore.set(state)
 }

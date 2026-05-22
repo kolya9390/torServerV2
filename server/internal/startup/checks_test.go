@@ -113,3 +113,7 @@ func (staticStartupSettingsProvider) GetStaticConfig() settings.StaticConfig {
 func (staticStartupSettingsProvider) GetStoragePreferences() map[string]any {
 	return map[string]any{}
 }
+
+func (staticStartupSettingsProvider) SetStoragePreferences(map[string]any) error {
+	return nil
+}

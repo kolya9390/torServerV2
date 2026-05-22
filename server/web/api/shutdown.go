@@ -19,10 +19,10 @@ import (
 // @Success		200
 // @Router			/shutdown [get].
 func shutdown(c *gin.Context) {
-	svc := servicesFromContext(c)
+	deps := systemDepsFromContext(c)
 	reasonStr := strings.ReplaceAll(c.Param("reason"), "/", "")
 
-	if svc.Settings.ReadOnly() && reasonStr == "" {
+	if deps.Settings.ReadOnly() && reasonStr == "" {
 		abortAPIError(c, http.StatusForbidden, newForbiddenError("read-only mode requires explicit shutdown reason"))
 
 		return
@@ -47,6 +47,6 @@ func shutdown(c *gin.Context) {
 			}
 		}()
 		time.Sleep(time.Second)
-		svc.System.Shutdown()
+		deps.System.Shutdown()
 	}()
 }

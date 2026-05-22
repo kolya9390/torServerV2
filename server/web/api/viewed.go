@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 	"runtime/debug"
-	"server/internal/app/contracts"
 
 	"server/log"
 	sets "server/settings"
@@ -35,7 +34,7 @@ type viewedReqJS struct {
 //	@Success		200 {array} sets.Viewed
 //	@Router			/viewed [post]
 func viewed(c *gin.Context) {
-	svc := servicesFromContext(c)
+	deps := viewedDepsFromContext(c)
 
 	var req viewedReqJS
 
@@ -54,45 +53,41 @@ func viewed(c *gin.Context) {
 
 	switch req.Action {
 	case "set":
-		setViewed(svc, req, c)
+		setViewed(deps, req, c)
 	case "rem":
-		remViewed(svc, req, c)
+		remViewed(deps, req, c)
 	case "list":
-		listViewed(svc, req, c)
+		listViewed(deps, req, c)
 	default:
 		abortAPIError(c, http.StatusBadRequest, newValidationError("action", "must be one of: set, rem, list"))
 	}
 }
 
-func setViewed(svc *contracts.APIServices, req viewedReqJS, c *gin.Context) {
-	if svc == nil || svc.Viewed == nil || req.Viewed == nil {
+func setViewed(deps viewedHandlerDeps, req viewedReqJS, c *gin.Context) {
+	if deps.Viewed == nil || req.Viewed == nil {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("viewed", "is required for action=set"))
 
 		return
 	}
 
-	svc.Viewed.SetViewed(req.Viewed)
+	deps.Viewed.SetViewed(req.Viewed)
 	c.Status(200)
 }
 
-func remViewed(svc *contracts.APIServices, req viewedReqJS, c *gin.Context) {
-	if svc == nil || svc.Viewed == nil || req.Viewed == nil {
+func remViewed(deps viewedHandlerDeps, req viewedReqJS, c *gin.Context) {
+	if deps.Viewed == nil || req.Viewed == nil {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("viewed", "is required for action=rem"))
 
 		return
 	}
 
-	svc.Viewed.RemoveViewed(req.Viewed)
+	deps.Viewed.RemoveViewed(req.Viewed)
 	c.Status(200)
 }
 
-func listViewed(svc *contracts.APIServices, req viewedReqJS, c *gin.Context) {
+func listViewed(deps viewedHandlerDeps, req viewedReqJS, c *gin.Context) {
 	log.TLogln("listViewed: START")
-	log.TLogln("listViewed: svc is nil?", svc == nil)
-
-	if svc != nil {
-		log.TLogln("listViewed: svc.Viewed is nil?", svc.Viewed == nil)
-	}
+	log.TLogln("listViewed: deps.Viewed is nil?", deps.Viewed == nil)
 
 	defer func() {
 		if r := recover(); r != nil {

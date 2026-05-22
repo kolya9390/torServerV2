@@ -1,7 +1,6 @@
 package torrstor
 
 import (
-	"container/list"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,6 +20,7 @@ var CacheMetricsRecorder func(hits, misses uint64)
 const (
 	minCleanInterval          = 250 * time.Millisecond
 	minPriorityUpdateInterval = time.Second
+	clearPriorityDelay        = time.Second
 )
 
 type cacheReadersState struct {
@@ -52,11 +52,6 @@ type cacheMetricsState struct {
 	misses atomic.Uint64
 }
 
-type cacheLRUState struct {
-	list *list.List
-	mu   sync.Mutex
-}
-
 type cacheHost interface {
 	currentSettings() *settings.BTSets
 	unregisterCache(hash metainfo.Hash)
@@ -82,7 +77,6 @@ type Cache struct {
 	priorities cachePriorityState
 	cleanup    cacheCleanupState
 	metrics    cacheMetricsState
-	lru        cacheLRUState
 }
 
 func NewCache(capacity int64, host cacheHost) *Cache {
@@ -95,9 +89,6 @@ func NewCache(capacity int64, host cacheHost) *Cache {
 		},
 		priorities: cachePriorityState{
 			pieces: make(map[int]torrent.PiecePriority),
-		},
-		lru: cacheLRUState{
-			list: list.New(),
 		},
 	}
 

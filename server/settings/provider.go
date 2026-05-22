@@ -17,6 +17,9 @@ type SettingsProvider interface {
 
 	// GetStoragePreferences returns the current storage preferences.
 	GetStoragePreferences() map[string]any
+
+	// SetStoragePreferences updates storage preferences for settings and viewed history.
+	SetStoragePreferences(prefs map[string]any) error
 }
 
 // DefaultSettingsProvider is the global SettingsProvider instance.
@@ -50,17 +53,11 @@ func (p *btsetsProvider) GetStaticConfig() StaticConfig {
 }
 
 func (p *btsetsProvider) GetStoragePreferences() map[string]any {
-	sets := currentStoredSettings()
-	if sets == nil {
-		return map[string]any{}
-	}
+	return GetStoragePreferences()
+}
 
-	prefs := sets.PersistenceConfig()
-
-	return map[string]any{
-		"settingsInJSON": prefs.SettingsInJSON,
-		"viewedInJSON":   prefs.ViewedInJSON,
-	}
+func (p *btsetsProvider) SetStoragePreferences(prefs map[string]any) error {
+	return SetStoragePreferences(prefs)
 }
 
 // staticToBTSets converts StaticConfig to BTSets for fallback.

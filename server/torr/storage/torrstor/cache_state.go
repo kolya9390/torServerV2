@@ -100,37 +100,3 @@ func (c *Cache) RecordHit() {
 func (c *Cache) RecordMiss() {
 	c.metrics.misses.Add(1)
 }
-
-// markUsedLRU moves a piece to the back of the LRU list (most recently used).
-// Must be called with c.lru.mu held.
-func (c *Cache) markUsedLRU(p *Piece) {
-	if p.lruEl == nil {
-		p.lruEl = c.lru.list.PushBack(p)
-	} else {
-		c.lru.list.MoveToBack(p.lruEl)
-	}
-}
-
-// evictLRU returns the least recently used piece (front of list), or nil if empty.
-// Must be called with c.lru.mu held.
-func (c *Cache) evictLRU() *Piece {
-	if c.lru.list.Len() == 0 {
-		return nil
-	}
-
-	el := c.lru.list.Front()
-	if el == nil {
-		return nil
-	}
-
-	p, ok := el.Value.(*Piece)
-	if !ok {
-		return nil
-	}
-
-	c.lru.list.Remove(el)
-
-	p.lruEl = nil
-
-	return p
-}

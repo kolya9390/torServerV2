@@ -15,7 +15,7 @@ import (
 	"server/torrshash"
 )
 
-func (d streamService) ParseLink(link, title, poster, category string) (contracts.TorrentSpec, contracts.StreamMeta, error) {
+func (streamService) ParseLink(link, title, poster, category string) (contracts.TorrentSpec, contracts.StreamMeta, error) {
 	if link == "" {
 		return contracts.TorrentSpec{}, contracts.StreamMeta{}, contracts.ErrStreamLinkEmpty
 	}
@@ -81,7 +81,7 @@ func (d streamService) ParseLink(link, title, poster, category string) (contract
 	return wrapTorrentSpec(spec), meta, nil
 }
 
-func (d streamService) ParseTorrentFile(reader io.Reader) (contracts.TorrentSpec, error) {
+func (streamService) ParseTorrentFile(reader io.Reader) (contracts.TorrentSpec, error) {
 	spec, err := torrentparse.ParseReader(reader)
 	if err != nil {
 		return contracts.TorrentSpec{}, err
@@ -90,7 +90,12 @@ func (d streamService) ParseTorrentFile(reader io.Reader) (contracts.TorrentSpec
 	return wrapTorrentSpec(spec), nil
 }
 
-func (d streamService) EnsureTorrent(torrents contracts.TorrentService, spec contracts.TorrentSpec, meta contracts.StreamMeta, allowCreate bool) (contracts.TorrentHandle, error) {
+func (streamService) EnsureTorrent(
+	torrents contracts.TorrentStreamService,
+	spec contracts.TorrentSpec,
+	meta contracts.StreamMeta,
+	allowCreate bool,
+) (contracts.TorrentHandle, error) {
 	log.Debug("EnsureTorrent: starting", "hash", spec.HashHex())
 	log.Debug("EnsureTorrent: about to call torrents.Get")
 
@@ -179,7 +184,7 @@ func (d streamService) EnsureTorrent(torrents contracts.TorrentService, spec con
 	return tor, nil
 }
 
-func (d streamService) ParseFileIndex(index string, fileCount int) (int, error) {
+func (streamService) ParseFileIndex(index string, fileCount int) (int, error) {
 	if fileCount == 1 {
 		return 1, nil
 	}
@@ -192,7 +197,7 @@ func (d streamService) ParseFileIndex(index string, fileCount int) (int, error) 
 	return ind, nil
 }
 
-func (d streamService) NormalizePlaylistName(rawName, fallback string) string {
+func (streamService) NormalizePlaylistName(rawName, fallback string) string {
 	name := strings.ReplaceAll(rawName, `/`, "")
 	if name == "" {
 		return fallback + ".m3u"

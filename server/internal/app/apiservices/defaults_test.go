@@ -1,12 +1,12 @@
 package apiservices
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/anacrolix/torrent"
 
 	"server/internal/app/contracts"
-	"server/settings"
 	"server/torr"
 	"server/torr/state"
 )
@@ -135,17 +135,37 @@ func TestEnsureTorrent_DBTorrentRequiresActivationPermission(t *testing.T) {
 	}
 }
 
-func TestResolveDefaultDeps_UsesNoopSettingsProvider(t *testing.T) {
-	resolved := resolveDefaultDeps(DefaultDeps{})
-	if resolved.SettingsProvider == nil {
-		t.Fatal("SettingsProvider is nil")
+func TestNewDefaultWithDepsReturnsErrorOnMissingRequiredDeps(t *testing.T) {
+	services, err := NewDefaultWithDeps(DefaultDeps{})
+	if err == nil {
+		t.Fatal("expected NewDefaultWithDeps to return missing dependencies error")
 	}
 
-	if resolved.SettingsProvider == settings.DefaultSettingsProvider {
-		t.Fatal("SettingsProvider unexpectedly bound to DefaultSettingsProvider")
+	if services != nil {
+		t.Fatalf("services = %v, want nil", services)
 	}
 
-	if got := resolved.SettingsProvider.Get(); got == nil {
-		t.Fatal("SettingsProvider.Get() returned nil")
+	message := err.Error()
+	if !strings.Contains(message, "TorrentBackend") || !strings.Contains(message, "SettingsProvider") {
+		t.Fatalf("expected missing dependencies in error, got %q", message)
+	}
+}
+
+func TestNewDefaultForTestsUsesExplicitNoopFallbacks(t *testing.T) {
+	services, err := NewDefaultForTests(DefaultDeps{})
+	if err != nil {
+		t.Fatalf("NewDefaultForTests returned error: %v", err)
+	}
+
+	if services == nil {
+		t.Fatal("services is nil")
+	}
+
+	if services.Settings == nil {
+		t.Fatal("Settings service is nil")
+	}
+
+	if got := services.Settings.Current(); got == nil {
+		t.Fatal("Settings.Current() returned nil")
 	}
 }

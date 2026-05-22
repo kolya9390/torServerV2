@@ -29,7 +29,7 @@ func ffp(c *gin.Context) {
 		return
 	}
 
-	data, err := servicesFromContext(c).Media.ProbePlayURL(hash, indexStr)
+	data, err := mediaDepsFromContext(c).Media.ProbePlayURL(hash, indexStr)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, newInternalError("error getting data from ffprobe", err))
 

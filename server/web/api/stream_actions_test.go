@@ -47,6 +47,7 @@ type testStreamService struct {
 	parseMeta         contracts.StreamMeta
 	ensureTorrentErr  error
 	ensureTorrentTor  contracts.TorrentHandle
+	ensureAllowCreate bool
 	parseFileIndexVal int
 	parseFileIndexErr error
 	normalizeResult   string
@@ -66,7 +67,9 @@ func (m *testStreamService) ParseTorrentFile(reader io.Reader) (contracts.Torren
 	return contracts.NewTorrentSpec("0102030405060708090a0b0c0d0e0f1011121314", nil), nil
 }
 
-func (m *testStreamService) EnsureTorrent(torrents contracts.TorrentService, spec contracts.TorrentSpec, meta contracts.StreamMeta, allowCreate bool) (contracts.TorrentHandle, error) {
+func (m *testStreamService) EnsureTorrent(torrents contracts.TorrentStreamService, spec contracts.TorrentSpec, meta contracts.StreamMeta, allowCreate bool) (contracts.TorrentHandle, error) {
+	m.ensureAllowCreate = allowCreate
+
 	if m.ensureTorrentErr != nil {
 		return nil, m.ensureTorrentErr
 	}
@@ -103,6 +106,11 @@ type testTorrentService struct {
 	saveToDBCalled bool
 	dropCalled     bool
 	readiness      contracts.DropReadiness
+
+	finalizeCalled bool
+	finalizeTor    contracts.TorrentHandle
+	finalizeSpec   *contracts.TorrentSpec
+	finalizeSave   bool
 }
 
 func (m *testTorrentService) Add(spec contracts.TorrentSpec, title, poster, data, category string) (contracts.TorrentHandle, error) {
@@ -196,11 +204,16 @@ func (m *testTorrentService) CacheStateByHash(hash string) (any, bool) {
 }
 
 func (m *testTorrentService) EnqueuePreload(tor contracts.TorrentHandle, index int) bool {
-	return false
+	return true
 }
 
 func (m *testTorrentService) EnqueueMetadataFinalize(tor contracts.TorrentHandle, spec *contracts.TorrentSpec, saveToDB bool) bool {
-	return false
+	m.finalizeCalled = true
+	m.finalizeTor = tor
+	m.finalizeSpec = spec
+	m.finalizeSave = saveToDB
+
+	return true
 }
 
 func (m *testTorrentService) LoadFromDB(tor contracts.TorrentHandle) contracts.TorrentHandle {
@@ -362,6 +375,86 @@ func TestStreamServiceParseLink(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestLegacyStreamStatSaveCombinationKeepsCompatibility(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tor := testTorrentHandle{
+		status: &state.TorrentStatus{Hash: "0102030405060708090a0b0c0d0e0f1011121314", Title: "Demo"},
+		hash:   "0102030405060708090a0b0c0d0e0f1011121314",
+		name:   "Demo",
+		files:  1,
+	}
+	torrentsSvc := &testTorrentService{getResult: tor}
+	streamSvc := &testStreamService{ensureTorrentTor: tor}
+
+	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
+		Torrents: torrentsSvc,
+		Streams:  streamSvc,
+	})))
+	r.GET("/stream", stream)
+
+	req := httptest.NewRequest(http.MethodGet, "/stream?link=magnet:?xt=urn:btih:abc123&stat&save", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if !torrentsSvc.saveToDBCalled {
+		t.Fatal("expected legacy stat+save combination to save torrent before returning status")
+	}
+
+	if !strings.Contains(w.Body.String(), `"hash":"0102030405060708090a0b0c0d0e0f1011121314"`) {
+		t.Fatalf("expected torrent status response, got %s", w.Body.String())
+	}
+}
+
+func TestLegacyStreamUnauthenticatedM3UUsesReadOnlyActivation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tor := testTorrentHandle{
+		status: &state.TorrentStatus{
+			Hash: "0102030405060708090a0b0c0d0e0f1011121314",
+			FileStats: []*state.TorrentFileStat{
+				{ID: 1, Path: "demo.mp4"},
+			},
+		},
+		hash:  "0102030405060708090a0b0c0d0e0f1011121314",
+		name:  "Demo",
+		files: 1,
+	}
+	streamSvc := &testStreamService{ensureTorrentTor: tor}
+
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("auth_required", true)
+	})
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
+		Torrents: &testTorrentService{getResult: tor},
+		Streams:  streamSvc,
+		Playback: playbackStub{m3uResult: "#EXTM3U\n#EXTINF:0,Demo\nhttp://example.test/stream/demo.mp4\n"},
+	})))
+	r.GET("/stream", stream)
+
+	req := httptest.NewRequest(http.MethodGet, "/stream?link=magnet:?xt=urn:btih:abc123&m3u", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if streamSvc.ensureAllowCreate {
+		t.Fatal("expected unauthenticated legacy m3u to avoid creating torrents")
+	}
+
+	if !strings.Contains(w.Body.String(), "#EXTM3U") {
+		t.Fatalf("expected m3u body, got %s", w.Body.String())
 	}
 }
 

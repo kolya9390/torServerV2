@@ -16,6 +16,12 @@ type streamFlags struct {
 	preload, stat, save, m3u, fromlast, play bool
 }
 
+type legacyStreamTarget struct {
+	tor           contracts.TorrentHandle
+	index         int
+	preloadQueued bool
+}
+
 // validateStreamRequest extracts boolean query flags from the stream request.
 func validateStreamRequest(c *gin.Context) streamFlags {
 	_, preload := c.GetQuery("preload")
@@ -76,163 +82,62 @@ func handleStreamAuth(c *gin.Context, link string, notAuth, play, m3u bool) bool
 //	@Success		200	"Data returned according to query"
 //	@Router			/stream [get]
 func stream(c *gin.Context) {
-	svc := servicesFromContext(c)
-	link := c.Query("link")
+	deps := streamDepsFromContext(c)
 	f := validateStreamRequest(c)
 
-	// Backward-compatibility layer: route simple/explicit legacy intents.
-	if f.stat && !f.play && !f.save && !f.m3u {
-		streamStat(c)
-
+	if handleExplicitLegacyStream(c, f) {
 		return
 	}
 
-	if f.m3u && !f.play && !f.save && !f.stat {
-		streamM3U(c)
+	handleLegacyStreamCompatibility(c, deps, f)
+}
 
-		return
-	}
-
-	if f.save && !f.play && !f.stat && !f.m3u {
-		streamSave(c)
-
-		return
-	}
-
-	if f.play && !f.stat && !f.m3u && !f.save {
-		streamPlay(c)
-
-		return
-	}
-
+func handleLegacyStreamCompatibility(c *gin.Context, deps streamHandlerDeps, f streamFlags) {
+	link := c.Query("link")
 	notAuth := c.GetBool("auth_required") && c.GetString(gin.AuthUserKey) == ""
+
 	if handleStreamAuth(c, link, notAuth, f.play, f.m3u) {
 		return
 	}
 
-	if link == "" {
-		abortAPIError(c, http.StatusBadRequest, newValidationError("link", "should not be empty"))
-
-		return
-	}
-
-	spec, meta, err := parseStreamLink(c)
-	if err != nil {
-		abortAPIError(c, http.StatusBadRequest, err)
-
-		return
-	}
-
-	tor, err := svc.Streams.EnsureTorrent(svc.Torrents, spec, contracts.StreamMeta{
-		Title:    meta.title,
-		Poster:   meta.poster,
-		Category: meta.category,
-		Data:     meta.data,
-	}, true)
-	if err != nil {
-		statusCode, apiErr := mapStreamEnsureError(err)
-		abortAPIError(c, statusCode, apiErr)
-
+	target, ok := prepareLegacyStreamTarget(c, deps, true, f.play || f.preload)
+	if !ok {
 		return
 	}
 
 	// Legacy: save can be combined with play/m3u.
 	if f.save {
-		svc.Torrents.SaveToDB(tor)
+		deps.Torrents.SaveToDB(target.tor)
 	}
 
-	index, err := parseStreamFileIndex(c, tor.FileCount())
-	if err != nil && (f.play || f.preload) {
-		abortAPIError(c, http.StatusBadRequest, err)
-
-		return
-	}
-
-	preloadQueued := false
 	if f.preload {
-		preloadQueued = svc.Torrents.EnqueuePreload(tor, index)
-		if !preloadQueued {
-			log.TLogln("preload queue is full, skipping preload")
-		}
+		target.preloadQueued = enqueueLegacyPreload(deps, target.tor, target.index)
 	}
 
-	if f.preload && !f.stat && !f.m3u && !f.play && !f.save {
-		if !preloadQueued {
-			abortAPIError(c, http.StatusServiceUnavailable, newInternalError("preload queue is full", nil))
-
-			return
-		}
-
-		c.JSON(http.StatusAccepted, gin.H{"status": "preload accepted", "hash": tor.HashHex()})
-
-		return
-	}
-
-	if f.stat {
-		c.JSON(200, tor.Status())
-
-		return
-	}
-
-	if f.m3u {
-		name := svc.Streams.NormalizePlaylistName(c.Param("fname"), tor.Name())
-		host := utils2.GetScheme(c) + "://" + utils2.GetHost(c)
-		m3ulist := svc.Playback.BuildM3UFromStatus(tor.Status(), host, f.fromlast, svc.Viewed)
-		sendM3U(c, name, tor.HashHex(), m3ulist)
-
-		return
-	}
-
-	if f.play {
-		if err := c.Request.Context().Err(); err != nil {
-			abortAPIError(c, http.StatusRequestTimeout, newValidationError("request", "request canceled"))
-
-			return
-		}
-
-		if err := tor.Stream(index, c.Request, c.Writer); err != nil {
-			c.Error(err) //nolint:errcheck // gin adds error to context
-		}
-
-		return
-	}
-
-	if f.save {
-		c.Status(200)
-
-		return
-	}
-
-	abortAPIError(c, http.StatusBadRequest, newValidationError("action", "no supported stream action specified"))
+	handleLegacyStreamAction(c, deps, f, target)
 }
 
-func streamNoAuth(c *gin.Context) {
-	svc := servicesFromContext(c)
+func prepareLegacyStreamTarget(c *gin.Context, deps streamHandlerDeps, allowCreate, requireValidIndex bool) (legacyStreamTarget, bool) {
 	link := c.Query("link")
-	_, preload := c.GetQuery("preload")
-	_, m3u := c.GetQuery("m3u")
-	_, fromlast := c.GetQuery("fromlast")
-	_, play := c.GetQuery("play")
-
 	if link == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("link", "should not be empty"))
 
-		return
+		return legacyStreamTarget{}, false
 	}
 
-	spec, meta, err := parseStreamLink(c)
+	spec, meta, err := parseStreamLink(c, deps.Parser)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
 
-		return
+		return legacyStreamTarget{}, false
 	}
 
-	tor, err := svc.Streams.EnsureTorrent(svc.Torrents, spec, contracts.StreamMeta{
+	tor, err := deps.Streams.EnsureTorrent(deps.Torrents, spec, contracts.StreamMeta{
 		Title:    meta.title,
 		Poster:   meta.poster,
 		Category: meta.category,
 		Data:     meta.data,
-	}, false)
+	}, allowCreate)
 	if err != nil {
 		statusCode, apiErr := mapStreamEnsureError(err)
 		if statusCode == http.StatusUnauthorized {
@@ -241,41 +146,108 @@ func streamNoAuth(c *gin.Context) {
 
 		abortAPIError(c, statusCode, apiErr)
 
-		return
+		return legacyStreamTarget{}, false
 	}
 
-	index, err := parseStreamFileIndex(c, tor.FileCount())
-	if err != nil && play {
+	index, err := parseStreamFileIndex(c, deps.Parser, tor.FileCount())
+	if err != nil && requireValidIndex {
 		abortAPIError(c, http.StatusBadRequest, err)
 
-		return
+		return legacyStreamTarget{}, false
 	}
 
-	if preload {
-		if queued := svc.Torrents.EnqueuePreload(tor, index); !queued {
-			log.TLogln("preload queue is full, skipping preload")
-		}
+	return legacyStreamTarget{tor: tor, index: index}, true
+}
+
+func handleExplicitLegacyStream(c *gin.Context, f streamFlags) bool {
+	switch {
+	case f.stat && !f.play && !f.save && !f.m3u:
+		streamStat(c)
+	case f.m3u && !f.play && !f.save && !f.stat:
+		streamM3U(c)
+	case f.save && !f.play && !f.stat && !f.m3u:
+		streamSave(c)
+	case f.play && !f.stat && !f.m3u && !f.save:
+		streamPlay(c)
+	default:
+		return false
 	}
 
-	if m3u {
-		name := svc.Streams.NormalizePlaylistName(c.Param("fname"), tor.Name())
-		host := utils2.GetScheme(c) + "://" + utils2.GetHost(c)
-		m3ulist := svc.Playback.BuildM3UFromStatus(tor.Status(), host, fromlast, svc.Viewed)
-		sendM3U(c, name, tor.HashHex(), m3ulist)
+	return true
+}
 
-		return
-	}
-
-	if play {
-		if err := c.Request.Context().Err(); err != nil {
-			abortAPIError(c, http.StatusRequestTimeout, newValidationError("request", "request canceled"))
+func handleLegacyStreamAction(c *gin.Context, deps streamHandlerDeps, f streamFlags, target legacyStreamTarget) {
+	switch {
+	case f.preload && !f.stat && !f.m3u && !f.play && !f.save:
+		if !target.preloadQueued {
+			abortAPIError(c, http.StatusServiceUnavailable, newInternalError("preload queue is full", nil))
 
 			return
 		}
 
-		if err := tor.Stream(index, c.Request, c.Writer); err != nil {
-			c.Error(err) //nolint:errcheck // gin adds error to context
-		}
+		c.JSON(http.StatusAccepted, gin.H{"status": "preload accepted", "hash": target.tor.HashHex()})
+	case f.stat:
+		c.JSON(200, target.tor.Status())
+	case f.m3u:
+		sendLegacyStreamM3U(c, deps, target.tor, f.fromlast)
+	case f.play:
+		streamTorrentFile(c, target.tor, target.index)
+	case f.save:
+		c.Status(200)
+	default:
+		abortAPIError(c, http.StatusBadRequest, newValidationError("action", "no supported stream action specified"))
+	}
+}
+
+func enqueueLegacyPreload(deps streamHandlerDeps, tor contracts.TorrentHandle, index int) bool {
+	queued := deps.Torrents.EnqueuePreload(tor, index)
+	if !queued {
+		log.TLogln("preload queue is full, skipping preload")
+	}
+
+	return queued
+}
+
+func sendLegacyStreamM3U(c *gin.Context, deps streamHandlerDeps, tor contracts.TorrentHandle, fromlast bool) {
+	name := deps.Helpers.NormalizePlaylistName(c.Param("fname"), tor.Name())
+	host := utils2.GetScheme(c) + "://" + utils2.GetHost(c)
+	m3ulist := deps.Playback.BuildM3UFromStatus(tor.Status(), host, fromlast, deps.Viewed)
+	sendM3U(c, name, tor.HashHex(), m3ulist)
+}
+
+func streamTorrentFile(c *gin.Context, tor contracts.TorrentHandle, index int) {
+	if err := c.Request.Context().Err(); err != nil {
+		abortAPIError(c, http.StatusRequestTimeout, newValidationError("request", "request canceled"))
+
+		return
+	}
+
+	if err := tor.Stream(index, c.Request, c.Writer); err != nil {
+		c.Error(err) //nolint:errcheck // gin adds error to context
+	}
+}
+
+func streamNoAuth(c *gin.Context) {
+	deps := streamDepsFromContext(c)
+	f := validateStreamRequest(c)
+
+	target, ok := prepareLegacyStreamTarget(c, deps, false, f.play)
+	if !ok {
+		return
+	}
+
+	if f.preload {
+		target.preloadQueued = enqueueLegacyPreload(deps, target.tor, target.index)
+	}
+
+	if f.m3u {
+		sendLegacyStreamM3U(c, deps, target.tor, f.fromlast)
+
+		return
+	}
+
+	if f.play {
+		streamTorrentFile(c, target.tor, target.index)
 
 		return
 	}

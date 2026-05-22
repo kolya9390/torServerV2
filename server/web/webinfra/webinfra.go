@@ -64,11 +64,11 @@ func NewCORSServiceWithProviders(argsProvider settings.ArgsProvider) CORSService
 
 // NewSSLService creates a new instance of SSLService.
 func NewSSLService() SSLService {
-	return NewSSLServiceWithProvidersAndRuntime(settings.DefaultSettingsProvider, settings.DefaultArgsProvider, settings.GetRuntimeState)
+	return NewSSLServiceWithProvidersAndRuntime(settings.DefaultSettingsProvider, settings.DefaultArgsProvider, settings.DefaultRuntimeStateProvider)
 }
 
 func NewSSLServiceWithProviders(provider settings.SettingsProvider, argsProvider settings.ArgsProvider) SSLService {
-	return NewSSLServiceWithProvidersAndRuntime(provider, argsProvider, settings.GetRuntimeState)
+	return NewSSLServiceWithProvidersAndRuntime(provider, argsProvider, settings.DefaultRuntimeStateProvider)
 }
 
 func NewSSLServiceWithProvidersAndRuntime(provider settings.SettingsProvider, argsProvider settings.ArgsProvider, runtimeState func() settings.RuntimeState) SSLService {

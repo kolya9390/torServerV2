@@ -118,7 +118,7 @@ func (runtimeCtx dlnaRuntimeContext) getTorrent(path, host string) (ret []any) {
 	return
 }
 
-func (runtimeCtx dlnaRuntimeContext) getTorrentMeta(path, host string) (ret any) {
+func getTorrentMeta(path string) (ret any) {
 	// Meta object
 	if path == "/" {
 		// root object meta

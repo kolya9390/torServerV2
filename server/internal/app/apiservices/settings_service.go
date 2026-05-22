@@ -59,7 +59,7 @@ func (d settingsService) GetStoragePreferences() map[string]any {
 }
 
 func (d settingsService) SetStoragePreferences(prefs map[string]any) error {
-	return nil
+	return d.provider.SetStoragePreferences(prefs)
 }
 
 func (d settingsService) TMDBConfig() (sets.TMDBConfig, bool) {

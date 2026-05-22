@@ -2,7 +2,9 @@ package torrstor
 
 import (
 	"context"
+	"errors"
 
+	"server/log"
 	"server/settings"
 
 	"github.com/anacrolix/torrent/metainfo"
@@ -46,16 +48,20 @@ func (m *storageCacheManager) OpenTorrent(ctx context.Context, info *metainfo.In
 
 func (m *storageCacheManager) CloseHash(hash metainfo.Hash) {
 	if ch := m.registry.Delete(hash); ch != nil {
-		_ = ch.Close()
+		if err := ch.Close(); err != nil {
+			log.TLogln("Error close torrent storage cache:", err)
+		}
 	}
 }
 
 func (m *storageCacheManager) Close() error {
+	var closeErr error
+
 	for _, ch := range m.registry.Drain() {
-		_ = ch.Close()
+		closeErr = errors.Join(closeErr, ch.Close())
 	}
 
-	return nil
+	return closeErr
 }
 
 func (m *storageCacheManager) GetCache(hash metainfo.Hash) *Cache {

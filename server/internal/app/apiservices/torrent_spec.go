@@ -6,19 +6,25 @@ import (
 	"server/internal/app/contracts"
 )
 
+type anacrolixTorrentSpecPayload struct {
+	spec *torrent.TorrentSpec
+}
+
+func (anacrolixTorrentSpecPayload) TorrentSpecPayload() {}
+
 func wrapTorrentSpec(spec *torrent.TorrentSpec) contracts.TorrentSpec {
 	if spec == nil {
 		return contracts.TorrentSpec{}
 	}
 
-	return contracts.NewTorrentSpec(spec.InfoHash.HexString(), spec)
+	return contracts.NewTorrentSpec(spec.InfoHash.HexString(), anacrolixTorrentSpecPayload{spec: spec})
 }
 
 func unwrapTorrentSpec(spec contracts.TorrentSpec) (*torrent.TorrentSpec, bool) {
-	raw, ok := spec.Native().(*torrent.TorrentSpec)
-	if !ok || raw == nil {
+	payload, ok := spec.Payload().(anacrolixTorrentSpecPayload)
+	if !ok || payload.spec == nil {
 		return nil, false
 	}
 
-	return raw, true
+	return payload.spec, true
 }

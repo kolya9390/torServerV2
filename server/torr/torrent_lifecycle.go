@@ -174,26 +174,6 @@ func (t *Torrent) expired() bool {
 		(st == state.TorrentWorking || st == state.TorrentClosed)
 }
 
-func shouldExpireTorrent(readers int, hasReusableReaders, recentPlayback bool, nowNs, expNs int64, st state.TorrentStat) bool {
-	if readers > 0 {
-		return false
-	}
-
-	if hasReusableReaders {
-		return false
-	}
-
-	if recentPlayback {
-		return false
-	}
-
-	if expNs == 0 || nowNs <= expNs {
-		return false
-	}
-
-	return st == state.TorrentWorking || st == state.TorrentClosed
-}
-
 func (t *Torrent) drop() {
 	t.muTorrent.Lock()
 	defer t.muTorrent.Unlock()

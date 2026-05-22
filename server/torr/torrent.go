@@ -154,31 +154,6 @@ func estimatePlaybackTorrents(activeStreams int32, localReaders int) int {
 	return torrents
 }
 
-func adaptiveMinCacheCapacity(baseCap int64, playbackTorrents int) int64 {
-	if baseCap <= 0 {
-		return 16 << 20
-	}
-
-	if playbackTorrents <= 0 {
-		playbackTorrents = 1
-	}
-
-	minCap := baseCap / 4
-	if playbackTorrents > 4 {
-		minCap = baseCap / int64(playbackTorrents)
-	}
-
-	if minCap < 16<<20 {
-		minCap = 16 << 20
-	}
-
-	if minCap > 64<<20 {
-		minCap = 64 << 20
-	}
-
-	return minCap
-}
-
 func adaptiveCacheCapacity(baseCap int64, playbackTorrents int) int64 {
 	_ = playbackTorrents
 

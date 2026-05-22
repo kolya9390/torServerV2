@@ -3,10 +3,10 @@ package api
 import (
 	"errors"
 	"net/http"
-	"server/internal/app/contracts"
 	"strings"
 	"time"
 
+	"server/internal/app/contracts"
 	"server/log"
 
 	"github.com/gin-gonic/gin"
@@ -38,7 +38,7 @@ type torrReqJS struct {
 //	@Success		200
 //	@Router			/torrents [post]
 func torrents(c *gin.Context) {
-	svc := servicesFromContext(c)
+	deps := torrentDepsFromContext(c)
 
 	var req torrReqJS
 
@@ -59,19 +59,19 @@ func torrents(c *gin.Context) {
 
 	switch req.Action {
 	case "add":
-		addTorrent(svc, req, c)
+		addTorrent(deps, req, c)
 	case "get":
-		getTorrent(svc, req, c)
+		getTorrent(deps, req, c)
 	case "set":
-		setTorrent(svc, req, c)
+		setTorrent(deps, req, c)
 	case "rem":
-		remTorrent(svc, req, c)
+		remTorrent(deps, req, c)
 	case "list":
-		listTorrents(svc, c)
+		listTorrents(deps, c)
 	case "drop":
-		dropTorrent(svc, req, c)
+		dropTorrent(deps, req, c)
 	case "wipe":
-		wipeTorrents(svc, c)
+		wipeTorrents(deps, c)
 	default:
 		abortAPIError(c, http.StatusBadRequest, newValidationError("action", "must be one of: add, get, set, rem, list, drop, wipe"))
 	}
@@ -95,7 +95,7 @@ func logTorrentsActionRequest(c *gin.Context, req torrReqJS) {
 	)
 }
 
-func addTorrent(svc *contracts.APIServices, req torrReqJS, c *gin.Context) {
+func addTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {
 	if req.Link == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("link", "is required for action=add"))
 
@@ -105,7 +105,7 @@ func addTorrent(svc *contracts.APIServices, req torrReqJS, c *gin.Context) {
 	log.TLogln("add torrent", req.Link)
 	req.Link = strings.ReplaceAll(req.Link, "&amp;", "&")
 
-	torrSpec, meta, err := svc.Streams.ParseLink(req.Link, req.Title, req.Poster, req.Category)
+	torrSpec, meta, err := deps.Parser.ParseLink(req.Link, req.Title, req.Poster, req.Category)
 	if err != nil {
 		log.TLogln("error parse torrent link:", err)
 		abortAPIError(c, http.StatusBadRequest, torrentLinkValidationError(err))
@@ -121,25 +121,25 @@ func addTorrent(svc *contracts.APIServices, req torrReqJS, c *gin.Context) {
 	// Fast path for chatty clients: if torrent is already active in memory,
 	// don't call Add again (can block under heavy concurrent stream load).
 	log.TLogln("[TRACE] addTorrent: before Torrents.Get, hash=", hashHex)
-	existing := svc.Torrents.Get(hashHex)
+	existing := deps.Queries.Get(hashHex)
 	log.TLogln("[TRACE] addTorrent: after Torrents.Get, hash=", hashHex, " tor=", existing != nil)
 
-	if existing != nil && !svc.Torrents.IsStored(existing) {
+	if existing != nil && !deps.Queries.IsStored(existing) {
 		if req.SaveToDB {
 			log.TLogln("[TRACE] addTorrent: enqueue save_to_db finalize, hash=", hashHex)
 
-			_ = svc.Torrents.EnqueueMetadataFinalize(existing, nil, true)
+			_ = deps.Commands.EnqueueMetadataFinalize(existing, nil, true)
 		}
 
 		log.TLogln("[TRACE] addTorrent: returning fast-path status, hash=", hashHex)
-		c.JSON(200, svc.Torrents.Status(existing))
+		c.JSON(200, deps.Queries.Status(existing))
 
 		return
 	}
 
 	log.Debug("addTorrent: calling Torrents.Add", "hash", hashHex)
 
-	tor, err := svc.Torrents.Add(torrSpec, req.Title, req.Poster, req.Data, req.Category)
+	tor, err := deps.Commands.Add(torrSpec, req.Title, req.Poster, req.Data, req.Category)
 	if err != nil {
 		log.TLogln("error add torrent:", err)
 		abortAPIError(c, http.StatusInternalServerError, newInternalError("failed to add torrent", err))
@@ -149,16 +149,16 @@ func addTorrent(svc *contracts.APIServices, req torrReqJS, c *gin.Context) {
 
 	log.Debug("addTorrent: Torrents.Add succeeded", "hash", hashHex)
 
-	_ = svc.Torrents.EnqueueMetadataFinalize(tor, &torrSpec, req.SaveToDB)
+	_ = deps.Commands.EnqueueMetadataFinalize(tor, &torrSpec, req.SaveToDB)
 
-	if svc.Settings.EnableDLNA() {
-		modulesErr := svc.Modules.RestartDLNA(true)
+	if deps.Settings.EnableDLNA() {
+		modulesErr := deps.Modules.RestartDLNA(true)
 		if modulesErr != nil {
 			log.TLogln("dlna restart error:", modulesErr)
 		}
 	}
 
-	c.JSON(200, svc.Torrents.Status(tor))
+	c.JSON(200, deps.Queries.Status(tor))
 }
 
 func torrentLinkValidationError(err error) error {
@@ -172,7 +172,7 @@ func torrentLinkValidationError(err error) error {
 	}
 }
 
-func getTorrent(svc *contracts.APIServices, req torrReqJS, c *gin.Context) {
+func getTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {
 	if req.Hash == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "is required for action=get"))
 
@@ -180,7 +180,7 @@ func getTorrent(svc *contracts.APIServices, req torrReqJS, c *gin.Context) {
 	}
 
 	log.TLogln("[TRACE] getTorrent: before Torrents.StatusByHash, hash=", req.Hash)
-	st, found := svc.Torrents.StatusByHash(req.Hash)
+	st, found := deps.Queries.StatusByHash(req.Hash)
 	log.TLogln("[TRACE] getTorrent: after Torrents.StatusByHash, hash=", req.Hash, " found=", found)
 
 	if found {
@@ -191,28 +191,28 @@ func getTorrent(svc *contracts.APIServices, req torrReqJS, c *gin.Context) {
 	}
 }
 
-func setTorrent(svc *contracts.APIServices, req torrReqJS, c *gin.Context) {
+func setTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {
 	if req.Hash == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "is required for action=set"))
 
 		return
 	}
 
-	svc.Torrents.Set(req.Hash, req.Title, req.Poster, req.Category, req.Data)
+	deps.Commands.Set(req.Hash, req.Title, req.Poster, req.Category, req.Data)
 	c.Status(200)
 }
 
-func remTorrent(svc *contracts.APIServices, req torrReqJS, c *gin.Context) {
+func remTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {
 	if req.Hash == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "is required for action=rem"))
 
 		return
 	}
 
-	svc.Torrents.Remove(req.Hash)
+	deps.Commands.Remove(req.Hash)
 	// Restart DLNA to reflect updated torrent list
-	if svc.Settings.EnableDLNA() {
-		if err := svc.Modules.RestartDLNA(true); err != nil {
+	if deps.Settings.EnableDLNA() {
+		if err := deps.Modules.RestartDLNA(true); err != nil {
 			log.TLogln("dlna restart error:", err)
 		}
 	}
@@ -220,18 +220,18 @@ func remTorrent(svc *contracts.APIServices, req torrReqJS, c *gin.Context) {
 	c.Status(200)
 }
 
-func listTorrents(svc *contracts.APIServices, c *gin.Context) {
-	c.JSON(200, svc.Torrents.Statuses())
+func listTorrents(deps torrentHandlerDeps, c *gin.Context) {
+	c.JSON(200, deps.Queries.Statuses())
 }
 
-func dropTorrent(svc *contracts.APIServices, req torrReqJS, c *gin.Context) {
+func dropTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {
 	if req.Hash == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("hash", "is required for action=drop"))
 
 		return
 	}
 
-	readiness := svc.Torrents.DropReadiness(req.Hash)
+	readiness := deps.Commands.DropReadiness(req.Hash)
 	if readiness.ActiveReaders > 0 {
 		log.TLogln("drop skipped: active readers", "hash=", req.Hash, "readers=", readiness.ActiveReaders)
 		abortAPIError(c, http.StatusConflict, newConflictError("torrent has active streams"))
@@ -256,17 +256,17 @@ func dropTorrent(svc *contracts.APIServices, req torrReqJS, c *gin.Context) {
 		return
 	}
 
-	svc.Torrents.Drop(req.Hash)
+	deps.Commands.Drop(req.Hash)
 	c.Status(200)
 }
 
-func wipeTorrents(svc *contracts.APIServices, c *gin.Context) {
-	for _, hash := range svc.Torrents.ListHashes() {
-		svc.Torrents.Remove(hash)
+func wipeTorrents(deps torrentHandlerDeps, c *gin.Context) {
+	for _, hash := range deps.Queries.ListHashes() {
+		deps.Commands.Remove(hash)
 	}
 	// Restart DLNA to reflect updated torrent list
-	if svc.Settings.EnableDLNA() {
-		if err := svc.Modules.RestartDLNA(true); err != nil {
+	if deps.Settings.EnableDLNA() {
+		if err := deps.Modules.RestartDLNA(true); err != nil {
 			log.TLogln("dlna restart error:", err)
 		}
 	}

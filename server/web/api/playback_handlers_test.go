@@ -20,11 +20,11 @@ type playbackStub struct {
 	m3uResult   string
 }
 
-func (s playbackStub) BuildAllPlaylist(host string, torrents contracts.TorrentService) contracts.PlaylistPayload {
+func (s playbackStub) BuildAllPlaylist(host string, torrents contracts.TorrentPlaylistService) contracts.PlaylistPayload {
 	return s.allRes
 }
 
-func (s playbackStub) BuildPlaylistByHash(hash, requestedName string, fromLast bool, host string, torrents contracts.TorrentService, viewed contracts.ViewedService) (contracts.PlaylistPayload, error) {
+func (s playbackStub) BuildPlaylistByHash(hash, requestedName string, fromLast bool, host string, torrents contracts.TorrentPlaylistService, viewed contracts.ViewedService) (contracts.PlaylistPayload, error) {
 	return s.playlistRes, s.playlistErr
 }
 
@@ -32,7 +32,7 @@ func (s playbackStub) BuildM3UFromStatus(tor *state.TorrentStatus, host string, 
 	return s.m3uResult
 }
 
-func (s playbackStub) ResolvePlay(hash, index string, unauthorized bool, torrents contracts.TorrentService) (contracts.PlayTarget, error) {
+func (s playbackStub) ResolvePlay(hash, index string, unauthorized bool, torrents contracts.TorrentPlayService) (contracts.PlayTarget, error) {
 	return contracts.PlayTarget{}, s.resolveErr
 }
 

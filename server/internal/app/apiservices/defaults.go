@@ -1,6 +1,9 @@
 package apiservices
 
 import (
+	"fmt"
+	"strings"
+
 	"server/internal/app/contracts"
 	sets "server/settings"
 	"server/torr"
@@ -49,41 +52,47 @@ type streamService struct{}
 type playbackService struct{}
 
 // NewDefault constructs the default API application services using runtime adapters.
-func NewDefault() *contracts.APIServices {
+func NewDefault() (*contracts.APIServices, error) {
 	return NewDefaultWithDeps(DefaultDeps{})
 }
 
-func NewDefaultWithDeps(deps DefaultDeps) *contracts.APIServices {
-	resolved := resolveDefaultDeps(deps)
+func NewDefaultWithDeps(deps DefaultDeps) (*contracts.APIServices, error) {
+	if err := validateDefaultDeps(deps); err != nil {
+		return nil, err
+	}
 
 	return &contracts.APIServices{
 		Torrents: torrentService{
-			backend:        resolved.TorrentBackend,
-			runtimeSignals: resolved.RuntimeSignals,
+			backend:        deps.TorrentBackend,
+			runtimeSignals: deps.RuntimeSignals,
 		},
 		Settings: settingsService{
-			provider:          resolved.SettingsProvider,
-			runtimeController: resolved.RuntimeController,
-			runtimeState:      resolved.RuntimeState,
+			provider:          deps.SettingsProvider,
+			runtimeController: deps.RuntimeController,
+			runtimeState:      deps.RuntimeState,
 		},
 		Viewed: viewedService{
-			setViewed:    resolved.SetViewed,
-			removeViewed: resolved.RemoveViewed,
-			listViewed:   resolved.ListViewed,
+			setViewed:    deps.SetViewed,
+			removeViewed: deps.RemoveViewed,
+			listViewed:   deps.ListViewed,
 		},
-		System: systemService{runtimeController: resolved.RuntimeController},
-		Search: searchService{provider: resolved.SettingsProvider},
-		Media:  mediaService{runtimeState: resolved.RuntimeState},
+		System: systemService{runtimeController: deps.RuntimeController},
+		Search: searchService{provider: deps.SettingsProvider},
+		Media:  mediaService{runtimeState: deps.RuntimeState},
 		Modules: modulesService{
-			provider:     resolved.SettingsProvider,
-			argsProvider: resolved.ArgsProvider,
+			provider:     deps.SettingsProvider,
+			argsProvider: deps.ArgsProvider,
 		},
 		Streams:  streamService{},
 		Playback: playbackService{},
-	}
+	}, nil
 }
 
-func resolveDefaultDeps(deps DefaultDeps) DefaultDeps {
+func NewDefaultForTests(deps DefaultDeps) (*contracts.APIServices, error) {
+	return NewDefaultWithDeps(resolveDefaultDepsForTests(deps))
+}
+
+func resolveDefaultDepsForTests(deps DefaultDeps) DefaultDeps {
 	if deps.TorrentBackend == nil {
 		deps.TorrentBackend = torr.NewNoopTorrentService()
 	}
@@ -121,4 +130,34 @@ func resolveDefaultDeps(deps DefaultDeps) DefaultDeps {
 	}
 
 	return deps
+}
+
+func validateDefaultDeps(deps DefaultDeps) error {
+	missing := make([]string, 0)
+	required := []struct {
+		name    string
+		missing bool
+	}{
+		{name: "TorrentBackend", missing: deps.TorrentBackend == nil},
+		{name: "SettingsProvider", missing: deps.SettingsProvider == nil},
+		{name: "RuntimeSignals", missing: deps.RuntimeSignals == nil},
+		{name: "RuntimeController", missing: deps.RuntimeController == nil},
+		{name: "RuntimeState", missing: deps.RuntimeState == nil},
+		{name: "ArgsProvider", missing: deps.ArgsProvider == nil},
+		{name: "SetViewed", missing: deps.SetViewed == nil},
+		{name: "RemoveViewed", missing: deps.RemoveViewed == nil},
+		{name: "ListViewed", missing: deps.ListViewed == nil},
+	}
+
+	for _, dep := range required {
+		if dep.missing {
+			missing = append(missing, dep.name)
+		}
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("apiservices default deps missing: %s", strings.Join(missing, ", "))
 }

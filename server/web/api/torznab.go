@@ -23,8 +23,8 @@ import (
 //	@Success		200	{array}	torznab.TorrentDetails	"Torznab torrent search result(s)"
 //	@Router			/torznab/search [get]
 func torznabSearch(c *gin.Context) {
-	svc := servicesFromContext(c)
-	if !svc.Search.EnableTorznabSearch() {
+	deps := searchDepsFromContext(c)
+	if !deps.Search.EnableTorznabSearch() {
 		c.JSON(http.StatusBadRequest, []string{})
 
 		return
@@ -47,7 +47,7 @@ func torznabSearch(c *gin.Context) {
 
 	query = decodedQuery
 
-	list := svc.Search.TorznabSearch(query, index)
+	list := deps.Search.TorznabSearch(query, index)
 	if list == nil {
 		list = []*torznab.TorrentDetails{}
 	}
@@ -74,7 +74,7 @@ func torznabTest(c *gin.Context) {
 		return
 	}
 
-	if err := servicesFromContext(c).Search.TorznabTest(req.Host, req.Key); err != nil {
+	if err := searchDepsFromContext(c).Search.TorznabTest(req.Host, req.Key); err != nil {
 		c.JSON(200, gin.H{"success": false, "error": err.Error()})
 
 		return

@@ -257,6 +257,10 @@ func (staticSettingsProvider) GetStoragePreferences() map[string]any {
 	return map[string]any{}
 }
 
+func (staticSettingsProvider) SetStoragePreferences(map[string]any) error {
+	return nil
+}
+
 func TestRunCacheCleanupSkipsNonHashEntries(t *testing.T) {
 	tmp := t.TempDir()
 	if err := os.Mkdir(filepath.Join(tmp, "short"), 0o755); err != nil {

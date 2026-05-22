@@ -25,3 +25,7 @@ func (noopSettingsProvider) GetStaticConfig() StaticConfig {
 func (noopSettingsProvider) GetStoragePreferences() map[string]any {
 	return map[string]any{}
 }
+
+func (noopSettingsProvider) SetStoragePreferences(map[string]any) error {
+	return nil
+}

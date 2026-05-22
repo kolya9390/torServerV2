@@ -168,7 +168,11 @@ func loadNewTracker() {
 
 	resp, err := client.Get(trackerListURL)
 	if err == nil {
-		defer func() { _ = resp.Body.Close() }()
+		defer func() {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				log.TLogln("Error close tracker list response body:", closeErr)
+			}
+		}()
 
 		if resp.StatusCode != http.StatusOK {
 			return

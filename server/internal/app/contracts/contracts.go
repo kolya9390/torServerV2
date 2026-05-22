@@ -13,17 +13,23 @@ import (
 	"server/torznab"
 )
 
+// TorrentSpecPayload is an adapter-owned payload for a torrent engine implementation.
+// Application contracts keep it typed so callers cannot smuggle arbitrary unstructured values.
+type TorrentSpecPayload interface {
+	TorrentSpecPayload()
+}
+
 // TorrentSpec is an application-level torrent descriptor.
 // It intentionally hides the torrent engine implementation type from transport handlers.
 type TorrentSpec struct {
 	hashHex string
-	native  any
+	payload TorrentSpecPayload
 }
 
-func NewTorrentSpec(hashHex string, native any) TorrentSpec {
+func NewTorrentSpec(hashHex string, payload TorrentSpecPayload) TorrentSpec {
 	return TorrentSpec{
 		hashHex: hashHex,
-		native:  native,
+		payload: payload,
 	}
 }
 
@@ -31,8 +37,8 @@ func (s TorrentSpec) HashHex() string {
 	return s.hashHex
 }
 
-func (s TorrentSpec) Native() any {
-	return s.native
+func (s TorrentSpec) Payload() TorrentSpecPayload {
+	return s.payload
 }
 
 // TorrentHandle is the transport-facing view of an active torrent.
@@ -48,25 +54,91 @@ type TorrentHandle interface {
 	Stream(index int, request *http.Request, writer http.ResponseWriter) error
 }
 
-// TorrentService defines application-level torrent use-cases consumed by HTTP handlers.
-type TorrentService interface {
+// TorrentCreator creates or activates torrent handles from application specs.
+type TorrentCreator interface {
 	Add(spec TorrentSpec, title, poster, data, category string) (TorrentHandle, error)
+}
+
+// TorrentLookup reads active torrent handles and derived runtime state.
+type TorrentLookup interface {
 	Get(hash string) TorrentHandle
 	Status(tor TorrentHandle) *state.TorrentStatus
 	StatusByHash(hash string) (*state.TorrentStatus, bool)
-	Set(hash, title, poster, category, data string) TorrentHandle
-	SaveToDB(tor TorrentHandle)
-	Remove(hash string)
+	IsStored(tor TorrentHandle) bool
+}
+
+// TorrentCatalog reads torrent collection views.
+type TorrentCatalog interface {
 	List() []TorrentHandle
 	Statuses() []*state.TorrentStatus
 	ListHashes() []string
+}
+
+// TorrentMutation applies user-visible torrent changes.
+type TorrentMutation interface {
+	Set(hash, title, poster, category, data string) TorrentHandle
+	SaveToDB(tor TorrentHandle)
+	Remove(hash string)
 	Drop(hash string)
-	IsStored(tor TorrentHandle) bool
 	DropReadiness(hash string) DropReadiness
-	CacheStateByHash(hash string) (any, bool)
 	EnqueuePreload(tor TorrentHandle, index int) bool
 	EnqueueMetadataFinalize(tor TorrentHandle, spec *TorrentSpec, saveToDB bool) bool
+}
+
+// TorrentStorage reads storage/cache state for torrent-backed endpoints.
+type TorrentStorage interface {
+	CacheStateByHash(hash string) (any, bool)
+}
+
+// TorrentLoader activates a stored torrent into a playable runtime handle.
+type TorrentLoader interface {
 	LoadFromDB(tor TorrentHandle) TorrentHandle
+}
+
+// TorrentQueryService is the read-side torrent capability needed by HTTP handlers.
+type TorrentQueryService interface {
+	TorrentLookup
+	TorrentCatalog
+	TorrentStorage
+}
+
+// TorrentCommandService is the write-side torrent capability needed by HTTP handlers.
+type TorrentCommandService interface {
+	TorrentCreator
+	TorrentMutation
+}
+
+// TorrentStreamService contains the torrent capabilities needed by stream orchestration.
+type TorrentStreamService interface {
+	TorrentCreator
+	TorrentLookup
+	TorrentLoader
+}
+
+// TorrentStreamActions contains side-effect operations used by stream endpoints.
+type TorrentStreamActions interface {
+	SaveToDB(tor TorrentHandle)
+	EnqueuePreload(tor TorrentHandle, index int) bool
+}
+
+// TorrentPlaylistService contains the torrent capabilities needed to build playlists.
+type TorrentPlaylistService interface {
+	TorrentCatalog
+	TorrentLookup
+	TorrentLoader
+}
+
+// TorrentPlayService contains the torrent capabilities needed to resolve direct playback.
+type TorrentPlayService interface {
+	TorrentCreator
+	TorrentLookup
+}
+
+// TorrentService defines the full torrent use-case surface at application composition boundaries.
+type TorrentService interface {
+	TorrentQueryService
+	TorrentCommandService
+	TorrentLoader
 }
 
 // DropReadiness reports whether a torrent can be safely dropped from the API layer.
@@ -168,13 +240,28 @@ var (
 	ErrPlayFileIndexInvalid = errors.New("play file index is invalid")
 )
 
-// StreamService defines stream orchestration helpers used by transport handlers.
-type StreamService interface {
+// TorrentParserService parses torrent inputs into application-owned descriptors.
+type TorrentParserService interface {
 	ParseLink(link, title, poster, category string) (TorrentSpec, StreamMeta, error)
 	ParseTorrentFile(reader io.Reader) (TorrentSpec, error)
-	EnsureTorrent(torrents TorrentService, spec TorrentSpec, meta StreamMeta, allowCreate bool) (TorrentHandle, error)
+}
+
+// StreamOrchestratorService prepares active torrent handles for stream operations.
+type StreamOrchestratorService interface {
+	EnsureTorrent(torrents TorrentStreamService, spec TorrentSpec, meta StreamMeta, allowCreate bool) (TorrentHandle, error)
+}
+
+// StreamHelperService contains pure stream request helpers.
+type StreamHelperService interface {
 	ParseFileIndex(index string, fileCount int) (int, error)
 	NormalizePlaylistName(rawName, fallback string) string
+}
+
+// StreamService is the default composition implementation for stream-related capabilities.
+type StreamService interface {
+	TorrentParserService
+	StreamOrchestratorService
+	StreamHelperService
 }
 
 // PlaylistPayload contains generated M3U payload details.
@@ -192,10 +279,10 @@ type PlayTarget struct {
 
 // PlaybackService contains playlist and play orchestration logic.
 type PlaybackService interface {
-	BuildAllPlaylist(host string, torrents TorrentService) PlaylistPayload
-	BuildPlaylistByHash(hash, requestedName string, fromLast bool, host string, torrents TorrentService, viewed ViewedService) (PlaylistPayload, error)
+	BuildAllPlaylist(host string, torrents TorrentPlaylistService) PlaylistPayload
+	BuildPlaylistByHash(hash, requestedName string, fromLast bool, host string, torrents TorrentPlaylistService, viewed ViewedService) (PlaylistPayload, error)
 	BuildM3UFromStatus(tor *state.TorrentStatus, host string, fromLast bool, viewed ViewedService) string
-	ResolvePlay(hash, index string, unauthorized bool, torrents TorrentService) (PlayTarget, error)
+	ResolvePlay(hash, index string, unauthorized bool, torrents TorrentPlayService) (PlayTarget, error)
 }
 
 // APIServices aggregates dependencies used by transport handlers.

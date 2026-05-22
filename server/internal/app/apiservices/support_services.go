@@ -46,7 +46,7 @@ func (d searchService) TorznabSearch(query string, index int) []*torznab.Torrent
 	return torznab.SearchWithProvider(query, index, d.provider)
 }
 
-func (d searchService) TorznabTest(host, key string) error {
+func (searchService) TorznabTest(host, key string) error {
 	return torznab.Test(host, key)
 }
 
@@ -65,6 +65,6 @@ func (d modulesService) RestartDLNA(enable bool) error {
 	return modules.RestartDLNAWithProviders(enable, d.provider, d.argsProvider)
 }
 
-func (d modulesService) StopDLNA() {
+func (modulesService) StopDLNA() {
 	modules.StopDLNA()
 }

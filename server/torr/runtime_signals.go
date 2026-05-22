@@ -35,7 +35,7 @@ func (s btRuntimeSignals) ActivePlaybackTorrents() int {
 	return s.bt.ActivePlaybackTorrents()
 }
 
-func (s btRuntimeSignals) ActiveStreams() int32 {
+func (btRuntimeSignals) ActiveStreams() int32 {
 	return GetActiveStreams()
 }
 
