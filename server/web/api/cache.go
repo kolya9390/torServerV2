@@ -6,12 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Action: get.
-type cacheReqJS struct {
-	requestI
-	Hash string `json:"hash,omitempty"`
-}
-
 // cache godoc
 //
 //	@Summary		Return cache stats
@@ -25,22 +19,14 @@ type cacheReqJS struct {
 //	@Success		200	{object} object	"Cache stats"
 //	@Router			/cache [post]
 func cache(c *gin.Context) {
-	deps := cacheDepsFromContext(c)
-
-	var req cacheReqJS
-
-	err := c.ShouldBindJSON(&req)
+	req, err := bindCacheRequest(c)
 	if err != nil {
-		abortAPIError(c, http.StatusBadRequest, newValidationError("request", "invalid json body"))
+		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
 
-	if req.Action == "" {
-		abortAPIError(c, http.StatusBadRequest, newValidationError("action", "is required"))
-
-		return
-	}
+	deps := cacheDepsFromContext(c)
 
 	switch req.Action {
 	case "get":
@@ -58,11 +44,7 @@ func getCache(deps cacheHandlerDeps, req cacheReqJS, c *gin.Context) {
 	}
 
 	if st, found := deps.Torrents.CacheStateByHash(req.Hash); found {
-		if st == nil {
-			c.JSON(200, struct{}{})
-		} else {
-			c.JSON(200, st)
-		}
+		writeCacheStateResponse(c, st)
 	} else {
 		abortAPIError(c, http.StatusNotFound, newNotFoundError("torrent not found"))
 	}

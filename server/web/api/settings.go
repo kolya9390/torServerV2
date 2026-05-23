@@ -1,19 +1,10 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-
-	"server/internal/app/contracts"
 )
-
-// Action: get, set, def.
-type setsReqJS struct {
-	requestI
-	Sets *contracts.Settings `json:"sets,omitempty"`
-}
 
 // settings godoc
 //
@@ -29,55 +20,21 @@ type setsReqJS struct {
 //	@Success		200	{object}	contracts.Settings	"Settings JSON or nothing. Depends on what action has been asked."
 //	@Router			/settings [post]
 func settings(c *gin.Context) {
-	deps := settingsDepsFromContext(c)
-
-	var req setsReqJS
-
-	err := c.ShouldBindJSON(&req)
+	req, err := bindSettingsRequest(c)
 	if err != nil {
-		abortAPIError(c, http.StatusBadRequest, newValidationError("request", "invalid json body"))
+		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
 
-	if req.Action == "" {
-		abortAPIError(c, http.StatusBadRequest, newValidationError("action", "is required"))
-
-		return
-	}
+	deps := settingsDepsFromContext(c)
 
 	switch req.Action {
 	case "get":
-		current := deps.Settings.Current()
-
-		etag := generateSettingsETag(current)
-		if match := c.GetHeader("If-None-Match"); match == etag {
-			c.Status(http.StatusNotModified)
-
-			return
-		}
-
-		c.Header("ETag", etag)
-		c.Header("Cache-Control", "private, max-age=5")
-		c.Header("Content-Type", "application/json")
-
-		data, err := json.Marshal(current)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal settings"})
-
-			return
-		}
-
-		c.Data(200, "application/json", data)
+		writeSettingsResponse(c, deps.Settings.Current())
 
 		return
 	case "set":
-		if req.Sets == nil {
-			abortAPIError(c, http.StatusBadRequest, newValidationError("sets", "is required for action=set"))
-
-			return
-		}
-
 		// Block EnableDebug changes via API — only config.yml controls debug mode.
 		// This prevents runtime toggling and ensures debug is set at startup.
 		req.Sets.EnableDebug = false

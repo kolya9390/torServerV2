@@ -36,5 +36,5 @@ func ffp(c *gin.Context) {
 		return
 	}
 
-	c.JSON(200, data)
+	writeMediaProbeResponse(c, data)
 }

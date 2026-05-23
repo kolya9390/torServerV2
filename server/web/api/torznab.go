@@ -2,12 +2,8 @@ package api
 
 import (
 	"net/http"
-	"net/url"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
-
-	"server/internal/app/contracts"
 )
 
 // torznabSearch godoc
@@ -25,60 +21,34 @@ import (
 func torznabSearch(c *gin.Context) {
 	deps := searchDepsFromContext(c)
 	if !deps.Search.EnableTorznabSearch() {
-		c.JSON(http.StatusBadRequest, []string{})
+		writeTorznabDisabledResponse(c)
 
 		return
 	}
 
-	query := c.Query("query")
-	indexStr := c.DefaultQuery("index", "-1")
-	index := -1
-
-	if i, err := strconv.Atoi(indexStr); err == nil {
-		index = i
-	}
-
-	decodedQuery, err := url.QueryUnescape(query)
+	searchReq, err := bindTorznabSearchRequest(c)
 	if err != nil {
-		abortAPIError(c, http.StatusBadRequest, newValidationError("query", "invalid query encoding"))
+		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
 
-	query = decodedQuery
-
-	list := deps.Search.TorznabSearch(query, index)
-	if list == nil {
-		list = []*contracts.SearchResult{}
-	}
-
-	c.JSON(200, list)
-}
-
-type torznabTestReq struct {
-	Host string `json:"host"`
-	Key  string `json:"key"`
+	writeTorznabSearchResponse(c, deps.Search.TorznabSearch(searchReq.Query, searchReq.Index))
 }
 
 func torznabTest(c *gin.Context) {
-	var req torznabTestReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		abortAPIError(c, http.StatusBadRequest, newValidationError("request", "invalid json body"))
-
-		return
-	}
-
-	if req.Host == "" {
-		abortAPIError(c, http.StatusBadRequest, newValidationError("host", "is required"))
+	req, err := bindTorznabTestRequest(c)
+	if err != nil {
+		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
 
 	if err := searchDepsFromContext(c).Search.TorznabTest(req.Host, req.Key); err != nil {
-		c.JSON(200, gin.H{"success": false, "error": err.Error()})
+		writeTorznabTestFailure(c, err)
 
 		return
 	}
 
-	c.JSON(200, gin.H{"success": true})
+	writeTorznabTestSuccess(c)
 }

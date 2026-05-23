@@ -18,6 +18,15 @@ type streamMeta struct {
 	data     string
 }
 
+func (meta streamMeta) toContract() contracts.StreamMeta {
+	return contracts.StreamMeta{
+		Title:    meta.title,
+		Poster:   meta.poster,
+		Category: meta.category,
+		Data:     meta.data,
+	}
+}
+
 // streamStat godoc
 //
 //	@Summary		Get torrent runtime status
@@ -37,14 +46,14 @@ func streamStat(c *gin.Context) {
 		return
 	}
 
-	spec, _, err := parseStreamLink(c, deps.Parser)
+	req, err := bindStreamLinkRequest(c, deps.Parser)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
 
-	tor := deps.Torrents.Get(spec.HashHex())
+	tor := deps.Torrents.Get(req.Spec.HashHex())
 	if tor == nil {
 		abortAPIError(c, http.StatusNotFound, newNotFoundError("torrent not active"))
 
@@ -57,7 +66,7 @@ func streamStat(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, tor.Status())
+	writeStreamStatusResponse(c, tor.Status())
 }
 
 // streamM3U godoc
@@ -73,14 +82,14 @@ func streamStat(c *gin.Context) {
 func streamM3U(c *gin.Context) {
 	deps := streamDepsFromContext(c)
 
-	spec, _, err := parseStreamLink(c, deps.Parser)
+	req, err := bindStreamM3URequest(c, deps.Parser)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
 
-	tor := deps.Torrents.Get(spec.HashHex())
+	tor := deps.Torrents.Get(req.Spec.HashHex())
 	if tor == nil {
 		if isNotAuthRequest(c) {
 			c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
@@ -107,10 +116,9 @@ func streamM3U(c *gin.Context) {
 		return
 	}
 
-	_, fromlast := c.GetQuery("fromlast")
-	name := deps.Helpers.NormalizePlaylistName(c.Param("fname"), tor.Name())
+	name := deps.Helpers.NormalizePlaylistName(req.RawName, tor.Name())
 	host := utils2.GetScheme(c) + "://" + utils2.GetHost(c)
-	m3ulist := deps.Playback.BuildM3UFromStatus(status, host, fromlast, deps.Viewed)
+	m3ulist := deps.Playback.BuildM3UFromStatus(status, host, req.FromLast, deps.Viewed)
 	sendM3U(c, name, tor.HashHex(), m3ulist)
 }
 
@@ -131,19 +139,14 @@ func streamM3U(c *gin.Context) {
 func streamPlay(c *gin.Context) {
 	deps := streamDepsFromContext(c)
 
-	spec, meta, err := parseStreamLink(c, deps.Parser)
+	req, err := bindStreamPlayRequest(c, deps.Parser)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
 
-	tor, err := deps.Streams.EnsureTorrent(deps.Torrents, spec, contracts.StreamMeta{
-		Title:    meta.title,
-		Poster:   meta.poster,
-		Category: meta.category,
-		Data:     meta.data,
-	}, !isNotAuthRequest(c))
+	tor, err := deps.Streams.EnsureTorrent(deps.Torrents, req.Spec, req.Meta.toContract(), !isNotAuthRequest(c))
 	if err != nil {
 		statusCode, apiErr := mapStreamEnsureError(err)
 		if statusCode == http.StatusUnauthorized {
@@ -155,15 +158,14 @@ func streamPlay(c *gin.Context) {
 		return
 	}
 
-	index, err := parseStreamFileIndex(c, deps.Parser, tor.FileCount())
+	index, err := bindStreamFileIndex(c, deps.Parser, tor.FileCount())
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
 
-	_, preload := c.GetQuery("preload")
-	if preload {
+	if req.Preload {
 		if queued := deps.Torrents.EnqueuePreload(tor, index); !queued {
 			log.TLogln("preload queue is full, skipping preload")
 		}
@@ -195,16 +197,16 @@ func streamPlay(c *gin.Context) {
 func streamSave(c *gin.Context) {
 	deps := streamDepsFromContext(c)
 
-	spec, meta, err := parseStreamLink(c, deps.Parser)
+	req, err := bindStreamLinkRequest(c, deps.Parser)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
 
-	tor := deps.Torrents.Get(spec.HashHex())
+	tor := deps.Torrents.Get(req.Spec.HashHex())
 	if tor == nil || deps.Torrents.IsStored(tor) {
-		tor, err = deps.Torrents.Add(spec, meta.title, meta.poster, meta.data, meta.category)
+		tor, err = deps.Torrents.Add(req.Spec, req.Meta.title, req.Meta.poster, req.Meta.data, req.Meta.category)
 		if err != nil {
 			abortAPIError(c, http.StatusInternalServerError, newInternalError("failed to add torrent", err))
 
@@ -213,32 +215,7 @@ func streamSave(c *gin.Context) {
 	}
 
 	deps.Torrents.SaveToDB(tor)
-	c.JSON(http.StatusOK, gin.H{"status": "saved", "hash": tor.HashHex()})
-}
-
-func parseStreamLink(c *gin.Context, deps streamParserDeps) (contracts.TorrentSpec, streamMeta, error) {
-	spec, meta, err := deps.Parser.ParseLink(c.Query("link"), c.Query("title"), c.Query("poster"), c.Query("category"))
-	if err != nil {
-		switch {
-		case errors.Is(err, contracts.ErrStreamLinkEmpty):
-			return contracts.TorrentSpec{}, streamMeta{}, newValidationError("link", "should not be empty")
-		case errors.Is(err, contracts.ErrStreamInvalidTorrsHash):
-			return contracts.TorrentSpec{}, streamMeta{}, newValidationError("link", "invalid torrs hash")
-		default:
-			return contracts.TorrentSpec{}, streamMeta{}, newValidationError("link", "invalid magnet/hash/link")
-		}
-	}
-
-	return spec, streamMeta{title: meta.Title, poster: meta.Poster, category: meta.Category, data: meta.Data}, nil
-}
-
-func parseStreamFileIndex(c *gin.Context, deps streamParserDeps, fileCount int) (int, error) {
-	index, err := deps.Helpers.ParseFileIndex(c.Query("index"), fileCount)
-	if err != nil {
-		return 0, newValidationError("index", "should be valid file index")
-	}
-
-	return index, nil
+	writeStreamSaveResponse(c, tor.HashHex())
 }
 
 func mapStreamEnsureError(err error) (int, error) {

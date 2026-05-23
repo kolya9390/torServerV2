@@ -202,6 +202,28 @@ func TestLegacyStreamEndpointUsesCompatibilityAdapter(t *testing.T) {
 	}
 }
 
+func TestRouteRegistrationKeepsCompatibilityBoundariesExplicit(t *testing.T) {
+	path := filepath.Join(projectRoot(t), "web", "api", "route.go")
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+
+	source := string(content)
+	for _, required := range []string{
+		"registerPreferredStreamRoutes(route, authorized)",
+		"registerCompatibilityPlaybackRoutes(route, authorized)",
+		"registerSearchRoutes(route, authorized, authCfg)",
+		"Compatibility stream/playback routes",
+		"Preferred stream API",
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("route registration must keep preferred and compatibility boundaries explicit; missing %q", required)
+		}
+	}
+}
+
 func TestTransportAndAppDoNotCallGlobalRuntimeStateDirectly(t *testing.T) {
 	for _, relDir := range []string{
 		filepath.Join("internal", "app"),
@@ -323,6 +345,266 @@ func TestTorrentsHandlerDoesNotImportParsingAdapters(t *testing.T) {
 		switch pkg {
 		case "github.com/anacrolix/torrent", "server/torrshash", "server/web/api/utils":
 			t.Errorf("forbidden parsing adapter import %q in torrents handler %s", pkg, path)
+		}
+	}
+}
+
+func TestTorrentsRequestBindingStaysOutOfHandler(t *testing.T) {
+	handlerPath := filepath.Join(projectRoot(t), "web", "api", "torrents.go")
+	bindingPath := filepath.Join(projectRoot(t), "web", "api", "torrents_binding.go")
+
+	handler, err := os.ReadFile(handlerPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", handlerPath, err)
+	}
+
+	binding, err := os.ReadFile(bindingPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", bindingPath, err)
+	}
+
+	handlerSource := string(handler)
+	if strings.Contains(handlerSource, "ShouldBindJSON") {
+		t.Errorf("torrents handler should delegate request binding to torrents_binding.go")
+	}
+
+	if !strings.Contains(handlerSource, "bindTorrentRequest(c)") {
+		t.Errorf("torrents handler should use the dedicated torrent request binder")
+	}
+
+	if !strings.Contains(string(binding), "ShouldBindJSON") {
+		t.Errorf("torrent request binder should own JSON binding")
+	}
+}
+
+func TestUploadRequestBindingStaysOutOfHandler(t *testing.T) {
+	handlerPath := filepath.Join(projectRoot(t), "web", "api", "upload.go")
+	bindingPath := filepath.Join(projectRoot(t), "web", "api", "upload_binding.go")
+
+	handler, err := os.ReadFile(handlerPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", handlerPath, err)
+	}
+
+	binding, err := os.ReadFile(bindingPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", bindingPath, err)
+	}
+
+	handlerSource := string(handler)
+	if strings.Contains(handlerSource, "MultipartForm") {
+		t.Errorf("upload handler should delegate multipart binding to upload_binding.go")
+	}
+
+	if !strings.Contains(handlerSource, "bindTorrentUploadRequest(c)") {
+		t.Errorf("upload handler should use the dedicated upload request binder")
+	}
+
+	if !strings.Contains(string(binding), "MultipartForm") {
+		t.Errorf("upload request binder should own multipart binding")
+	}
+}
+
+func TestCompactAPIRequestBindingStaysOutOfHandlers(t *testing.T) {
+	cases := []struct {
+		name         string
+		handlerFile  string
+		bindingFile  string
+		forbidden    []string
+		requiredCall string
+		requiredBind string
+	}{
+		{
+			name:         "settings",
+			handlerFile:  "settings.go",
+			bindingFile:  "settings_binding.go",
+			forbidden:    []string{"ShouldBindJSON"},
+			requiredCall: "bindSettingsRequest(c)",
+			requiredBind: "ShouldBindJSON",
+		},
+		{
+			name:         "storage",
+			handlerFile:  "storage.go",
+			bindingFile:  "storage_binding.go",
+			forbidden:    []string{"ShouldBindJSON", "PostForm("},
+			requiredCall: "bindStoragePreferencesRequest(c)",
+			requiredBind: "ShouldBindJSON",
+		},
+		{
+			name:         "torznab",
+			handlerFile:  "torznab.go",
+			bindingFile:  "torznab_binding.go",
+			forbidden:    []string{"ShouldBindJSON", "QueryUnescape", "DefaultQuery("},
+			requiredCall: "bindTorznabSearchRequest(c)",
+			requiredBind: "ShouldBindJSON",
+		},
+		{
+			name:         "cache",
+			handlerFile:  "cache.go",
+			bindingFile:  "cache_binding.go",
+			forbidden:    []string{"ShouldBindJSON"},
+			requiredCall: "bindCacheRequest(c)",
+			requiredBind: "ShouldBindJSON",
+		},
+		{
+			name:         "viewed",
+			handlerFile:  "viewed.go",
+			bindingFile:  "viewed_binding.go",
+			forbidden:    []string{"ShouldBindJSON"},
+			requiredCall: "bindViewedRequest(c)",
+			requiredBind: "ShouldBindJSON",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			handlerPath := filepath.Join(projectRoot(t), "web", "api", tc.handlerFile)
+			bindingPath := filepath.Join(projectRoot(t), "web", "api", tc.bindingFile)
+
+			handler, err := os.ReadFile(handlerPath)
+			if err != nil {
+				t.Fatalf("read %s: %v", handlerPath, err)
+			}
+
+			binding, err := os.ReadFile(bindingPath)
+			if err != nil {
+				t.Fatalf("read %s: %v", bindingPath, err)
+			}
+
+			handlerSource := string(handler)
+			for _, forbidden := range tc.forbidden {
+				if strings.Contains(handlerSource, forbidden) {
+					t.Errorf("%s handler should delegate %q to %s", tc.name, forbidden, tc.bindingFile)
+				}
+			}
+
+			if !strings.Contains(handlerSource, tc.requiredCall) {
+				t.Errorf("%s handler should call %s", tc.name, tc.requiredCall)
+			}
+
+			if !strings.Contains(string(binding), tc.requiredBind) {
+				t.Errorf("%s binding file should contain %s", tc.name, tc.requiredBind)
+			}
+		})
+	}
+}
+
+func TestFocusedResponseMappingStaysOutOfHandlers(t *testing.T) {
+	cases := []struct {
+		name         string
+		handlerFile  string
+		responseFile string
+		forbidden    []string
+		requiredCall string
+	}{
+		{
+			name:         "settings",
+			handlerFile:  "settings.go",
+			responseFile: "settings_response.go",
+			forbidden:    []string{"json.Marshal", `Header("ETag"`},
+			requiredCall: "writeSettingsResponse(c, deps.Settings.Current())",
+		},
+		{
+			name:         "torznab",
+			handlerFile:  "torznab.go",
+			responseFile: "torznab_response.go",
+			forbidden:    []string{"gin.H", "[]*contracts.SearchResult{}"},
+			requiredCall: "writeTorznabSearchResponse(c, deps.Search.TorznabSearch(searchReq.Query, searchReq.Index))",
+		},
+		{
+			name:         "torrents",
+			handlerFile:  "torrents.go",
+			responseFile: "torrents_response.go",
+			forbidden:    []string{"c.JSON(200, deps.Queries.Status", "c.JSON(200, st)"},
+			requiredCall: "writeTorrentStatusResponse(c, deps.Queries.Status(tor))",
+		},
+		{
+			name:         "stream",
+			handlerFile:  "stream_actions.go",
+			responseFile: "stream_response.go",
+			forbidden:    []string{`gin.H{"status": "saved"`},
+			requiredCall: "writeStreamSaveResponse(c, tor.HashHex())",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			handlerPath := filepath.Join(projectRoot(t), "web", "api", tc.handlerFile)
+			responsePath := filepath.Join(projectRoot(t), "web", "api", tc.responseFile)
+
+			handler, err := os.ReadFile(handlerPath)
+			if err != nil {
+				t.Fatalf("read %s: %v", handlerPath, err)
+			}
+
+			if _, err := os.Stat(responsePath); err != nil {
+				t.Fatalf("response mapper file missing %s: %v", responsePath, err)
+			}
+
+			handlerSource := string(handler)
+			for _, forbidden := range tc.forbidden {
+				if strings.Contains(handlerSource, forbidden) {
+					t.Errorf("%s handler should delegate response mapping instead of using %q", tc.name, forbidden)
+				}
+			}
+
+			if !strings.Contains(handlerSource, tc.requiredCall) {
+				t.Errorf("%s handler should call %s", tc.name, tc.requiredCall)
+			}
+		})
+	}
+}
+
+func TestPreferredStreamRequestBindingStaysOutOfHandler(t *testing.T) {
+	handlerPath := filepath.Join(projectRoot(t), "web", "api", "stream_actions.go")
+	bindingPath := filepath.Join(projectRoot(t), "web", "api", "stream_binding.go")
+
+	handler, err := os.ReadFile(handlerPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", handlerPath, err)
+	}
+
+	binding, err := os.ReadFile(bindingPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", bindingPath, err)
+	}
+
+	handlerSource := string(handler)
+	for _, forbidden := range []string{
+		`c.Query("link")`,
+		`c.Query("title")`,
+		`c.Query("poster")`,
+		`c.Query("category")`,
+		`c.Query("index")`,
+		`c.GetQuery("preload")`,
+		`c.GetQuery("fromlast")`,
+		`c.Param("fname")`,
+	} {
+		if strings.Contains(handlerSource, forbidden) {
+			t.Errorf("preferred stream handler should delegate request binding instead of using %s", forbidden)
+		}
+	}
+
+	for _, required := range []string{
+		"bindStreamLinkRequest(c, deps.Parser)",
+		"bindStreamM3URequest(c, deps.Parser)",
+		"bindStreamPlayRequest(c, deps.Parser)",
+		"bindStreamFileIndex(c, deps.Parser, tor.FileCount())",
+	} {
+		if !strings.Contains(handlerSource, required) {
+			t.Errorf("preferred stream handler should call %s", required)
+		}
+	}
+
+	bindingSource := string(binding)
+	for _, required := range []string{
+		`c.Query("link")`,
+		`c.GetQuery("preload")`,
+		`c.GetQuery("fromlast")`,
+		`c.Param("fname")`,
+	} {
+		if !strings.Contains(bindingSource, required) {
+			t.Errorf("stream binding file should own %s", required)
 		}
 	}
 }

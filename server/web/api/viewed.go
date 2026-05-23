@@ -13,12 +13,6 @@ import (
 file index starts from 1
 */
 
-// Action: set, rem, list.
-type viewedReqJS struct {
-	requestI
-	*contracts.ViewedItem
-}
-
 // viewed godoc
 //
 //	@Summary		Set / List / Remove viewed torrents
@@ -33,22 +27,14 @@ type viewedReqJS struct {
 //	@Success		200 {array} contracts.ViewedItem
 //	@Router			/viewed [post]
 func viewed(c *gin.Context) {
-	deps := viewedDepsFromContext(c)
-
-	var req viewedReqJS
-
-	err := c.ShouldBindJSON(&req)
+	req, err := bindViewedRequest(c)
 	if err != nil {
-		abortAPIError(c, http.StatusBadRequest, newValidationError("request", "invalid json body"))
+		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
 
-	if req.Action == "" {
-		abortAPIError(c, http.StatusBadRequest, newValidationError("action", "is required"))
-
-		return
-	}
+	deps := viewedDepsFromContext(c)
 
 	switch req.Action {
 	case "set":
@@ -114,5 +100,5 @@ func listViewed(deps viewedHandlerDeps, req viewedReqJS, c *gin.Context) {
 	}
 
 	log.TLogln("listViewed: got list:", list)
-	c.JSON(200, list)
+	writeViewedListResponse(c, list)
 }

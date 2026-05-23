@@ -12,18 +12,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Action: add, get, set, rem, list, drop.
-type torrReqJS struct {
-	requestI
-	Link     string `json:"link,omitempty"`
-	Hash     string `json:"hash,omitempty"`
-	Title    string `json:"title,omitempty"`
-	Category string `json:"category,omitempty"`
-	Poster   string `json:"poster,omitempty"`
-	Data     string `json:"data,omitempty"`
-	SaveToDB bool   `json:"save_to_db,omitempty"`
-}
-
 // torrents godoc
 //
 //	@Summary		Handle torrents informations
@@ -38,22 +26,14 @@ type torrReqJS struct {
 //	@Success		200
 //	@Router			/torrents [post]
 func torrents(c *gin.Context) {
-	deps := torrentDepsFromContext(c)
-
-	var req torrReqJS
-
-	err := c.ShouldBindJSON(&req)
+	req, err := bindTorrentRequest(c)
 	if err != nil {
-		abortAPIError(c, http.StatusBadRequest, newValidationError("request", "invalid json body"))
+		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
 
-	if req.Action == "" {
-		abortAPIError(c, http.StatusBadRequest, newValidationError("action", "is required"))
-
-		return
-	}
+	deps := torrentDepsFromContext(c)
 
 	logTorrentsActionRequest(c, req)
 
@@ -132,7 +112,7 @@ func addTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {
 		}
 
 		log.TLogln("[TRACE] addTorrent: returning fast-path status, hash=", hashHex)
-		c.JSON(200, deps.Queries.Status(existing))
+		writeTorrentStatusResponse(c, deps.Queries.Status(existing))
 
 		return
 	}
@@ -158,7 +138,7 @@ func addTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {
 		}
 	}
 
-	c.JSON(200, deps.Queries.Status(tor))
+	writeTorrentStatusResponse(c, deps.Queries.Status(tor))
 }
 
 func torrentLinkValidationError(err error) error {
@@ -185,7 +165,7 @@ func getTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {
 
 	if found {
 		log.TLogln("[TRACE] getTorrent: using status, hash=", req.Hash)
-		c.JSON(200, st)
+		writeTorrentStatusResponse(c, st)
 	} else {
 		abortAPIError(c, http.StatusNotFound, newNotFoundError("torrent not found"))
 	}
@@ -221,7 +201,7 @@ func remTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {
 }
 
 func listTorrents(deps torrentHandlerDeps, c *gin.Context) {
-	c.JSON(200, deps.Queries.Statuses())
+	writeTorrentStatusListResponse(c, deps.Queries.Statuses())
 }
 
 func dropTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {

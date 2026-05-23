@@ -18,8 +18,7 @@ import (
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /storage/settings [get].
 func GetStorageSettings(c *gin.Context) {
-	prefs := storageDepsFromContext(c).Settings.GetStoragePreferences()
-	c.JSON(http.StatusOK, prefs)
+	writeStoragePreferencesResponse(c, storageDepsFromContext(c).Settings.GetStoragePreferences())
 }
 
 // UpdateStorageSettings godoc
@@ -46,53 +45,9 @@ func UpdateStorageSettings(c *gin.Context) {
 		return
 	}
 
-	var prefs map[string]any
-
-	// Check Content-Type to handle both JSON and form data
-	contentType := c.GetHeader("Content-Type")
-
-	if contentType == "application/x-www-form-urlencoded" {
-		// Handle form data
-		settings := c.PostForm("settings")
-		viewed := c.PostForm("viewed")
-
-		prefs = make(map[string]any)
-		if settings != "" {
-			prefs["settings"] = settings
-		}
-
-		if viewed != "" {
-			prefs["viewed"] = viewed
-		}
-	} else {
-		// Handle JSON (default)
-		if err := c.ShouldBindJSON(&prefs); err != nil {
-			abortAPIError(c, http.StatusBadRequest, newValidationError("request", "invalid input data"))
-
-			return
-		}
-	}
-
-	// Validate preferences - only validate if provided
-	if settingsPref, ok := prefs["settings"].(string); ok && settingsPref != "" {
-		if settingsPref != "json" && settingsPref != "bbolt" {
-			abortAPIError(c, http.StatusBadRequest, newValidationError("settings", "must be json or bbolt"))
-
-			return
-		}
-	}
-
-	if viewedPref, ok := prefs["viewed"].(string); ok && viewedPref != "" {
-		if viewedPref != "json" && viewedPref != "bbolt" {
-			abortAPIError(c, http.StatusBadRequest, newValidationError("viewed", "must be json or bbolt"))
-
-			return
-		}
-	}
-
-	// Check if we have at least one value to update
-	if len(prefs) == 0 {
-		abortAPIError(c, http.StatusBadRequest, newValidationError("request", "no preferences provided"))
+	prefs, err := bindStoragePreferencesRequest(c)
+	if err != nil {
+		abortAPIError(c, http.StatusBadRequest, err)
 
 		return
 	}
@@ -103,5 +58,5 @@ func UpdateStorageSettings(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	writeStorageUpdateResponse(c)
 }

@@ -45,27 +45,41 @@ func registerAPIRoutes(route gin.IRouter, runtimeState func() sets.RuntimeState,
 
 	authCfg := runtimeState().AuthConfig()
 
+	registerManagementRoutes(authorized)
+	registerTorrentRoutes(authorized)
+	registerPreferredStreamRoutes(route, authorized)
+	registerCompatibilityPlaybackRoutes(route, authorized)
+	registerSearchRoutes(route, authorized, authCfg)
+	registerSettingsRoutes(authorized)
+	authapi.RegisterAuthRoutes(authorized)
+}
+
+func registerManagementRoutes(authorized gin.IRouter) {
 	authorized.GET("/shutdown", shutdown)
 	authorized.GET("/shutdown/*reason", shutdown)
 	authorized.POST("/shutdown", shutdown)
 	authorized.POST("/shutdown/*reason", shutdown)
+}
 
+func registerSettingsRoutes(authorized gin.IRouter) {
 	authorized.POST("/settings", settings)
 	authorized.POST("/torznab/test", torznabTest)
 
+	authorized.GET("/storage/settings", GetStorageSettings)
+	authorized.POST("/storage/settings", UpdateStorageSettings)
+
+	authorized.GET("/tmdb/settings", tmdbSettings)
+}
+
+func registerTorrentRoutes(authorized gin.IRouter) {
 	authorized.POST("/torrents", torrents)
-
 	authorized.POST("/torrent/upload", torrentUpload)
-
 	authorized.POST("/cache", cache)
+	authorized.POST("/viewed", viewed)
+}
 
-	route.HEAD("/stream", stream)
-	route.GET("/stream", stream)
-
-	route.HEAD("/stream/*fname", stream)
-	route.GET("/stream/*fname", stream)
-
-	// Explicit stream API (read-only and command endpoints)
+func registerPreferredStreamRoutes(route gin.IRouter, authorized gin.IRouter) {
+	// Preferred stream API: explicit read and command endpoints used by new integrations.
 	route.HEAD("/streams/stat", streamStat)
 	route.GET("/streams/stat", streamStat)
 	route.HEAD("/streams/m3u", streamM3U)
@@ -73,11 +87,17 @@ func registerAPIRoutes(route gin.IRouter, runtimeState func() sets.RuntimeState,
 	route.HEAD("/streams/play", streamPlay)
 	route.GET("/streams/play", streamPlay)
 	authorized.POST("/streams/save", streamSave)
+}
+
+func registerCompatibilityPlaybackRoutes(route gin.IRouter, authorized gin.IRouter) {
+	// Compatibility stream/playback routes for legacy clients and generated URLs.
+	route.HEAD("/stream", stream)
+	route.GET("/stream", stream)
+	route.HEAD("/stream/*fname", stream)
+	route.GET("/stream/*fname", stream)
 
 	route.HEAD("/play/:hash/:id", play)
 	route.GET("/play/:hash/:id", play)
-
-	authorized.POST("/viewed", viewed)
 
 	authorized.GET("/playlistall/all.m3u", allPlayList)
 
@@ -85,25 +105,16 @@ func registerAPIRoutes(route gin.IRouter, runtimeState func() sets.RuntimeState,
 	route.GET("/playlist/*fname", playList)
 
 	authorized.GET("/download/:size", download)
+	authorized.GET("/ffp/:hash/:id", ffp)
+}
 
-	// Torznab search only (Rutor removed)
+func registerSearchRoutes(route gin.IRouter, authorized gin.IRouter, authCfg sets.RuntimeAuthConfig) {
+	// Torznab search wildcard path is preserved for compatibility with Torznab clients.
 	if authCfg.SearchWA {
 		route.GET("/torznab/search/*query", torznabSearch)
 	} else {
 		authorized.GET("/torznab/search/*query", torznabSearch)
 	}
-
-	// Add storage settings endpoints
-	authorized.GET("/storage/settings", GetStorageSettings)
-	authorized.POST("/storage/settings", UpdateStorageSettings)
-
-	// Add TMDB settings endpoint
-	authorized.GET("/tmdb/settings", tmdbSettings)
-
-	authorized.GET("/ffp/:hash/:id", ffp)
-
-	// Auth management API (requires existing auth)
-	authapi.RegisterAuthRoutes(authorized)
 }
 
 func validateAPIServices(services *contracts.APIServices) error {

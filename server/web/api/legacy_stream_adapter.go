@@ -161,19 +161,14 @@ func (a legacyStreamAdapter) prepareTarget(c *gin.Context, allowCreate, requireV
 		return legacyStreamTarget{}, false
 	}
 
-	spec, meta, err := parseStreamLink(c, a.deps.Parser)
+	streamReq, err := bindStreamLinkRequest(c, a.deps.Parser)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
 
 		return legacyStreamTarget{}, false
 	}
 
-	tor, err := a.deps.Streams.EnsureTorrent(a.deps.Torrents, spec, contracts.StreamMeta{
-		Title:    meta.title,
-		Poster:   meta.poster,
-		Category: meta.category,
-		Data:     meta.data,
-	}, allowCreate)
+	tor, err := a.deps.Streams.EnsureTorrent(a.deps.Torrents, streamReq.Spec, streamReq.Meta.toContract(), allowCreate)
 	if err != nil {
 		statusCode, apiErr := mapStreamEnsureError(err)
 		if statusCode == http.StatusUnauthorized {
@@ -185,7 +180,7 @@ func (a legacyStreamAdapter) prepareTarget(c *gin.Context, allowCreate, requireV
 		return legacyStreamTarget{}, false
 	}
 
-	index, err := parseStreamFileIndex(c, a.deps.Parser, tor.FileCount())
+	index, err := bindStreamFileIndex(c, a.deps.Parser, tor.FileCount())
 	if err != nil && requireValidIndex {
 		abortAPIError(c, http.StatusBadRequest, err)
 
