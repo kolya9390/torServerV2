@@ -19,9 +19,9 @@ import (
 // @Success		200
 // @Router			/shutdown [get].
 func shutdown(c *gin.Context) {
-	deps := systemDepsFromContext(c)
 	reasonStr := strings.ReplaceAll(c.Param("reason"), "/", "")
 
+	deps := systemDepsFromContext(c)
 	if deps.Settings.ReadOnly() && reasonStr == "" {
 		abortAPIError(c, http.StatusForbidden, newForbiddenError("read-only mode requires explicit shutdown reason"))
 
@@ -47,6 +47,11 @@ func shutdown(c *gin.Context) {
 			}
 		}()
 		time.Sleep(time.Second)
+
+		if RequestShutdown() {
+			return
+		}
+
 		deps.System.Shutdown()
 	}()
 }

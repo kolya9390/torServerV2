@@ -262,5 +262,6 @@ func logConfiguration(settingsInJSON, viewedInJSON bool) {
 func CloseDB() {
 	if tdb != nil {
 		tdb.CloseDB()
+		tdb = nil
 	}
 }

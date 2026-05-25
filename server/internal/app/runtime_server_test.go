@@ -379,11 +379,11 @@ func TestServerRuntimeStartAppliesConfigToArgsBeforeStartup(t *testing.T) {
 func TestServerRuntimeWaitAndStop(t *testing.T) {
 	waitErr := errors.New("wait failed")
 	fakeWeb := &fakeWebRuntime{waitErr: waitErr}
-	closedDB := false
+	closeDBCalls := 0
 
 	deps := serverRuntimeDeps{
 		newWebServer:  func(web.ServerDeps) webRuntime { return fakeWeb },
-		closeSettings: func() { closedDB = true },
+		closeSettings: func() { closeDBCalls++ },
 	}
 	rt := newServerRuntime(deps, nil)
 
@@ -393,7 +393,29 @@ func TestServerRuntimeWaitAndStop(t *testing.T) {
 
 	rt.Stop()
 
-	if !fakeWeb.stopped || !closedDB {
-		t.Fatalf("expected stop chain to be called, web=%v db=%v", fakeWeb.stopped, closedDB)
+	if !fakeWeb.stopped || closeDBCalls != 1 {
+		t.Fatalf("expected stop chain to be called, web=%v db_calls=%d", fakeWeb.stopped, closeDBCalls)
+	}
+}
+
+func TestServerRuntimeStopIsIdempotent(t *testing.T) {
+	fakeWeb := &fakeWebRuntime{}
+	closeDBCalls := 0
+
+	deps := serverRuntimeDeps{
+		newWebServer:  func(web.ServerDeps) webRuntime { return fakeWeb },
+		closeSettings: func() { closeDBCalls++ },
+	}
+	rt := newServerRuntime(deps, nil)
+
+	rt.Stop()
+	rt.Stop()
+
+	if !fakeWeb.stopped {
+		t.Fatal("expected web runtime to be stopped")
+	}
+
+	if closeDBCalls != 1 {
+		t.Fatalf("expected close settings to be called once, got %d", closeDBCalls)
 	}
 }

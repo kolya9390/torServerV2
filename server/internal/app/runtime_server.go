@@ -14,6 +14,7 @@ import (
 	"server/web/api"
 	"server/web/auth"
 	"strings"
+	"sync"
 )
 
 type webRuntime interface {
@@ -64,6 +65,7 @@ type serverRuntime struct {
 	cfg         *config.Config
 	apiServices *contracts.APIServices
 	servicesErr error
+	stopOnce    sync.Once
 }
 
 func (r *serverRuntime) Start() error {
@@ -175,8 +177,19 @@ func (r *serverRuntime) applyConfig() {
 }
 
 func (r *serverRuntime) Stop() {
-	r.web.Stop()
-	r.deps.closeSettings()
+	if r == nil {
+		return
+	}
+
+	r.stopOnce.Do(func() {
+		if r.web != nil {
+			r.web.Stop()
+		}
+
+		if r.deps.closeSettings != nil {
+			r.deps.closeSettings()
+		}
+	})
 }
 
 func (r *serverRuntime) Wait() error {

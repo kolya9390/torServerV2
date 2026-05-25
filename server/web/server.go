@@ -364,6 +364,10 @@ func (s *Server) Wait() error {
 }
 
 func (s *Server) Stop() {
+	if s == nil {
+		return
+	}
+
 	s.mu.Lock()
 	httpLocal := s.httpServer
 	httpsLocal := s.httpsSrv
@@ -390,7 +394,10 @@ func (s *Server) Stop() {
 
 	modules.StopDLNA()
 	modules.StopFUSE()
-	s.bts.Disconnect()
+
+	if s.bts != nil {
+		s.bts.Disconnect()
+	}
 
 	log.TLogln("TorrServer stopped")
 }

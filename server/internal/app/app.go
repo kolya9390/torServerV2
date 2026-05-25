@@ -67,20 +67,21 @@ func (a *App) Stop(ctx context.Context) error {
 		defer cancel()
 	}
 
-	done := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				log.TLogln("app runtime stop goroutine panic recovered", "panic", r)
+				done <- fmt.Errorf("runtime stop panic: %v", r)
 			}
 		}()
 		a.runtime.Stop()
-		close(done)
+		done <- nil
 	}()
 
 	select {
-	case <-done:
-		return nil
+	case err := <-done:
+		return err
 	case <-stopCtx.Done():
 		return fmt.Errorf("stop timeout/cancel: %w", stopCtx.Err())
 	}

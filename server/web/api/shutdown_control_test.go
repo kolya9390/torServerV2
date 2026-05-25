@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -83,6 +84,9 @@ func TestRequestShutdownUsesHookOnce(t *testing.T) {
 	SetShutdownHook(func() {
 		atomic.AddInt32(&calls, 1)
 	})
+	t.Cleanup(func() {
+		SetShutdownHook(nil)
+	})
 
 	if !RequestShutdown() {
 		t.Fatal("expected shutdown request to be accepted")
@@ -94,6 +98,52 @@ func TestRequestShutdownUsesHookOnce(t *testing.T) {
 
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("expected hook call count=1, got %d", got)
+	}
+}
+
+func TestShutdownHandlerUsesGracefulHook(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var calls int32
+
+	ConfigureShutdown("local", "")
+	SetShutdownHook(func() {
+		atomic.AddInt32(&calls, 1)
+	})
+
+	t.Cleanup(func() {
+		ConfigureShutdown("local", "")
+		SetShutdownHook(nil)
+	})
+
+	route := gin.New()
+	route.Use(servicesMiddleware(newAPIServicesFixture(t, nil)))
+	route.POST("/shutdown", shutdown)
+
+	req := httptest.NewRequest(http.MethodPost, "/shutdown", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+
+	w := httptest.NewRecorder()
+	route.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	deadline := time.After(2 * time.Second)
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		if atomic.LoadInt32(&calls) == 1 {
+			return
+		}
+
+		select {
+		case <-deadline:
+			t.Fatal("expected graceful shutdown hook to be called")
+		case <-ticker.C:
+		}
 	}
 }
 

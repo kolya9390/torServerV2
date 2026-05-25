@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -76,5 +77,26 @@ func TestStopUsesProvidedDeadline(t *testing.T) {
 	case <-stopped:
 	case <-time.After(time.Second):
 		t.Fatal("runtime stop was not called")
+	}
+}
+
+func TestStopReturnsRuntimePanic(t *testing.T) {
+	rt := &fakeRuntime{
+		stopFn: func() { panic("boom") },
+	}
+	a := New(rt, time.Second)
+
+	start := time.Now()
+	err := a.Stop(context.Background())
+	if err == nil {
+		t.Fatal("expected panic error")
+	}
+
+	if !strings.Contains(err.Error(), "runtime stop panic: boom") {
+		t.Fatalf("expected runtime panic error, got %v", err)
+	}
+
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Fatalf("expected panic to return without waiting for timeout, elapsed=%s", elapsed)
 	}
 }

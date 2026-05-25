@@ -23,6 +23,10 @@ func (bt *BTServer) Connect() error {
 }
 
 func (bt *BTServer) Disconnect() {
+	if bt == nil {
+		return
+	}
+
 	if bt.client != nil {
 		bt.client.Close()
 		bt.client = nil

@@ -49,7 +49,10 @@ func NewDBReadCache(db TorrServerDB) TorrServerDB {
 func (v *DBReadCache) GetRawDB() any { return nil }
 
 func (v *DBReadCache) CloseDB() {
-	v.db.CloseDB()
+	if v.db != nil {
+		v.db.CloseDB()
+	}
+
 	v.db = nil
 	v.listCache = nil
 	v.dataCache = nil
