@@ -40,106 +40,114 @@ func InitWithDeps(deps Deps) {
 	resolved := resolveMetricsDeps(deps)
 
 	metricsOnce.Do(func() {
-		expvar.Publish("active_streams", expvar.Func(func() any {
-			return torr.GetActiveStreams()
-		}))
-		expvar.Publish("cache_hits", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats().Hits
-		}))
-		expvar.Publish("cache_misses", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats().Misses
-		}))
-		expvar.Publish("cache_active", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats().ActiveCaches
-		}))
-		expvar.Publish("cache_active_readers", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats().ActiveReaders
-		}))
-		expvar.Publish("cache_logical_filled_bytes", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats().LogicalFilledBytes
-		}))
-		expvar.Publish("cache_configured_capacity_bytes", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats().ConfiguredCapacityBytes
-		}))
-		expvar.Publish("cache_logical_overhead_bytes", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats().LogicalOverheadBytes
-		}))
-		expvar.Publish("cache_pieces_count", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats().PiecesCount
-		}))
-		expvar.Publish("cache_in_memory_chunks", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats().InMemoryChunks
-		}))
-		expvar.Publish("cache_reusable_chunks", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats().ReusableChunks
-		}))
-		expvar.Publish("cache_reusable_bytes", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats().ReusableBytes
-		}))
-		expvar.Publish("cache_cleanup_runs", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats().CleanupRuns
-		}))
-		expvar.Publish("cache_cleaned_bytes", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats().CleanedBytes
-		}))
-		expvar.Publish("cache_memory", expvar.Func(func() any {
-			return torrstor.SnapshotCacheStats()
-		}))
-		expvar.Publish("peers_connected", expvar.Func(func() any {
-			return peersConnected.Load()
-		}))
-		expvar.Publish("download_bytes", expvar.Func(func() any {
-			return downloadBytes.Load()
-		}))
-		expvar.Publish("upload_bytes", expvar.Func(func() any {
-			return uploadBytes.Load()
-		}))
-		expvar.Publish("torrents_active", expvar.Func(func() any {
-			return torrentsActive.Load()
-		}))
-		expvar.Publish("goroutines", expvar.Func(func() any {
-			return runtime.NumGoroutine()
-		}))
-		expvar.Publish("heap_alloc_bytes", expvar.Func(func() any {
-			var m runtime.MemStats
-
-			runtime.ReadMemStats(&m)
-
-			return m.Alloc
-		}))
-		expvar.Publish("heap_total_alloc_bytes", expvar.Func(func() any {
-			var m runtime.MemStats
-
-			runtime.ReadMemStats(&m)
-
-			return m.TotalAlloc
-		}))
-		expvar.Publish("cache_config_size_mb", expvar.Func(func() any {
-			return resolved.SettingsProvider.Get().CacheConfig().SizeBytes / (1024 * 1024)
-		}))
-		expvar.Publish("responsive_mode", expvar.Func(func() any {
-			return resolved.SettingsProvider.Get().StreamConfig().ResponsiveMode
-		}))
-		expvar.Publish("torrent_connection_policy", expvar.Func(func() any {
-			return torrentConnectionPolicySnapshot(resolved.SettingsProvider.Get())
-		}))
-		expvar.Publish("torrent_runtime", expvar.Func(func() any {
-			return torrentRuntimeSnapshot(resolved.TorrentBackend)
-		}))
-		expvar.Publish("request_strategy_pressure", expvar.Func(func() any {
-			return requestStrategyPressureSnapshot(
-				torrentRuntimeSnapshot(resolved.TorrentBackend),
-				torrstor.SnapshotCacheStats(),
-			)
-		}))
-		expvar.Publish("stream_health", expvar.Func(func() any {
-			return torr.SnapshotStreamHealth()
-		}))
+		registerCacheMetrics()
+		registerRuntimeMetrics(resolved)
 
 		if shouldStartRuntimeUpdater(resolved.SettingsProvider) {
 			go updateRuntimeMetrics(resolved)
 		}
 	})
+}
+
+func registerCacheMetrics() {
+	expvar.Publish("cache_hits", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().Hits
+	}))
+	expvar.Publish("cache_misses", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().Misses
+	}))
+	expvar.Publish("cache_active", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().ActiveCaches
+	}))
+	expvar.Publish("cache_active_readers", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().ActiveReaders
+	}))
+	expvar.Publish("cache_logical_filled_bytes", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().LogicalFilledBytes
+	}))
+	expvar.Publish("cache_configured_capacity_bytes", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().ConfiguredCapacityBytes
+	}))
+	expvar.Publish("cache_logical_overhead_bytes", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().LogicalOverheadBytes
+	}))
+	expvar.Publish("cache_pieces_count", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().PiecesCount
+	}))
+	expvar.Publish("cache_in_memory_chunks", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().InMemoryChunks
+	}))
+	expvar.Publish("cache_reusable_chunks", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().ReusableChunks
+	}))
+	expvar.Publish("cache_reusable_bytes", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().ReusableBytes
+	}))
+	expvar.Publish("cache_cleanup_runs", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().CleanupRuns
+	}))
+	expvar.Publish("cache_cleaned_bytes", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().CleanedBytes
+	}))
+	expvar.Publish("cache_memory", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats()
+	}))
+}
+
+func registerRuntimeMetrics(resolved Deps) {
+	expvar.Publish("active_streams", expvar.Func(func() any {
+		return torr.GetActiveStreams()
+	}))
+	expvar.Publish("peers_connected", expvar.Func(func() any {
+		return peersConnected.Load()
+	}))
+	expvar.Publish("download_bytes", expvar.Func(func() any {
+		return downloadBytes.Load()
+	}))
+	expvar.Publish("upload_bytes", expvar.Func(func() any {
+		return uploadBytes.Load()
+	}))
+	expvar.Publish("torrents_active", expvar.Func(func() any {
+		return torrentsActive.Load()
+	}))
+	expvar.Publish("goroutines", expvar.Func(func() any {
+		return runtime.NumGoroutine()
+	}))
+	expvar.Publish("heap_alloc_bytes", expvar.Func(func() any {
+		var m runtime.MemStats
+
+		runtime.ReadMemStats(&m)
+
+		return m.Alloc
+	}))
+	expvar.Publish("heap_total_alloc_bytes", expvar.Func(func() any {
+		var m runtime.MemStats
+
+		runtime.ReadMemStats(&m)
+
+		return m.TotalAlloc
+	}))
+	expvar.Publish("cache_config_size_mb", expvar.Func(func() any {
+		return resolved.SettingsProvider.Get().CacheConfig().SizeBytes / (1024 * 1024)
+	}))
+	expvar.Publish("responsive_mode", expvar.Func(func() any {
+		return resolved.SettingsProvider.Get().StreamConfig().ResponsiveMode
+	}))
+	expvar.Publish("torrent_connection_policy", expvar.Func(func() any {
+		return torrentConnectionPolicySnapshot(resolved.SettingsProvider.Get())
+	}))
+	expvar.Publish("torrent_runtime", expvar.Func(func() any {
+		return torrentRuntimeSnapshot(resolved.TorrentBackend)
+	}))
+	expvar.Publish("request_strategy_pressure", expvar.Func(func() any {
+		return requestStrategyPressureSnapshot(
+			torrentRuntimeSnapshot(resolved.TorrentBackend),
+			torrstor.SnapshotCacheStats(),
+		)
+	}))
+	expvar.Publish("stream_health", expvar.Func(func() any {
+		return torr.SnapshotStreamHealth()
+	}))
 }
 
 func shouldStartRuntimeUpdater(provider settings.SettingsProvider) bool {
@@ -189,6 +197,7 @@ func torrentRuntimeSnapshot(backend torr.TorrentService) map[string]any {
 	items := make([]map[string]any, 0, len(torrents))
 
 	var activePeers, totalPeers, pendingPeers, halfOpenPeers, connectedSeeders, activeReaders int
+
 	var trackerTiers, trackers int
 
 	for index, torrent := range torrents {

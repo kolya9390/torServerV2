@@ -398,8 +398,9 @@ func TestStreamPlayRepeatedRangeRequestStreamsWithoutPreload(t *testing.T) {
 	r.GET("/streams/play", streamPlay)
 
 	req := httptest.NewRequest(http.MethodGet, "/streams/play?link=magnet:?xt=urn:btih:abc123&index=1", nil)
-	req.Header.Set("Range", "bytes=1048576-2097151")
 	w := httptest.NewRecorder()
+
+	req.Header.Set("Range", "bytes=1048576-2097151")
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {

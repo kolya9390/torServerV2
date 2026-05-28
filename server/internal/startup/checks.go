@@ -79,6 +79,7 @@ func prepareSSL(args *settings.ExecArgs, provider settings.SettingsProvider) err
 func ensurePortFree(ip, port, label string) error {
 	address := net.JoinHostPort(ip, port)
 	l, err := listenTCP("tcp", address)
+
 	if l != nil {
 		if closeErr := l.Close(); closeErr != nil {
 			return fmt.Errorf("close %s port %s probe listener: %w", label, port, closeErr)

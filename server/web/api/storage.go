@@ -47,6 +47,7 @@ func UpdateStorageSettings(c *gin.Context) {
 	if !ok {
 		return
 	}
+
 	if deps.Settings.ReadOnly() {
 		abortAPIError(c, http.StatusForbidden, newValidationError("mode", "read-only mode"))
 

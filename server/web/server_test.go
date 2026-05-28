@@ -80,6 +80,7 @@ func TestShutdownHTTPServerWithTimeoutClosesActiveStreamingConnection(t *testing
 
 	started := make(chan struct{})
 	requestDone := make(chan struct{})
+
 	var startedOnce atomic.Bool
 
 	srv := newHTTPServer(listener.Addr().String(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +89,7 @@ func TestShutdownHTTPServerWithTimeoutClosesActiveStreamingConnection(t *testing
 		}
 
 		w.WriteHeader(http.StatusOK)
+
 		if flusher, ok := w.(http.Flusher); ok {
 			flusher.Flush()
 		}
@@ -109,6 +111,7 @@ func TestShutdownHTTPServerWithTimeoutClosesActiveStreamingConnection(t *testing
 
 			return
 		}
+
 		_, err = io.Copy(io.Discard, resp.Body)
 		if closeErr := resp.Body.Close(); closeErr != nil && err == nil {
 			err = closeErr

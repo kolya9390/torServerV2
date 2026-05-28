@@ -76,7 +76,10 @@ func (w *streamMetricsWriter) err() error {
 		return nil
 	}
 
-	err, _ := value.(error)
+	err, ok := value.(error)
+	if !ok {
+		return nil
+	}
 
 	return err
 }
@@ -118,6 +121,7 @@ func (r *firstByteTrackingReader) Read(p []byte) (int, error) {
 	}
 
 	n, err := r.reader.Read(p)
+
 	if r.trackReadWait {
 		recordStreamReadWait(time.Since(started))
 	}

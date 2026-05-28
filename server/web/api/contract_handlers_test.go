@@ -204,6 +204,7 @@ func TestHandlerMissingServicesContextFailsClosedWithoutPanic(t *testing.T) {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
+
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("expected JSON error response, got err: %v body=%s", err, w.Body.String())
 	}

@@ -25,6 +25,7 @@ func shutdown(c *gin.Context) {
 	if !ok {
 		return
 	}
+
 	if deps.Settings.ReadOnly() && reasonStr == "" {
 		abortAPIError(c, http.StatusForbidden, newForbiddenError("read-only mode requires explicit shutdown reason"))
 

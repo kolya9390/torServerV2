@@ -85,6 +85,7 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 	streamStarted := time.Now()
 	http.ServeContent(metricsWriter, req, file.Path(), time.Unix(t.Timestamp, 0), content)
 	markStreamActivity()
+
 	if debugCfg.EnableDebug {
 		recordStreamCompleted(
 			streamFirstByteDuration(streamStarted, metricsWriter),
@@ -134,6 +135,7 @@ func logStreamMetrics(enabled bool, streamID int32, streamStarted time.Time, met
 
 	firstByteMS := int64(-1)
 	firstByteDuration := streamFirstByteDuration(streamStarted, metricsWriter)
+
 	if firstByteDuration > 0 {
 		firstByteMS = firstByteDuration.Milliseconds()
 	}

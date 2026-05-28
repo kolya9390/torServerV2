@@ -283,7 +283,7 @@ func TestCacheStatsTrackLogicalOverheadForTwoCaches(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		writePiece(t, first, i)
 		writePiece(t, second, i)
 	}
@@ -345,6 +345,7 @@ func TestReusableChunkPoolDrainsAfterCacheCloses(t *testing.T) {
 	}
 
 	first.pieces[0].mPiece.Release()
+
 	if got, want := reusableMemPieceChunks(), int64(1); got != want {
 		t.Fatalf("reusable chunks after Release = %d, want %d", got, want)
 	}

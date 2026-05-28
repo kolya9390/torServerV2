@@ -24,6 +24,11 @@ type streamHealthCounters struct {
 	clientDisconnectsTotal atomic.Int64
 	stallsTotal            atomic.Int64
 	bytesWrittenTotal      atomic.Int64
+	readWaitsTotal         atomic.Int64
+	readWaitTotalMS        atomic.Int64
+	maxReadWaitMS          atomic.Int64
+	readWaitsOver3sTotal   atomic.Int64
+	readWaitsOver10sTotal  atomic.Int64
 	firstByteBuckets       [6]atomic.Int64
 	readWaitBuckets        [6]atomic.Int64
 }
@@ -35,6 +40,11 @@ type streamHealthSnapshot struct {
 	ClientDisconnectsTotal int64            `json:"client_disconnects_total"`
 	StallsTotal            int64            `json:"stalls_total"`
 	BytesWrittenTotal      int64            `json:"bytes_written_total"`
+	ReadWaitsTotal         int64            `json:"read_waits_total"`
+	ReadWaitTotalMS        int64            `json:"read_wait_total_ms"`
+	MaxReadWaitMS          int64            `json:"max_read_wait_ms"`
+	ReadWaitsOver3sTotal   int64            `json:"read_waits_over_3s_total"`
+	ReadWaitsOver10sTotal  int64            `json:"read_waits_over_10s_total"`
 	FirstByteMSBuckets     map[string]int64 `json:"first_byte_ms_buckets"`
 	ReadWaitMSBuckets      map[string]int64 `json:"read_wait_ms_buckets"`
 }
@@ -47,6 +57,11 @@ func SnapshotStreamHealth() streamHealthSnapshot {
 		ClientDisconnectsTotal: streamHealth.clientDisconnectsTotal.Load(),
 		StallsTotal:            streamHealth.stallsTotal.Load(),
 		BytesWrittenTotal:      streamHealth.bytesWrittenTotal.Load(),
+		ReadWaitsTotal:         streamHealth.readWaitsTotal.Load(),
+		ReadWaitTotalMS:        streamHealth.readWaitTotalMS.Load(),
+		MaxReadWaitMS:          streamHealth.maxReadWaitMS.Load(),
+		ReadWaitsOver3sTotal:   streamHealth.readWaitsOver3sTotal.Load(),
+		ReadWaitsOver10sTotal:  streamHealth.readWaitsOver10sTotal.Load(),
 		FirstByteMSBuckets:     snapshotBuckets(&streamHealth.firstByteBuckets),
 		ReadWaitMSBuckets:      snapshotBuckets(&streamHealth.readWaitBuckets),
 	}
@@ -62,6 +77,7 @@ func recordStreamCompleted(firstByte time.Duration, bytesWritten int64, err erro
 
 	if firstByte > 0 {
 		recordDurationBucket(&streamHealth.firstByteBuckets, firstByte)
+
 		if firstByte >= streamSlowFirstByteThreshold {
 			streamHealth.slowFirstByteTotal.Add(1)
 			streamHealth.stallsTotal.Add(1)
@@ -78,8 +94,35 @@ func recordStreamReadWait(wait time.Duration) {
 		return
 	}
 
+	waitMS := wait.Milliseconds()
+
 	streamHealth.stallsTotal.Add(1)
+	streamHealth.readWaitsTotal.Add(1)
+	streamHealth.readWaitTotalMS.Add(waitMS)
+	updateMaxAtomic(&streamHealth.maxReadWaitMS, waitMS)
+
+	if wait > 3*time.Second {
+		streamHealth.readWaitsOver3sTotal.Add(1)
+	}
+
+	if wait > 10*time.Second {
+		streamHealth.readWaitsOver10sTotal.Add(1)
+	}
+
 	recordDurationBucket(&streamHealth.readWaitBuckets, wait)
+}
+
+func updateMaxAtomic(value *atomic.Int64, candidate int64) {
+	for {
+		current := value.Load()
+		if candidate <= current {
+			return
+		}
+
+		if value.CompareAndSwap(current, candidate) {
+			return
+		}
+	}
 }
 
 func recordDurationBucket(buckets *[6]atomic.Int64, duration time.Duration) {
@@ -142,6 +185,11 @@ func resetStreamHealthForTest() {
 	streamHealth.clientDisconnectsTotal.Store(0)
 	streamHealth.stallsTotal.Store(0)
 	streamHealth.bytesWrittenTotal.Store(0)
+	streamHealth.readWaitsTotal.Store(0)
+	streamHealth.readWaitTotalMS.Store(0)
+	streamHealth.maxReadWaitMS.Store(0)
+	streamHealth.readWaitsOver3sTotal.Store(0)
+	streamHealth.readWaitsOver10sTotal.Store(0)
 
 	for index := range streamHealth.firstByteBuckets {
 		streamHealth.firstByteBuckets[index].Store(0)

@@ -287,6 +287,7 @@ func TestStreamHealthRecordsFirstByteAndBytes(t *testing.T) {
 	resetStreamHealthForTest()
 
 	recordStreamCompleted(150*time.Millisecond, 1024, nil)
+
 	snapshot := SnapshotStreamHealth()
 
 	if got, want := snapshot.RequestsTotal, int64(1); got != want {
@@ -310,6 +311,7 @@ func TestStreamHealthRecordsSlowFirstByteAndZeroBytes(t *testing.T) {
 	resetStreamHealthForTest()
 
 	recordStreamCompleted(3*time.Second, 0, nil)
+
 	snapshot := SnapshotStreamHealth()
 
 	if got, want := snapshot.SlowFirstByteTotal, int64(1); got != want {
@@ -329,6 +331,7 @@ func TestStreamHealthRecordsReadWait(t *testing.T) {
 	resetStreamHealthForTest()
 
 	recordStreamReadWait(750 * time.Millisecond)
+
 	snapshot := SnapshotStreamHealth()
 
 	if got, want := snapshot.StallsTotal, int64(1); got != want {
@@ -337,6 +340,43 @@ func TestStreamHealthRecordsReadWait(t *testing.T) {
 
 	if got, want := snapshot.ReadWaitMSBuckets["le_1000"], int64(1); got != want {
 		t.Fatalf("read wait le_1000 bucket = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.ReadWaitsTotal, int64(1); got != want {
+		t.Fatalf("ReadWaitsTotal = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.ReadWaitTotalMS, int64(750); got != want {
+		t.Fatalf("ReadWaitTotalMS = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.MaxReadWaitMS, int64(750); got != want {
+		t.Fatalf("MaxReadWaitMS = %d, want %d", got, want)
+	}
+}
+
+func TestStreamHealthRecordsLongReadWaits(t *testing.T) {
+	resetStreamHealthForTest()
+
+	recordStreamReadWait(4 * time.Second)
+	recordStreamReadWait(11 * time.Second)
+
+	snapshot := SnapshotStreamHealth()
+
+	if got, want := snapshot.ReadWaitsTotal, int64(2); got != want {
+		t.Fatalf("ReadWaitsTotal = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.ReadWaitsOver3sTotal, int64(2); got != want {
+		t.Fatalf("ReadWaitsOver3sTotal = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.ReadWaitsOver10sTotal, int64(1); got != want {
+		t.Fatalf("ReadWaitsOver10sTotal = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.MaxReadWaitMS, int64(11000); got != want {
+		t.Fatalf("MaxReadWaitMS = %d, want %d", got, want)
 	}
 }
 
@@ -352,6 +392,7 @@ func TestStreamMetricsWriterReadFromRecordsSlowReadWait(t *testing.T) {
 	}
 
 	snapshot := SnapshotStreamHealth()
+
 	if got, want := snapshot.ReadWaitMSBuckets["le_1000"], int64(1); got != want {
 		t.Fatalf("read wait le_1000 bucket = %d, want %d", got, want)
 	}
@@ -373,6 +414,14 @@ func TestStreamMetricsWriterReadFromSkipsReadWaitWhenDebugDisabled(t *testing.T)
 		t.Fatalf("StallsTotal = %d, want 0", got)
 	}
 
+	if got := snapshot.ReadWaitsTotal; got != 0 {
+		t.Fatalf("ReadWaitsTotal = %d, want 0", got)
+	}
+
+	if got := snapshot.MaxReadWaitMS; got != 0 {
+		t.Fatalf("MaxReadWaitMS = %d, want 0", got)
+	}
+
 	if got := snapshot.ReadWaitMSBuckets["le_1000"]; got != 0 {
 		t.Fatalf("read wait le_1000 bucket = %d, want 0", got)
 	}
@@ -383,6 +432,7 @@ func TestStreamHealthClassifiesClientDisconnect(t *testing.T) {
 
 	recordStreamCompleted(0, 512, syscall.EPIPE)
 	recordStreamCompleted(0, 512, errors.New("write tcp: broken pipe"))
+
 	snapshot := SnapshotStreamHealth()
 
 	if got, want := snapshot.ClientDisconnectsTotal, int64(2); got != want {
