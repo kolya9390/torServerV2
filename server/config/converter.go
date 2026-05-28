@@ -40,6 +40,9 @@ func (c *Config) ToStaticConfig() settings.StaticConfig {
 		UploadRateLimit:   c.Network.UploadRateLimitKB,
 		PeersListenPort:   c.Network.PeersListenPort,
 
+		// Stream
+		CoreProfile: c.Stream.CoreProfile,
+
 		// Search
 		EnableRutorSearch:   c.Search.EnableRutor,
 		EnableTorznabSearch: c.Search.EnableTorznab,

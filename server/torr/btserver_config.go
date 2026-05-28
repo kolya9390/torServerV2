@@ -2,8 +2,11 @@ package torr
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net"
 
+	alog "github.com/anacrolix/log"
 	"github.com/anacrolix/publicip"
 	"github.com/anacrolix/torrent"
 	"github.com/wlynxg/anet"
@@ -36,6 +39,11 @@ func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
 	cliVers := userAgent
 
 	config.Debug = debugCfg.EnableDebug && !debugCfg.ServiceOnlyDebug
+	configureTorrentLibraryLogging(config, debugCfg)
+	// TorrServer streams native BitTorrent over TCP/uTP. WebTorrent requires
+	// WebRTC/ICE machinery for ws/wss trackers and adds avoidable CPU/goroutine
+	// overhead for LAN/TV streaming workloads.
+	config.DisableWebtorrent = true
 	config.DisableIPv6 = !networkCfg.EnableIPv6
 	config.DisableTCP = networkCfg.DisableTCP
 	config.DisableUTP = networkCfg.DisableUTP
@@ -48,11 +56,12 @@ func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
 	config.UpnpID = upnpID
 	config.HTTPUserAgent = userAgent
 	config.ExtendedHandshakeClientVersion = cliVers
-	effectiveConns := effectiveEstablishedConns(networkCfg.ConnectionsLimit, config.EstablishedConnsPerTorrent)
-	config.EstablishedConnsPerTorrent = effectiveConns
-	config.HalfOpenConnsPerTorrent = maxInt(effectiveConns, config.HalfOpenConnsPerTorrent)
-	config.TotalHalfOpenConns = maxInt(effectiveConns*8, 200)
-	config.TorrentPeersLowWater, config.TorrentPeersHighWater = peerWatermarks(effectiveConns)
+	policy := connectionPolicyForSettings(sets, config.EstablishedConnsPerTorrent)
+	config.EstablishedConnsPerTorrent = policy.effectiveConns
+	config.HalfOpenConnsPerTorrent = maxInt(policy.effectiveConns, config.HalfOpenConnsPerTorrent)
+	config.TotalHalfOpenConns = maxInt(policy.effectiveConns*8, 200)
+	config.TorrentPeersLowWater = policy.peerLowWater
+	config.TorrentPeersHighWater = policy.peerHighWater
 
 	if networkCfg.ForceEncrypt {
 		config.HeaderObfuscationPolicy = torrent.HeaderObfuscationPolicy{
@@ -85,6 +94,18 @@ func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
 	return config
 }
 
+func configureTorrentLibraryLogging(config *torrent.ClientConfig, debugCfg settings.DebugConfig) {
+	if config == nil || !debugCfg.ServiceOnlyDebug {
+		return
+	}
+
+	config.Logger = alog.NewLogger("torrent")
+	config.Logger.SetHandlers(alog.DiscardHandler)
+	config.Slogger = slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
+		Level: slog.Level(100),
+	}))
+}
+
 func effectiveEstablishedConns(userLimit, defaultConns int) int {
 	if defaultConns <= 0 {
 		defaultConns = 50
@@ -114,6 +135,11 @@ func peerWatermarks(effectiveConns int) (int, int) {
 	}
 
 	return low, high
+}
+
+// PeerWatermarksForConns exposes peer watermarks for diagnostics.
+func PeerWatermarksForConns(effectiveConns int) (int, int) {
+	return peerWatermarks(effectiveConns)
 }
 
 // detectPublicIPv4 detects the public IPv4 address for the torrent client.

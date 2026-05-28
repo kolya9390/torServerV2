@@ -27,5 +27,10 @@ import (
 //	@Success		200	"Data returned according to query"
 //	@Router			/stream [get]
 func stream(c *gin.Context) {
-	newLegacyStreamAdapter(streamDepsFromContext(c)).Handle(c)
+	deps, ok := streamDepsFromContext(c)
+	if !ok {
+		return
+	}
+
+	newLegacyStreamAdapter(deps).Handle(c)
 }

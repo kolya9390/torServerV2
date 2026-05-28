@@ -29,11 +29,13 @@ func (c *Cache) CleanPieces() {
 	}
 
 	c.cleanup.removing.Store(true)
+	c.recordCleanupRun()
 
 	defer func() { c.cleanup.removing.Store(false) }()
 	c.cleanup.mu.Unlock()
 
 	remPieces := c.getRemPieces()
+	beforeFilled := c.filled.Load()
 
 	if c.filled.Load() > curCapacity {
 		rems := (c.filled.Load()-curCapacity)/c.pieceLength + 1
@@ -47,10 +49,14 @@ func (c *Cache) CleanPieces() {
 
 			rems--
 			if rems <= 0 {
+				c.recordCleanedBytes(beforeFilled - c.filled.Load())
+
 				return
 			}
 		}
 	}
+
+	c.recordCleanedBytes(beforeFilled - c.filled.Load())
 }
 
 func (c *Cache) getRemPieces() []*Piece {
@@ -71,10 +77,6 @@ func (c *Cache) getRemPieces() []*Piece {
 		}
 	}
 	c.mu.RUnlock()
-
-	if CacheMetricsRecorder != nil {
-		CacheMetricsRecorder(c.metrics.hits.Load(), c.metrics.misses.Load())
-	}
 
 	return piecesRemove
 }

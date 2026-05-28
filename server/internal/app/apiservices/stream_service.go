@@ -95,35 +95,20 @@ func (streamService) EnsureTorrent(
 	meta contracts.StreamMeta,
 	allowCreate bool,
 ) (contracts.TorrentHandle, error) {
-	log.Debug("EnsureTorrent: starting", "hash", spec.HashHex())
-	log.Debug("EnsureTorrent: about to call torrents.Get")
-
-	tor := torrents.Get(spec.HashHex())
-	log.Debug("EnsureTorrent: torrents.Get returned", "tor", tor != nil)
+	hash := spec.HashHex()
+	tor := torrents.Get(hash)
 
 	if tor != nil {
 		torStat := tor.State()
-		log.Debug("EnsureTorrent: found existing torrent", "stat", torStat)
 
-		tMeta := tor.Metadata()
-		if meta.Title == "" {
-			meta.Title = tMeta.Title
-		}
-
-		if meta.Poster == "" {
-			meta.Poster = tMeta.Poster
-		}
-
-		if meta.Category == "" {
-			meta.Category = tMeta.Category
-		}
-
-		meta.Data = tMeta.Data
-		// Torrent already in memory and working/preloading — skip GotInfo() to avoid deadlock.
-		// The streaming layer (tor.Stream) will call GotInfo() internally if needed.
-		if torStat == contracts.TorrentWorking || torStat == contracts.TorrentPreload {
-			log.Debug("EnsureTorrent: torrent already working/preloading, skipping GotInfo")
-
+		if isActiveStreamTorrent(torStat) {
+			log.DebugSampled(
+				"stream.ensure.active",
+				100,
+				"stream ensure active torrent fast path",
+				"hash", hash,
+				"state", torStat,
+			)
 			tor.EnsureTitleFromInfo()
 
 			return tor, nil
@@ -134,14 +119,14 @@ func (streamService) EnsureTorrent(
 				return nil, contracts.ErrStreamUnauthorized
 			}
 
-			log.Debug("EnsureTorrent: activating torrent from DB metadata")
+			log.Debug("stream ensure activating torrent from db", "hash", hash)
 
 			tor = torrents.LoadFromDB(tor)
 			if tor == nil {
 				return nil, contracts.ErrStreamConnectionTimeout
 			}
 
-			if tor.State() == contracts.TorrentWorking || tor.State() == contracts.TorrentPreload {
+			if isActiveStreamTorrent(tor.State()) {
 				tor.EnsureTitleFromInfo()
 
 				return tor, nil
@@ -150,7 +135,7 @@ func (streamService) EnsureTorrent(
 	}
 
 	if tor == nil {
-		log.Debug("EnsureTorrent: need to add torrent")
+		log.Debug("stream ensure add torrent", "hash", hash)
 
 		if !allowCreate {
 			return nil, contracts.ErrStreamUnauthorized
@@ -160,27 +145,27 @@ func (streamService) EnsureTorrent(
 
 		tor, err = torrents.Add(spec, meta.Title, meta.Poster, meta.Data, meta.Category)
 		if err != nil {
-			log.Debug("EnsureTorrent: Add error", "error", err)
+			log.Debug("stream ensure add failed", "hash", hash, "error", err)
 
 			return nil, err
 		}
-
-		log.Debug("EnsureTorrent: Add succeeded", "tor", tor)
 	}
 
-	log.Debug("EnsureTorrent: calling GotInfo")
+	log.Debug("stream ensure waiting for torrent info", "hash", hash)
 
 	if !tor.Ready() {
-		log.Debug("EnsureTorrent: no GotInfo, returning connection timeout")
+		log.Debug("stream ensure torrent info timeout", "hash", hash)
 
 		return nil, contracts.ErrStreamConnectionTimeout
 	}
 
-	log.Debug("EnsureTorrent: GotInfo succeeded")
-
 	tor.EnsureTitleFromInfo()
 
 	return tor, nil
+}
+
+func isActiveStreamTorrent(state contracts.TorrentState) bool {
+	return state == contracts.TorrentWorking || state == contracts.TorrentPreload
 }
 
 func (streamService) ParseFileIndex(index string, fileCount int) (int, error) {

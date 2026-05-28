@@ -35,6 +35,28 @@ var lowEndProfile = BTSets{
 	DiskWriteBatchSize:   8,
 }
 
+// lowCPUProfile defines an opt-in preset based on measured A49 streaming profiles.
+var lowCPUProfile = BTSets{
+	CacheSize:            64 * 1024 * 1024,
+	PreloadCache:         50,
+	DisableUTP:           true,
+	ConnectionsLimit:     12,
+	MaxConcurrentStreams: 2,
+	StreamQueueSize:      2,
+	StreamQueueWaitSec:   3,
+	AdaptiveRAMinMB:      4,
+	AdaptiveRAMaxMB:      64,
+	WarmDiskCacheSizeMB:  0,
+	WarmDiskCacheTTLMin:  180,
+	MetadataWorkers:      0,
+	MetadataQueueSize:    0,
+	PreloadWorkers:       0,
+	PreloadQueueSize:     0,
+	DiskSyncPolicy:       "periodic",
+	DiskSyncIntervalMS:   1000,
+	DiskWriteBatchSize:   16,
+}
+
 // balancedProfile defines the default balanced preset.
 var balancedProfile = BTSets{
 	CacheSize:            64 * 1024 * 1024,
@@ -101,6 +123,7 @@ var nasProfile = BTSets{
 // profilePresets maps profile names to their preset configurations.
 var profilePresets = map[string]BTSets{
 	"low-end":         lowEndProfile,
+	"low-cpu":         lowCPUProfile,
 	"balanced":        balancedProfile,
 	"high-throughput": highThroughputProfile,
 	"nas":             nasProfile,
@@ -157,6 +180,10 @@ var copyRules = []fieldCopyRule{
 	{
 		shouldCopy: func(p BTSets, _ int64) bool { return p.ConnectionsLimit > 0 },
 		apply:      func(dst *BTSets, p BTSets) { dst.ConnectionsLimit = p.ConnectionsLimit },
+	},
+	{
+		shouldCopy: func(p BTSets, _ int64) bool { return p.DisableUTP },
+		apply:      func(dst *BTSets, p BTSets) { dst.DisableUTP = p.DisableUTP },
 	},
 	{
 		shouldCopy: func(p BTSets, _ int64) bool {
@@ -257,7 +284,7 @@ func normalizeCoreProfile(profile string) string {
 	switch p {
 	case "", "custom":
 		return "custom"
-	case "low-end", "balanced", "high-throughput", "nas":
+	case "low-end", "low-cpu", "balanced", "high-throughput", "nas":
 		return p
 	default:
 		return "custom"

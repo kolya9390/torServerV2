@@ -15,7 +15,12 @@ import (
 //	@Success		200	{object}	object	"TMDB settings"
 //	@Router			/tmdb/settings [get]
 func tmdbSettings(c *gin.Context) {
-	cfg, ok := tmdbDepsFromContext(c).Settings.TMDBConfig()
+	deps, ok := tmdbDepsFromContext(c)
+	if !ok {
+		return
+	}
+
+	cfg, ok := deps.Settings.TMDBConfig()
 	if !ok {
 		abortAPIError(c, 500, newInternalError("settings not initialized", nil))
 

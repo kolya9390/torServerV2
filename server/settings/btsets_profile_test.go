@@ -7,6 +7,7 @@ func TestNormalizeCoreProfile(t *testing.T) {
 		"":                "custom",
 		"custom":          "custom",
 		"LOW-END":         "low-end",
+		"LOW-CPU":         "low-cpu",
 		"balanced":        "balanced",
 		"high-throughput": "high-throughput",
 		"nas":             "nas",
@@ -16,6 +17,27 @@ func TestNormalizeCoreProfile(t *testing.T) {
 		if got := normalizeCoreProfile(in); got != want {
 			t.Fatalf("normalizeCoreProfile(%q)=%q want=%q", in, got, want)
 		}
+	}
+}
+
+func TestLowCPUProfileDefaults(t *testing.T) {
+	sets := &BTSets{}
+	applyCoreProfilePreset(sets, "low-cpu")
+
+	if !sets.DisableUTP {
+		t.Fatal("low-cpu profile must disable uTP")
+	}
+
+	if sets.ConnectionsLimit != 12 {
+		t.Fatalf("low-cpu ConnectionsLimit = %d, want 12", sets.ConnectionsLimit)
+	}
+
+	if sets.CacheSize != 64*1024*1024 {
+		t.Fatalf("low-cpu CacheSize = %d, want 64MiB", sets.CacheSize)
+	}
+
+	if sets.MaxConcurrentStreams != 2 {
+		t.Fatalf("low-cpu MaxConcurrentStreams = %d, want 2", sets.MaxConcurrentStreams)
 	}
 }
 

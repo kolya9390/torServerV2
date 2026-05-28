@@ -184,6 +184,35 @@ func TestServicesMiddlewareRequiresCompleteServices(t *testing.T) {
 	}
 }
 
+func TestHandlerMissingServicesContextFailsClosedWithoutPanic(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	r.GET("/storage/settings", GetStorageSettings)
+
+	req := httptest.NewRequest(http.MethodGet, "/storage/settings", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var body struct {
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("expected JSON error response, got err: %v body=%s", err, w.Body.String())
+	}
+
+	if body.Error.Type != "internal_error" || body.Error.Message != "api services are not configured" {
+		t.Fatalf("unexpected error response: %+v", body.Error)
+	}
+}
+
 func TestTorznabSearchDisabledLegacyContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

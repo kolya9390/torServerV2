@@ -70,17 +70,7 @@ func GetTrackerFromFileAtPath(basePath string) []string {
 
 	buf, err := os.ReadFile(name)
 	if err == nil {
-		list := strings.Split(string(buf), "\n")
-
-		var ret []string
-
-		for _, l := range list {
-			if strings.HasPrefix(l, "udp") || strings.HasPrefix(l, "http") {
-				ret = append(ret, l)
-			}
-		}
-
-		return ret
+		return parseNativeTrackerList(string(buf))
 	}
 
 	return nil
@@ -114,11 +104,15 @@ func NormalizeTrackers(trackers [][]string, enableIPv6 bool, maxTotal int) [][]s
 				continue
 			}
 
+			if !isNativeTrackerScheme(tracker) {
+				continue
+			}
+
 			if !enableIPv6 && trackerUsesIPv6(tracker) {
 				continue
 			}
 
-			key := strings.ToLower(tracker)
+			key := canonicalTrackerKey(tracker)
 			if _, ok := seen[key]; ok {
 				continue
 			}
@@ -143,6 +137,33 @@ func NormalizeTrackers(trackers [][]string, enableIPv6 bool, maxTotal int) [][]s
 	}
 
 	return normalized
+}
+
+func isNativeTrackerScheme(tracker string) bool {
+	parsed, err := url.Parse(tracker)
+	if err != nil {
+		return false
+	}
+
+	switch strings.ToLower(parsed.Scheme) {
+	case "udp", "http", "https":
+		return parsed.Host != ""
+	default:
+		return false
+	}
+}
+
+func canonicalTrackerKey(tracker string) string {
+	parsed, err := url.Parse(tracker)
+	if err != nil {
+		return strings.ToLower(strings.TrimSpace(tracker))
+	}
+
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.Fragment = ""
+
+	return parsed.String()
 }
 
 func trackerUsesIPv6(tracker string) bool {
@@ -181,24 +202,59 @@ func loadNewTracker() {
 		buf, err := io.ReadAll(resp.Body)
 		if err == nil {
 			ret := parseTrackerList(string(buf))
-			loadedTrackers = append(ret, defTrackers...)
+			loadedTrackers = mergeDefaultAndRemoteTrackers(ret)
 		}
 	}
 }
 
+func mergeDefaultAndRemoteTrackers(remote []string) []string {
+	normalized := NormalizeTrackers([][]string{defTrackers, remote}, true, 0)
+	if len(normalized) == 0 {
+		return nil
+	}
+
+	merged := make([]string, 0, len(defTrackers)+len(remote))
+	for _, tier := range normalized {
+		merged = append(merged, tier...)
+	}
+
+	return merged
+}
+
 func parseTrackerList(raw string) []string {
+	return parseTrackerListWithSchemes(raw, map[string]struct{}{
+		"udp":   {},
+		"http":  {},
+		"https": {},
+		"ws":    {},
+		"wss":   {},
+	})
+}
+
+func parseNativeTrackerList(raw string) []string {
+	return parseTrackerListWithSchemes(raw, map[string]struct{}{
+		"udp":   {},
+		"http":  {},
+		"https": {},
+	})
+}
+
+func parseTrackerListWithSchemes(raw string, allowedSchemes map[string]struct{}) []string {
 	arr := strings.Split(raw, "\n")
 	ret := make([]string, 0, len(arr))
 
 	for _, s := range arr {
 		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
 
-		switch {
-		case strings.HasPrefix(s, "udp://"),
-			strings.HasPrefix(s, "http://"),
-			strings.HasPrefix(s, "https://"),
-			strings.HasPrefix(s, "ws://"),
-			strings.HasPrefix(s, "wss://"):
+		parsed, err := url.Parse(s)
+		if err != nil {
+			continue
+		}
+
+		if _, ok := allowedSchemes[strings.ToLower(parsed.Scheme)]; ok && parsed.Host != "" {
 			ret = append(ret, s)
 		}
 	}

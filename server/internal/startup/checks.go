@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
+	"syscall"
 
 	"server/settings"
 )
@@ -75,7 +77,8 @@ func prepareSSL(args *settings.ExecArgs, provider settings.SettingsProvider) err
 }
 
 func ensurePortFree(ip, port, label string) error {
-	l, err := listenTCP("tcp", ip+":"+port)
+	address := net.JoinHostPort(ip, port)
+	l, err := listenTCP("tcp", address)
 	if l != nil {
 		if closeErr := l.Close(); closeErr != nil {
 			return fmt.Errorf("close %s port %s probe listener: %w", label, port, closeErr)
@@ -83,8 +86,16 @@ func ensurePortFree(ip, port, label string) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("%s port %s already in use", label, port)
+		if isAddressAlreadyInUse(err) {
+			return fmt.Errorf("%s port %s already in use: %w", label, port, err)
+		}
+
+		return fmt.Errorf("probe %s listener on %s: %w", label, address, err)
 	}
 
 	return nil
+}
+
+func isAddressAlreadyInUse(err error) bool {
+	return errors.Is(err, syscall.EADDRINUSE) || strings.Contains(strings.ToLower(err.Error()), "address already in use")
 }

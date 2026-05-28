@@ -81,7 +81,10 @@ func processUploadFile(
 //	@Success		200	{object}	object	"Torrent status"
 //	@Router			/torrent/upload [post]
 func torrentUpload(c *gin.Context) {
-	deps := uploadDepsFromContext(c)
+	deps, ok := uploadDepsFromContext(c)
+	if !ok {
+		return
+	}
 
 	uploadReq, err := bindTorrentUploadRequest(c)
 

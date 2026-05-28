@@ -37,6 +37,8 @@ func (c *Cache) Init(info *metainfo.Info, hash metainfo.Hash) {
 	for i := range c.pieceCount {
 		c.pieces[i] = NewPiece(i, c)
 	}
+
+	c.registerMetrics()
 }
 
 func (c *Cache) SetTorrent(torr *torrent.Torrent) {
@@ -49,12 +51,12 @@ func (c *Cache) Piece(m metainfo.Piece) storage.PieceImpl {
 	c.mu.RUnlock()
 
 	if ok {
-		c.metrics.hits.Add(1)
+		c.recordHit()
 
 		return val
 	}
 
-	c.metrics.misses.Add(1)
+	c.recordMiss()
 
 	return &PieceFake{}
 }
@@ -80,6 +82,8 @@ func (c *Cache) Close() error {
 	if c.host != nil {
 		c.host.unregisterCache(c.hash)
 	}
+
+	c.unregisterMetrics()
 
 	cacheCfg := c.currentCacheConfig()
 	if cacheCfg.RemoveOnDrop {
@@ -124,9 +128,13 @@ func (c *Cache) removePiece(piece *Piece) {
 
 func (c *Cache) AdjustRA(readahead int64) {
 	if c.currentCacheConfig().SizeBytes == 0 {
+		newCapacity := readahead * 3
+
 		c.mu.Lock()
-		c.capacity = readahead * 3
+		old := c.capacity
+		c.capacity = newCapacity
 		c.mu.Unlock()
+		c.addConfiguredCapacity(newCapacity - old)
 	}
 
 	if c.Readers() > 0 {
@@ -179,6 +187,7 @@ func (c *Cache) SetCapacity(capacity int64) {
 
 	c.capacity = capacity
 	c.mu.Unlock()
+	c.addConfiguredCapacity(capacity - old)
 
 	if capacity < old {
 		c.queueCleanPieces()

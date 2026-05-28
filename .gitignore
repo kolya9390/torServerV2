@@ -137,7 +137,8 @@ docker-compose.local.yml
 # Analysis documents (internal research/analysis)
 ANALYSIS/
 docs/
-
+artifacts/
+server/scripts/
 # Temporary docs
 *.tmp.md
 *.draft.md

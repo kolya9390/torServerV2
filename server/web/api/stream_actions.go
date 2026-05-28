@@ -37,7 +37,10 @@ func (meta streamMeta) toContract() contracts.StreamMeta {
 //	@Success		200	{object}	contracts.TorrentStatus
 //	@Router			/streams/stat [get]
 func streamStat(c *gin.Context) {
-	deps := streamDepsFromContext(c)
+	deps, ok := streamDepsFromContext(c)
+	if !ok {
+		return
+	}
 
 	if isNotAuthRequest(c) {
 		c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
@@ -80,7 +83,10 @@ func streamStat(c *gin.Context) {
 //	@Success		200	{file}	file
 //	@Router			/streams/m3u [get]
 func streamM3U(c *gin.Context) {
-	deps := streamDepsFromContext(c)
+	deps, ok := streamDepsFromContext(c)
+	if !ok {
+		return
+	}
 
 	req, err := bindStreamM3URequest(c, deps.Parser)
 	if err != nil {
@@ -137,7 +143,10 @@ func streamM3U(c *gin.Context) {
 //	@Success		200	"Torrent data"
 //	@Router			/streams/play [get]
 func streamPlay(c *gin.Context) {
-	deps := streamDepsFromContext(c)
+	deps, ok := streamDepsFromContext(c)
+	if !ok {
+		return
+	}
 
 	req, err := bindStreamPlayRequest(c, deps.Parser)
 	if err != nil {
@@ -195,7 +204,10 @@ func streamPlay(c *gin.Context) {
 //	@Success		200	{object}	map[string]interface{}
 //	@Router			/streams/save [post]
 func streamSave(c *gin.Context) {
-	deps := streamDepsFromContext(c)
+	deps, ok := streamDepsFromContext(c)
+	if !ok {
+		return
+	}
 
 	req, err := bindStreamLinkRequest(c, deps.Parser)
 	if err != nil {

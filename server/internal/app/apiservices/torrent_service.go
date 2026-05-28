@@ -165,13 +165,22 @@ func (d torrentService) EnqueuePreload(tor contracts.TorrentHandle, index int) b
 
 	if signals := d.runtimeSignals; signals != nil {
 		if signals.ActivePlaybackTorrents() > 1 {
-			log.TLogln("EnqueuePreload: skip under multi-playback load")
+			log.DebugSampled(
+				"preload.skip.multi-playback",
+				20,
+				"skip preload under multi-playback load",
+			)
 
 			return false
 		}
 
 		if !signals.HasRuntimeBackend() && signals.ActiveStreams() > 1 {
-			log.TLogln("EnqueuePreload: skip under multi-stream load", "active_streams=", signals.ActiveStreams())
+			log.DebugSampled(
+				"preload.skip.multi-stream",
+				20,
+				"skip preload under multi-stream load",
+				"active_streams", signals.ActiveStreams(),
+			)
 
 			return false
 		}

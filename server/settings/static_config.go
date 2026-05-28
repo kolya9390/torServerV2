@@ -42,6 +42,9 @@ type StaticConfig struct {
 	UploadRateLimit   int
 	PeersListenPort   int
 
+	// Stream
+	CoreProfile string
+
 	// Search
 	EnableRutorSearch   bool
 	EnableTorznabSearch bool

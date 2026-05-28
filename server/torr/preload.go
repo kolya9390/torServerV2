@@ -3,7 +3,6 @@ package torr
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -69,7 +68,7 @@ func isPreloadComplete(t *Torrent) bool {
 func (t *Torrent) monitorPreloadProgress(file *torrent.File, stopChan <-chan struct{}, timeout time.Duration) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Debug("Recovered from panic in monitorPreloadProgress:", r)
+			log.Debug("recovered from panic in monitorPreloadProgress", "panic", r)
 		}
 	}()
 
@@ -79,6 +78,12 @@ func (t *Torrent) monitorPreloadProgress(file *torrent.File, stopChan <-chan str
 	for {
 		select {
 		case <-ticker.C:
+			if !log.IsDebugEnabled() {
+				t.AddExpiredTime(timeout)
+
+				continue
+			}
+
 			t.muTorrent.Lock()
 			stat := t.Stat
 			preloadedBytes := t.preload.loadedBytes
@@ -90,16 +95,21 @@ func (t *Torrent) monitorPreloadProgress(file *torrent.File, stopChan <-chan str
 				return
 			}
 
-			// Get stats once to avoid inconsistency
 			stats := file.Torrent().Stats()
-			statStr := fmt.Sprint(file.Torrent().InfoHash().HexString(), " ",
-				utils2.Format(float64(preloadedBytes)), "/",
-				utils2.Format(float64(preloadSize)), " Speed:",
-				utils2.Format(downloadSpeed), " Peers:",
-				stats.ActivePeers, "/",
-				stats.TotalPeers, " [Seeds:",
-				stats.ConnectedSeeders, "]")
-			log.Debug("Preload:", statStr)
+			log.DebugSampled(
+				"torrent.preload.progress",
+				5,
+				"preload progress",
+				"hash", file.Torrent().InfoHash().HexString(),
+				"preloaded_bytes", preloadedBytes,
+				"preload_size", preloadSize,
+				"preloaded", utils2.Format(float64(preloadedBytes)),
+				"target", utils2.Format(float64(preloadSize)),
+				"download_speed", utils2.Format(downloadSpeed),
+				"active_peers", stats.ActivePeers,
+				"total_peers", stats.TotalPeers,
+				"connected_seeders", stats.ConnectedSeeders,
+			)
 			t.AddExpiredTime(timeout)
 		case <-stopChan:
 			return
@@ -299,7 +309,7 @@ func (t *Torrent) runEndRangePreload(ctx context.Context, result *preloadResult,
 func (t *Torrent) runPreloadSequence(file *torrent.File, size int64, _ int) error {
 	setup := t.setupPreloadReaders(file, size)
 	if setup.err != nil {
-		log.Debug("End preload:", setup.err)
+		log.Debug("preload setup failed", "error", setup.err)
 
 		return setup.err
 	}
@@ -325,7 +335,7 @@ func (t *Torrent) runPreloadSequence(file *torrent.File, size int64, _ int) erro
 
 	// Check if torrent was closed
 	if !isPreloadComplete(t) {
-		log.Debug("End preload: torrent closed")
+		log.Debug("preload stopped: torrent closed")
 
 		return nil
 	}
@@ -345,16 +355,19 @@ func (t *Torrent) runPreloadSequence(file *torrent.File, size int64, _ int) erro
 
 	// Check if end range preload failed
 	if preloadErr != nil {
-		log.Debug("End range preload failed:", preloadErr)
+		log.Debug("end range preload failed", "error", preloadErr)
 	}
 
 	// Final log
 	if isPreloadComplete(t) {
 		stats := file.Torrent().Stats()
-		log.Debug("End preload:", file.Torrent().InfoHash().HexString(),
-			"Peers:", stats.ActivePeers, "/",
-			stats.TotalPeers, "[ Seeds:",
-			stats.ConnectedSeeders, "]")
+		log.Debug(
+			"preload completed",
+			"hash", file.Torrent().InfoHash().HexString(),
+			"active_peers", stats.ActivePeers,
+			"total_peers", stats.TotalPeers,
+			"connected_seeders", stats.ConnectedSeeders,
+		)
 	}
 
 	return nil

@@ -39,6 +39,43 @@ func (h testTorrentHandle) Stream(index int, request *http.Request, writer http.
 	return nil
 }
 
+type recordingTorrentHandle struct {
+	status      *contracts.TorrentStatus
+	state       contracts.TorrentState
+	hash        string
+	name        string
+	files       int
+	streamCalls int
+	streamIndex int
+	streamRange string
+}
+
+func (h *recordingTorrentHandle) Status() *contracts.TorrentStatus {
+	if h.status != nil {
+		return h.status
+	}
+
+	return &contracts.TorrentStatus{Hash: h.hash, Stat: h.state}
+}
+
+func (h *recordingTorrentHandle) State() contracts.TorrentState { return h.state }
+func (h *recordingTorrentHandle) HashHex() string               { return h.hash }
+func (h *recordingTorrentHandle) Name() string                  { return h.name }
+func (h *recordingTorrentHandle) FileCount() int                { return h.files }
+func (h *recordingTorrentHandle) Ready() bool                   { return true }
+func (h *recordingTorrentHandle) EnsureTitleFromInfo()          {}
+func (h *recordingTorrentHandle) Metadata() contracts.StreamMeta {
+	return contracts.StreamMeta{}
+}
+
+func (h *recordingTorrentHandle) Stream(index int, request *http.Request, writer http.ResponseWriter) error {
+	h.streamCalls++
+	h.streamIndex = index
+	h.streamRange = request.Header.Get("Range")
+
+	return nil
+}
+
 type testStreamService struct {
 	parseLinkErr      error
 	parseLinkCalls    int
@@ -305,6 +342,109 @@ func TestStreamServiceParseLinkError(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestStreamPlayFirstRequestStreamsTorrent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tor := &recordingTorrentHandle{
+		hash:  "0102030405060708090a0b0c0d0e0f1011121314",
+		name:  "Demo",
+		files: 2,
+	}
+	streamSvc := &testStreamService{ensureTorrentTor: tor, parseFileIndexVal: 1}
+
+	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
+		Torrents: &testTorrentService{getResult: tor},
+		Streams:  streamSvc,
+	})))
+	r.GET("/streams/play", streamPlay)
+
+	req := httptest.NewRequest(http.MethodGet, "/streams/play?link=magnet:?xt=urn:btih:abc123&index=1", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if tor.streamCalls != 1 || tor.streamIndex != 1 {
+		t.Fatalf("expected one stream call for index 1, calls=%d index=%d", tor.streamCalls, tor.streamIndex)
+	}
+
+	if !streamSvc.ensureAllowCreate {
+		t.Fatal("expected authenticated first play request to allow torrent creation")
+	}
+}
+
+func TestStreamPlayRepeatedRangeRequestStreamsWithoutPreload(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tor := &recordingTorrentHandle{
+		hash:  "0102030405060708090a0b0c0d0e0f1011121314",
+		name:  "Demo",
+		files: 2,
+	}
+	torrentsSvc := &testTorrentService{getResult: tor}
+	streamSvc := &testStreamService{ensureTorrentTor: tor, parseFileIndexVal: 1}
+
+	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
+		Torrents: torrentsSvc,
+		Streams:  streamSvc,
+	})))
+	r.GET("/streams/play", streamPlay)
+
+	req := httptest.NewRequest(http.MethodGet, "/streams/play?link=magnet:?xt=urn:btih:abc123&index=1", nil)
+	req.Header.Set("Range", "bytes=1048576-2097151")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if tor.streamCalls != 1 || tor.streamRange != "bytes=1048576-2097151" {
+		t.Fatalf("expected range stream call, calls=%d range=%q", tor.streamCalls, tor.streamRange)
+	}
+
+	if torrentsSvc.preloadCalled {
+		t.Fatal("repeated range request without preload flag must not enqueue preload")
+	}
+}
+
+func TestStreamPlayInvalidIndexDoesNotStream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tor := &recordingTorrentHandle{
+		hash:  "0102030405060708090a0b0c0d0e0f1011121314",
+		name:  "Demo",
+		files: 2,
+	}
+	streamSvc := &testStreamService{
+		ensureTorrentTor:  tor,
+		parseFileIndexErr: contracts.ErrStreamFileIndexInvalid,
+	}
+
+	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
+		Torrents: &testTorrentService{getResult: tor},
+		Streams:  streamSvc,
+	})))
+	r.GET("/streams/play", streamPlay)
+
+	req := httptest.NewRequest(http.MethodGet, "/streams/play?link=magnet:?xt=urn:btih:abc123&index=bad", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if tor.streamCalls != 0 {
+		t.Fatalf("invalid index must not stream, calls=%d", tor.streamCalls)
 	}
 }
 

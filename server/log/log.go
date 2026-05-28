@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +22,7 @@ var (
 	errorLogger *zap.SugaredLogger
 	once        sync.Once
 	globalLevel = zap.NewAtomicLevelAt(zapcore.InfoLevel)
+	samplers    sync.Map
 )
 
 // Init инициализирует логгер с указанными путями.
@@ -124,6 +126,41 @@ func Error(msg string, keysAndValues ...any) {
 func Debug(msg string, keysAndValues ...any) {
 	if logger != nil {
 		logger.Debugw(msg, keysAndValues...)
+	}
+}
+
+// IsDebugEnabled reports whether debug log entries would be emitted.
+func IsDebugEnabled() bool {
+	if logger == nil {
+		return false
+	}
+
+	return logger.Desugar().Core().Enabled(zapcore.DebugLevel)
+}
+
+// DebugSampled emits a debug message once per "every" calls for noisy hot paths.
+// The first call is emitted so state transitions are still visible during debugging.
+func DebugSampled(key string, every uint64, msg string, keysAndValues ...any) {
+	if every == 0 {
+		every = 1
+	}
+
+	if !IsDebugEnabled() {
+		return
+	}
+
+	counterAny, _ := samplers.LoadOrStore(key, &atomic.Uint64{})
+	counter, ok := counterAny.(*atomic.Uint64)
+
+	if !ok {
+		Debug(msg, keysAndValues...)
+
+		return
+	}
+
+	count := counter.Add(1)
+	if count == 1 || count%every == 0 {
+		Debug(msg, keysAndValues...)
 	}
 }
 

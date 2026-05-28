@@ -107,25 +107,27 @@ func TestAdaptivePriorityInterval(t *testing.T) {
 func TestAdaptiveMaxEstablishedConns(t *testing.T) {
 	tests := []struct {
 		name             string
-		configuredLimit  int
+		sets             *settings.BTSets
 		playbackTorrents int
 		localReaders     int
 		want             int
 	}{
-		{name: "idle keeps base default", configuredLimit: 25, playbackTorrents: 1, localReaders: 0, want: 50},
-		{name: "single playback keeps base default", configuredLimit: 25, playbackTorrents: 1, localReaders: 1, want: 50},
-		{name: "dual playback keeps base default", configuredLimit: 25, playbackTorrents: 2, localReaders: 1, want: 50},
-		{name: "many playback keeps default floor", configuredLimit: 25, playbackTorrents: 4, localReaders: 1, want: 50},
-		{name: "higher configured limit preserved", configuredLimit: 96, playbackTorrents: 1, localReaders: 1, want: 96},
-		{name: "high configured limit preserved", configuredLimit: 120, playbackTorrents: 1, localReaders: 1, want: 120},
+		{name: "idle keeps base default", sets: &settings.BTSets{ConnectionsLimit: 25}, playbackTorrents: 1, localReaders: 0, want: 50},
+		{name: "single playback keeps base default", sets: &settings.BTSets{ConnectionsLimit: 25}, playbackTorrents: 1, localReaders: 1, want: 50},
+		{name: "dual playback keeps base default", sets: &settings.BTSets{ConnectionsLimit: 25}, playbackTorrents: 2, localReaders: 1, want: 50},
+		{name: "many playback keeps default floor", sets: &settings.BTSets{ConnectionsLimit: 25}, playbackTorrents: 4, localReaders: 1, want: 50},
+		{name: "higher configured limit preserved", sets: &settings.BTSets{ConnectionsLimit: 96}, playbackTorrents: 1, localReaders: 1, want: 96},
+		{name: "high configured limit preserved", sets: &settings.BTSets{ConnectionsLimit: 120}, playbackTorrents: 1, localReaders: 1, want: 120},
+		{name: "low cpu profile honors measured low limit", sets: &settings.BTSets{CoreProfile: "low-cpu", ConnectionsLimit: 12}, playbackTorrents: 2, localReaders: 1, want: 12},
+		{name: "low cpu profile default stays bounded", sets: &settings.BTSets{CoreProfile: "low-cpu"}, playbackTorrents: 1, localReaders: 1, want: 24},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := adaptiveMaxEstablishedConns(tt.configuredLimit, tt.playbackTorrents, tt.localReaders)
+			got := adaptiveMaxEstablishedConns(tt.sets, tt.playbackTorrents, tt.localReaders)
 			if got != tt.want {
-				t.Fatalf("adaptiveMaxEstablishedConns(%d, %d, %d) = %d, want %d",
-					tt.configuredLimit, tt.playbackTorrents, tt.localReaders, got, tt.want)
+				t.Fatalf("adaptiveMaxEstablishedConns(%+v, %d, %d) = %d, want %d",
+					tt.sets, tt.playbackTorrents, tt.localReaders, got, tt.want)
 			}
 		})
 	}
@@ -167,10 +169,10 @@ func TestTrackerBudget(t *testing.T) {
 		sets       *settings.BTSets
 		wantBudget int
 	}{
-		{name: "default", sets: &settings.BTSets{}, wantBudget: 128},
-		{name: "strict network", sets: &settings.BTSets{DisableDHT: true, DisablePEX: true}, wantBudget: 192},
-		{name: "low connections", sets: &settings.BTSets{ConnectionsLimit: 12}, wantBudget: 96},
-		{name: "high connections", sets: &settings.BTSets{ConnectionsLimit: 100}, wantBudget: 192},
+		{name: "default", sets: &settings.BTSets{}, wantBudget: 16},
+		{name: "strict network", sets: &settings.BTSets{DisableDHT: true, DisablePEX: true}, wantBudget: 24},
+		{name: "low connections", sets: &settings.BTSets{ConnectionsLimit: 12}, wantBudget: 8},
+		{name: "high connections", sets: &settings.BTSets{ConnectionsLimit: 100}, wantBudget: 24},
 	}
 
 	for _, tt := range tests {

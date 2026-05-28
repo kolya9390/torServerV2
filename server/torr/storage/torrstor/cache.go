@@ -13,10 +13,6 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 )
 
-// CacheMetricsRecorder is an optional callback for recording cache metrics.
-// Set by the metrics package during initialization.
-var CacheMetricsRecorder func(hits, misses uint64)
-
 const (
 	minCleanInterval          = 250 * time.Millisecond
 	minPriorityUpdateInterval = time.Second
@@ -48,8 +44,12 @@ type cacheCleanupState struct {
 }
 
 type cacheMetricsState struct {
-	hits   atomic.Uint64
-	misses atomic.Uint64
+	registered     atomic.Bool
+	hits           atomic.Uint64
+	misses         atomic.Uint64
+	inMemoryChunks atomic.Int64
+	cleanupRuns    atomic.Uint64
+	cleanedBytes   atomic.Uint64
 }
 
 type cacheHost interface {

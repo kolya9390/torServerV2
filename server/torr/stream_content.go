@@ -20,6 +20,8 @@ type streamMetricsWriter struct {
 
 	firstWriteUnixNano atomic.Int64
 	bytesWritten       atomic.Int64
+	lastError          atomic.Value
+	trackReadWait      bool
 }
 
 type writeOnly struct {
@@ -38,14 +40,16 @@ func (w *streamMetricsWriter) Write(p []byte) (int, error) {
 
 	n, err := w.ResponseWriter.Write(p)
 	w.bytesWritten.Add(int64(n))
+	w.recordError(err)
 
 	return n, err
 }
 
 func (w *streamMetricsWriter) ReadFrom(r io.Reader) (int64, error) {
 	tr := &firstByteTrackingReader{
-		reader: r,
-		mark:   w.markFirstWrite,
+		reader:        r,
+		mark:          w.markFirstWrite,
+		trackReadWait: w.trackReadWait,
 	}
 	rf, ok := w.ResponseWriter.(io.ReaderFrom)
 
@@ -55,8 +59,26 @@ func (w *streamMetricsWriter) ReadFrom(r io.Reader) (int64, error) {
 
 	n, err := rf.ReadFrom(tr)
 	w.bytesWritten.Add(n)
+	w.recordError(err)
 
 	return n, err
+}
+
+func (w *streamMetricsWriter) recordError(err error) {
+	if err != nil {
+		w.lastError.Store(err)
+	}
+}
+
+func (w *streamMetricsWriter) err() error {
+	value := w.lastError.Load()
+	if value == nil {
+		return nil
+	}
+
+	err, _ := value.(error)
+
+	return err
 }
 
 func (w *streamMetricsWriter) Flush() {
@@ -83,13 +105,23 @@ func (w *streamMetricsWriter) Push(target string, opts *http.PushOptions) error 
 }
 
 type firstByteTrackingReader struct {
-	reader io.Reader
-	mark   func()
-	seen   bool
+	reader        io.Reader
+	mark          func()
+	trackReadWait bool
+	seen          bool
 }
 
 func (r *firstByteTrackingReader) Read(p []byte) (int, error) {
+	var started time.Time
+	if r.trackReadWait {
+		started = time.Now()
+	}
+
 	n, err := r.reader.Read(p)
+	if r.trackReadWait {
+		recordStreamReadWait(time.Since(started))
+	}
+
 	if n > 0 && !r.seen {
 		r.seen = true
 		r.mark()

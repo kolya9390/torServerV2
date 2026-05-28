@@ -18,7 +18,12 @@ import (
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /storage/settings [get].
 func GetStorageSettings(c *gin.Context) {
-	writeStoragePreferencesResponse(c, storageDepsFromContext(c).Settings.GetStoragePreferences())
+	deps, ok := storageDepsFromContext(c)
+	if !ok {
+		return
+	}
+
+	writeStoragePreferencesResponse(c, deps.Settings.GetStoragePreferences())
 }
 
 // UpdateStorageSettings godoc
@@ -38,7 +43,10 @@ func GetStorageSettings(c *gin.Context) {
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /storage/settings [post].
 func UpdateStorageSettings(c *gin.Context) {
-	deps := storageDepsFromContext(c)
+	deps, ok := storageDepsFromContext(c)
+	if !ok {
+		return
+	}
 	if deps.Settings.ReadOnly() {
 		abortAPIError(c, http.StatusForbidden, newValidationError("mode", "read-only mode"))
 

@@ -78,10 +78,20 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 	setStreamHeaders(resp, file, t, streamTimeout, req)
 
 	content := newServeContentReadSeeker(reader, file.Length())
-	metricsWriter := &streamMetricsWriter{ResponseWriter: resp}
+	metricsWriter := &streamMetricsWriter{
+		ResponseWriter: resp,
+		trackReadWait:  debugCfg.EnableDebug,
+	}
 	streamStarted := time.Now()
 	http.ServeContent(metricsWriter, req, file.Path(), time.Unix(t.Timestamp, 0), content)
 	markStreamActivity()
+	if debugCfg.EnableDebug {
+		recordStreamCompleted(
+			streamFirstByteDuration(streamStarted, metricsWriter),
+			metricsWriter.bytesWritten.Load(),
+			metricsWriter.err(),
+		)
+	}
 
 	logStreamDisconnect(logStreamLifecycle, streamID, req.RemoteAddr)
 	logStreamMetrics(debugCfg.EnableDebug, streamID, streamStarted, metricsWriter)
@@ -95,12 +105,12 @@ func logStreamConnect(enabled bool, streamID int32, remoteAddr string) {
 	}
 
 	if host, port, err := net.SplitHostPort(remoteAddr); err == nil {
-		log.TLogln("[Stream:", streamID, "] Connect", host+":"+port)
+		log.Debug("stream connect", "stream_id", streamID, "remote_addr", host+":"+port)
 
 		return
 	}
 
-	log.TLogln("[Stream:", streamID, "] Connect client")
+	log.Debug("stream connect", "stream_id", streamID)
 }
 
 func logStreamDisconnect(enabled bool, streamID int32, remoteAddr string) {
@@ -109,12 +119,12 @@ func logStreamDisconnect(enabled bool, streamID int32, remoteAddr string) {
 	}
 
 	if host, port, err := net.SplitHostPort(remoteAddr); err == nil {
-		log.TLogln("[Stream:", streamID, "] Disconnect client", host+":"+port)
+		log.Debug("stream disconnect", "stream_id", streamID, "remote_addr", host+":"+port)
 
 		return
 	}
 
-	log.TLogln("[Stream:", streamID, "] Disconnect client")
+	log.Debug("stream disconnect", "stream_id", streamID)
 }
 
 func logStreamMetrics(enabled bool, streamID int32, streamStarted time.Time, metricsWriter *streamMetricsWriter) {
@@ -122,16 +132,27 @@ func logStreamMetrics(enabled bool, streamID int32, streamStarted time.Time, met
 		return
 	}
 
-	firstByteNS := metricsWriter.firstWriteUnixNano.Load()
 	firstByteMS := int64(-1)
-
-	if firstByteNS != 0 {
-		firstByteMS = time.Unix(0, firstByteNS).Sub(streamStarted).Milliseconds()
+	firstByteDuration := streamFirstByteDuration(streamStarted, metricsWriter)
+	if firstByteDuration > 0 {
+		firstByteMS = firstByteDuration.Milliseconds()
 	}
 
-	log.TLogln(
-		"[Stream:", streamID, "] Metrics",
-		" first_byte_ms=", firstByteMS,
-		" bytes_written=", metricsWriter.bytesWritten.Load(),
+	log.DebugSampled(
+		"stream.metrics",
+		50,
+		"stream metrics",
+		"stream_id", streamID,
+		"first_byte_ms", firstByteMS,
+		"bytes_written", metricsWriter.bytesWritten.Load(),
 	)
+}
+
+func streamFirstByteDuration(streamStarted time.Time, metricsWriter *streamMetricsWriter) time.Duration {
+	firstByteNS := metricsWriter.firstWriteUnixNano.Load()
+	if firstByteNS == 0 {
+		return 0
+	}
+
+	return time.Unix(0, firstByteNS).Sub(streamStarted)
 }

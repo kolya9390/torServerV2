@@ -195,68 +195,135 @@ func newHandlerDeps(s *contracts.APIServices) *handlerDeps {
 	}
 }
 
-func depsFromContext(c *gin.Context) *handlerDeps {
+func depsFromContext(c *gin.Context) (*handlerDeps, bool) {
 	if c == nil {
-		panic("api services are not configured: nil gin context")
+		return nil, false
 	}
 
 	if value, ok := c.Get(servicesContextKey); ok {
 		if deps, ok := value.(*handlerDeps); ok && deps != nil {
-			return deps
+			return deps, true
 		}
 	}
 
-	panic("api services are not configured in gin context")
+	abortAPIError(c, http.StatusInternalServerError, newInternalError("api services are not configured", nil))
+
+	return nil, false
 }
 
-func torrentDepsFromContext(c *gin.Context) torrentHandlerDeps {
-	return depsFromContext(c).torrents
+func torrentDepsFromContext(c *gin.Context) (torrentHandlerDeps, bool) {
+	deps, ok := depsFromContext(c)
+	if !ok {
+		return torrentHandlerDeps{}, false
+	}
+
+	return deps.torrents, true
 }
 
-func streamDepsFromContext(c *gin.Context) streamHandlerDeps {
-	return depsFromContext(c).streams
+func streamDepsFromContext(c *gin.Context) (streamHandlerDeps, bool) {
+	deps, ok := depsFromContext(c)
+	if !ok {
+		return streamHandlerDeps{}, false
+	}
+
+	return deps.streams, true
 }
 
-func settingsDepsFromContext(c *gin.Context) settingsHandlerDeps {
-	return depsFromContext(c).settings
+func settingsDepsFromContext(c *gin.Context) (settingsHandlerDeps, bool) {
+	deps, ok := depsFromContext(c)
+	if !ok {
+		return settingsHandlerDeps{}, false
+	}
+
+	return deps.settings, true
 }
 
-func storageDepsFromContext(c *gin.Context) storageHandlerDeps {
-	return depsFromContext(c).storage
+func storageDepsFromContext(c *gin.Context) (storageHandlerDeps, bool) {
+	deps, ok := depsFromContext(c)
+	if !ok {
+		return storageHandlerDeps{}, false
+	}
+
+	return deps.storage, true
 }
 
-func systemDepsFromContext(c *gin.Context) systemHandlerDeps {
-	return depsFromContext(c).system
+func systemDepsFromContext(c *gin.Context) (systemHandlerDeps, bool) {
+	deps, ok := depsFromContext(c)
+	if !ok {
+		return systemHandlerDeps{}, false
+	}
+
+	return deps.system, true
 }
 
-func searchDepsFromContext(c *gin.Context) searchHandlerDeps {
-	return depsFromContext(c).search
+func searchDepsFromContext(c *gin.Context) (searchHandlerDeps, bool) {
+	deps, ok := depsFromContext(c)
+	if !ok {
+		return searchHandlerDeps{}, false
+	}
+
+	return deps.search, true
 }
 
-func mediaDepsFromContext(c *gin.Context) mediaHandlerDeps {
-	return depsFromContext(c).media
+func mediaDepsFromContext(c *gin.Context) (mediaHandlerDeps, bool) {
+	deps, ok := depsFromContext(c)
+	if !ok {
+		return mediaHandlerDeps{}, false
+	}
+
+	return deps.media, true
 }
 
-func viewedDepsFromContext(c *gin.Context) viewedHandlerDeps {
-	return depsFromContext(c).viewed
+func viewedDepsFromContext(c *gin.Context) (viewedHandlerDeps, bool) {
+	deps, ok := depsFromContext(c)
+	if !ok {
+		return viewedHandlerDeps{}, false
+	}
+
+	return deps.viewed, true
 }
 
-func playlistDepsFromContext(c *gin.Context) playlistHandlerDeps {
-	return depsFromContext(c).playlist
+func playlistDepsFromContext(c *gin.Context) (playlistHandlerDeps, bool) {
+	deps, ok := depsFromContext(c)
+	if !ok {
+		return playlistHandlerDeps{}, false
+	}
+
+	return deps.playlist, true
 }
 
-func playDepsFromContext(c *gin.Context) playHandlerDeps {
-	return depsFromContext(c).play
+func playDepsFromContext(c *gin.Context) (playHandlerDeps, bool) {
+	deps, ok := depsFromContext(c)
+	if !ok {
+		return playHandlerDeps{}, false
+	}
+
+	return deps.play, true
 }
 
-func cacheDepsFromContext(c *gin.Context) cacheHandlerDeps {
-	return depsFromContext(c).cache
+func cacheDepsFromContext(c *gin.Context) (cacheHandlerDeps, bool) {
+	deps, ok := depsFromContext(c)
+	if !ok {
+		return cacheHandlerDeps{}, false
+	}
+
+	return deps.cache, true
 }
 
-func uploadDepsFromContext(c *gin.Context) uploadHandlerDeps {
-	return depsFromContext(c).upload
+func uploadDepsFromContext(c *gin.Context) (uploadHandlerDeps, bool) {
+	deps, ok := depsFromContext(c)
+	if !ok {
+		return uploadHandlerDeps{}, false
+	}
+
+	return deps.upload, true
 }
 
-func tmdbDepsFromContext(c *gin.Context) tmdbHandlerDeps {
-	return depsFromContext(c).tmdb
+func tmdbDepsFromContext(c *gin.Context) (tmdbHandlerDeps, bool) {
+	deps, ok := depsFromContext(c)
+	if !ok {
+		return tmdbHandlerDeps{}, false
+	}
+
+	return deps.tmdb, true
 }

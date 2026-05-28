@@ -21,7 +21,10 @@ import (
 func shutdown(c *gin.Context) {
 	reasonStr := strings.ReplaceAll(c.Param("reason"), "/", "")
 
-	deps := systemDepsFromContext(c)
+	deps, ok := systemDepsFromContext(c)
+	if !ok {
+		return
+	}
 	if deps.Settings.ReadOnly() && reasonStr == "" {
 		abortAPIError(c, http.StatusForbidden, newForbiddenError("read-only mode requires explicit shutdown reason"))
 

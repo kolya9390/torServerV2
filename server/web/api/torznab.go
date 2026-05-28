@@ -19,7 +19,11 @@ import (
 //	@Success		200	{array}	contracts.SearchResult	"Torznab torrent search result(s)"
 //	@Router			/torznab/search [get]
 func torznabSearch(c *gin.Context) {
-	deps := searchDepsFromContext(c)
+	deps, ok := searchDepsFromContext(c)
+	if !ok {
+		return
+	}
+
 	if !deps.Search.EnableTorznabSearch() {
 		writeTorznabDisabledResponse(c)
 
@@ -37,6 +41,11 @@ func torznabSearch(c *gin.Context) {
 }
 
 func torznabTest(c *gin.Context) {
+	deps, ok := searchDepsFromContext(c)
+	if !ok {
+		return
+	}
+
 	req, err := bindTorznabTestRequest(c)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
@@ -44,7 +53,7 @@ func torznabTest(c *gin.Context) {
 		return
 	}
 
-	if err := searchDepsFromContext(c).Search.TorznabTest(req.Host, req.Key); err != nil {
+	if err := deps.Search.TorznabTest(req.Host, req.Key); err != nil {
 		writeTorznabTestFailure(c, err)
 
 		return

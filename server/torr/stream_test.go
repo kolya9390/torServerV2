@@ -2,17 +2,37 @@ package torr
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"syscall"
 	"testing"
+	"time"
 )
 
 type fakeStreamContentSource struct {
 	data  []byte
 	pos   int64
 	seeks [][2]int64
+}
+
+type slowOnceReader struct {
+	delay time.Duration
+	data  []byte
+	done  bool
+}
+
+func (r *slowOnceReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, io.EOF
+	}
+
+	time.Sleep(r.delay)
+	r.done = true
+
+	return copy(p, r.data), nil
 }
 
 func (f *fakeStreamContentSource) Read(p []byte) (int, error) {
@@ -260,6 +280,113 @@ func TestStreamMetricsWriter_ReadFromFallback(t *testing.T) {
 
 	if got := w.firstWriteUnixNano.Load(); got == 0 {
 		t.Fatal("firstWriteUnixNano was not recorded")
+	}
+}
+
+func TestStreamHealthRecordsFirstByteAndBytes(t *testing.T) {
+	resetStreamHealthForTest()
+
+	recordStreamCompleted(150*time.Millisecond, 1024, nil)
+	snapshot := SnapshotStreamHealth()
+
+	if got, want := snapshot.RequestsTotal, int64(1); got != want {
+		t.Fatalf("RequestsTotal = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.BytesWrittenTotal, int64(1024); got != want {
+		t.Fatalf("BytesWrittenTotal = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.FirstByteMSBuckets["le_500"], int64(1); got != want {
+		t.Fatalf("first byte le_500 bucket = %d, want %d", got, want)
+	}
+
+	if got := snapshot.SlowFirstByteTotal; got != 0 {
+		t.Fatalf("SlowFirstByteTotal = %d, want 0", got)
+	}
+}
+
+func TestStreamHealthRecordsSlowFirstByteAndZeroBytes(t *testing.T) {
+	resetStreamHealthForTest()
+
+	recordStreamCompleted(3*time.Second, 0, nil)
+	snapshot := SnapshotStreamHealth()
+
+	if got, want := snapshot.SlowFirstByteTotal, int64(1); got != want {
+		t.Fatalf("SlowFirstByteTotal = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.ZeroByteResponsesTotal, int64(1); got != want {
+		t.Fatalf("ZeroByteResponsesTotal = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.StallsTotal, int64(1); got != want {
+		t.Fatalf("StallsTotal = %d, want %d", got, want)
+	}
+}
+
+func TestStreamHealthRecordsReadWait(t *testing.T) {
+	resetStreamHealthForTest()
+
+	recordStreamReadWait(750 * time.Millisecond)
+	snapshot := SnapshotStreamHealth()
+
+	if got, want := snapshot.StallsTotal, int64(1); got != want {
+		t.Fatalf("StallsTotal = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.ReadWaitMSBuckets["le_1000"], int64(1); got != want {
+		t.Fatalf("read wait le_1000 bucket = %d, want %d", got, want)
+	}
+}
+
+func TestStreamMetricsWriterReadFromRecordsSlowReadWait(t *testing.T) {
+	resetStreamHealthForTest()
+
+	rec := &readerFromRecorder{}
+	w := &streamMetricsWriter{ResponseWriter: rec, trackReadWait: true}
+	reader := &slowOnceReader{delay: streamReadWaitThreshold + 50*time.Millisecond, data: []byte("stream-data")}
+
+	if _, err := w.ReadFrom(reader); err != nil {
+		t.Fatalf("ReadFrom() err = %v", err)
+	}
+
+	snapshot := SnapshotStreamHealth()
+	if got, want := snapshot.ReadWaitMSBuckets["le_1000"], int64(1); got != want {
+		t.Fatalf("read wait le_1000 bucket = %d, want %d", got, want)
+	}
+}
+
+func TestStreamMetricsWriterReadFromSkipsReadWaitWhenDebugDisabled(t *testing.T) {
+	resetStreamHealthForTest()
+
+	rec := &readerFromRecorder{}
+	w := &streamMetricsWriter{ResponseWriter: rec}
+	reader := &slowOnceReader{delay: streamReadWaitThreshold + 50*time.Millisecond, data: []byte("stream-data")}
+
+	if _, err := w.ReadFrom(reader); err != nil {
+		t.Fatalf("ReadFrom() err = %v", err)
+	}
+
+	snapshot := SnapshotStreamHealth()
+	if got := snapshot.StallsTotal; got != 0 {
+		t.Fatalf("StallsTotal = %d, want 0", got)
+	}
+
+	if got := snapshot.ReadWaitMSBuckets["le_1000"]; got != 0 {
+		t.Fatalf("read wait le_1000 bucket = %d, want 0", got)
+	}
+}
+
+func TestStreamHealthClassifiesClientDisconnect(t *testing.T) {
+	resetStreamHealthForTest()
+
+	recordStreamCompleted(0, 512, syscall.EPIPE)
+	recordStreamCompleted(0, 512, errors.New("write tcp: broken pipe"))
+	snapshot := SnapshotStreamHealth()
+
+	if got, want := snapshot.ClientDisconnectsTotal, int64(2); got != want {
+		t.Fatalf("ClientDisconnectsTotal = %d, want %d", got, want)
 	}
 }
 

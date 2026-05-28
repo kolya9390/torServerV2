@@ -26,7 +26,10 @@ func cache(c *gin.Context) {
 		return
 	}
 
-	deps := cacheDepsFromContext(c)
+	deps, ok := cacheDepsFromContext(c)
+	if !ok {
+		return
+	}
 
 	switch req.Action {
 	case "get":

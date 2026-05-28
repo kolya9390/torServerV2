@@ -3,23 +3,18 @@ package torrstor
 import (
 	"io"
 	"sync"
+	"sync/atomic"
 )
 
-const memPieceChunkSize = 16 << 10
+const (
+	memPieceChunkSize      = 16 << 10
+	memPieceChunkPoolLimit = 4096
+)
 
-type memPieceChunk []byte
-
-// memPieceChunkPool reduces allocation churn for full-size 16 KiB in-memory
-// cache chunks on the streaming hot path. It is an opportunistic GC optimization,
-// not part of strict cache capacity accounting; Piece.Size/cache.filled track
-// logical residency while the runtime may keep pooled chunks alive temporarily.
-var memPieceChunkPool = sync.Pool{
-	New: func() any {
-		chunk := make(memPieceChunk, memPieceChunkSize)
-
-		return &chunk
-	},
-}
+var (
+	memPieceChunkPool    = make(chan []byte, memPieceChunkPoolLimit)
+	memPiecePooledChunks atomic.Int64
+)
 
 // MemPiece holds an in-memory buffer for a single torrent piece.
 // Data is stored in 16 KiB chunks to match the default anacrolix/torrent
@@ -71,17 +66,14 @@ func (p *MemPiece) ensureChunks() {
 }
 
 func getMemPieceChunk() []byte {
-	chunkPtr, ok := memPieceChunkPool.Get().(*memPieceChunk)
-	if !ok {
+	select {
+	case chunk := <-memPieceChunkPool:
+		memPiecePooledChunks.Add(-1)
+
+		return chunk[:memPieceChunkSize]
+	default:
 		return make([]byte, memPieceChunkSize)
 	}
-
-	chunk := *chunkPtr
-	if len(chunk) != memPieceChunkSize {
-		return make([]byte, memPieceChunkSize)
-	}
-
-	return []byte(chunk)
 }
 
 func putMemPieceChunk(chunk []byte) {
@@ -89,8 +81,32 @@ func putMemPieceChunk(chunk []byte) {
 		return
 	}
 
-	pooled := memPieceChunk(chunk[:memPieceChunkSize])
-	memPieceChunkPool.Put(&pooled)
+	chunk = chunk[:memPieceChunkSize]
+
+	select {
+	case memPieceChunkPool <- chunk:
+		memPiecePooledChunks.Add(1)
+	default:
+	}
+}
+
+func reusableMemPieceChunks() int64 {
+	return memPiecePooledChunks.Load()
+}
+
+func trimReusableMemPieceChunks(maxChunks int64) {
+	if maxChunks < 0 {
+		maxChunks = 0
+	}
+
+	for memPiecePooledChunks.Load() > maxChunks {
+		select {
+		case <-memPieceChunkPool:
+			memPiecePooledChunks.Add(-1)
+		default:
+			return
+		}
+	}
 }
 
 func (p *MemPiece) WriteAt(b []byte, off int64) (n int, err error) {
@@ -127,6 +143,8 @@ func (p *MemPiece) WriteAt(b []byte, off int64) (n int, err error) {
 
 			chunk = chunk[:chunkLen]
 			p.chunks[chunkIdx] = chunk
+			p.piece.cache.addInMemoryChunks(1)
+
 			allocated += int64(len(chunk))
 		}
 
@@ -231,13 +249,20 @@ func (p *MemPiece) Release() {
 	defer p.mu.Unlock()
 
 	if p.chunks != nil {
+		releasedChunks := int64(0)
+
 		for _, chunk := range p.chunks {
 			if len(chunk) == memPieceChunkSize {
 				putMemPieceChunk(chunk)
 			}
+
+			if chunk != nil {
+				releasedChunks++
+			}
 		}
 
 		p.chunks = nil
+		p.piece.cache.addInMemoryChunks(-releasedChunks)
 	}
 
 	prev := p.piece.Size.Swap(0)

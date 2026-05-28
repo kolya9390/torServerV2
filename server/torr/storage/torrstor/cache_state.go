@@ -80,23 +80,12 @@ func (c *Cache) Filled() int64 {
 	return c.filled.Load()
 }
 
-// addFilled adjusts total cache occupancy in bytes.
-func (c *Cache) addFilled(delta int64) {
-	if c == nil || delta == 0 {
-		return
-	}
-
-	if c.filled.Add(delta) < 0 {
-		c.filled.Store(0)
-	}
-}
-
 // RecordHit records a cache hit for metrics.
 func (c *Cache) RecordHit() {
-	c.metrics.hits.Add(1)
+	c.recordHit()
 }
 
 // RecordMiss records a cache miss for metrics.
 func (c *Cache) RecordMiss() {
-	c.metrics.misses.Add(1)
+	c.recordMiss()
 }

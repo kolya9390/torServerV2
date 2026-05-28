@@ -49,7 +49,7 @@ search:
 
 streaming:
   responsive_mode: true
-  core_profile: "custom"  # custom, low-end, balanced, high-throughput, nas
+  core_profile: "custom"  # custom, low-end, low-cpu, balanced, high-throughput, nas
   max_concurrent_streams: 0  # 0 = auto
   stream_queue_size: 0  # 0 = auto
   stream_queue_wait_sec: 3
@@ -71,8 +71,8 @@ workers:
   preload_queue_size: 0  # 0 = auto
 
 debug:
-  enabled: true  # Release-safe default. Set true only for local profiling: /debug/pprof/* and /debug/vars
-  service_only: true  # Set true locally for V2 debug logs without library spam or HTTP debug endpoints
+  enabled: false  # Release-safe default. Set true only for local profiling: /debug/pprof/* and /debug/vars
+  service_only: false  # Set true locally for V2 debug logs without library spam or HTTP debug endpoints
   show_fs_active_torr: false
 
 proxy:

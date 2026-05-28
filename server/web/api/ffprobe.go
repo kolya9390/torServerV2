@@ -20,6 +20,11 @@ import (
 //	@Success		200	"Data returned from ffprobe"
 //	@Router			/ffp/{hash}/{id} [get]
 func ffp(c *gin.Context) {
+	deps, ok := mediaDepsFromContext(c)
+	if !ok {
+		return
+	}
+
 	hash := c.Param("hash")
 	indexStr := c.Param("id")
 
@@ -29,7 +34,7 @@ func ffp(c *gin.Context) {
 		return
 	}
 
-	data, err := mediaDepsFromContext(c).Media.ProbePlayURL(hash, indexStr)
+	data, err := deps.Media.ProbePlayURL(hash, indexStr)
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, newInternalError("error getting data from ffprobe", err))
 

@@ -27,7 +27,11 @@ import (
 //	@Success		200	{file}	file
 //	@Router			/playlistall/all.m3u [get]
 func allPlayList(c *gin.Context) {
-	deps := playlistDepsFromContext(c)
+	deps, ok := playlistDepsFromContext(c)
+	if !ok {
+		return
+	}
+
 	host := utils.GetScheme(c) + "://" + utils.GetHost(c)
 	res := deps.Playback.BuildAllPlaylist(host, deps.Torrents)
 	sendM3U(c, res.Name, res.Hash, res.Body)
@@ -47,7 +51,11 @@ func allPlayList(c *gin.Context) {
 //	@Success		200	{file}	file
 //	@Router			/playlist [get]
 func playList(c *gin.Context) {
-	deps := playlistDepsFromContext(c)
+	deps, ok := playlistDepsFromContext(c)
+	if !ok {
+		return
+	}
+
 	hash, _ := c.GetQuery("hash")
 	_, fromlast := c.GetQuery("fromlast")
 

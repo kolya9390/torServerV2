@@ -1,7 +1,10 @@
 package torr
 
 import (
+	"context"
+	"log/slog"
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/anacrolix/torrent"
@@ -135,7 +138,52 @@ func TestBuildClientConfigDebugModes(t *testing.T) {
 			if cfg.Debug != tt.wantDebug {
 				t.Fatalf("ClientConfig.Debug = %v, want %v", cfg.Debug, tt.wantDebug)
 			}
+
+			if !cfg.DisableWebtorrent {
+				t.Fatal("ClientConfig.DisableWebtorrent must stay enabled for native server streaming")
+			}
+
+			if tt.sets.ServiceOnlyDebug {
+				if cfg.Logger.IsZero() {
+					t.Fatal("service-only debug must install a discard torrent logger")
+				}
+
+				if cfg.Slogger == nil {
+					t.Fatal("service-only debug must install a disabled slog logger")
+				}
+
+				if cfg.Slogger.Handler().Enabled(context.Background(), slog.LevelError) {
+					t.Fatal("service-only debug must disable torrent slog output")
+				}
+			}
 		})
+	}
+}
+
+func TestBuildClientConfigLowCPUProfile(t *testing.T) {
+	bt := NewBTSWithProvidersRuntimeAndDB(
+		btTestSettingsProvider{sets: &settings.BTSets{
+			CoreProfile:      "low-cpu",
+			DisableUTP:       true,
+			ConnectionsLimit: 12,
+		}},
+		settings.NewNoopArgsProvider(),
+		func() settings.RuntimeState { return settings.RuntimeState{} },
+		NewNoopTorrentDBStore(),
+	)
+
+	cfg := bt.buildClientConfig()
+	if !cfg.DisableUTP {
+		t.Fatal("low-cpu profile must disable uTP in torrent client config")
+	}
+
+	if cfg.EstablishedConnsPerTorrent != 12 {
+		t.Fatalf("EstablishedConnsPerTorrent = %d, want 12", cfg.EstablishedConnsPerTorrent)
+	}
+
+	if cfg.TorrentPeersLowWater != 24 || cfg.TorrentPeersHighWater != 72 {
+		t.Fatalf("peer watermarks = (%d, %d), want (24, 72)",
+			cfg.TorrentPeersLowWater, cfg.TorrentPeersHighWater)
 	}
 }
 
@@ -296,6 +344,178 @@ func TestEffectiveEstablishedConns(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConnectionPolicyForSettings(t *testing.T) {
+	tests := []struct {
+		name               string
+		sets               *settings.BTSets
+		wantEffectiveConns int
+		wantLowWater       int
+		wantHighWater      int
+		wantTrackers       int
+		wantLowCPU         bool
+	}{
+		{
+			name:               "compatibility default floors low limit",
+			sets:               &settings.BTSets{ConnectionsLimit: 12},
+			wantEffectiveConns: 50,
+			wantLowWater:       100,
+			wantHighWater:      500,
+			wantTrackers:       8,
+		},
+		{
+			name:               "compatibility high limit preserved",
+			sets:               &settings.BTSets{ConnectionsLimit: 96},
+			wantEffectiveConns: 96,
+			wantLowWater:       192,
+			wantHighWater:      960,
+			wantTrackers:       24,
+		},
+		{
+			name:               "low cpu profile honors measured low budget",
+			sets:               &settings.BTSets{CoreProfile: "low-cpu", DisableUTP: true, ConnectionsLimit: 12},
+			wantEffectiveConns: 12,
+			wantLowWater:       24,
+			wantHighWater:      72,
+			wantTrackers:       8,
+			wantLowCPU:         true,
+		},
+		{
+			name:               "low cpu profile unset limit uses conservative budget",
+			sets:               &settings.BTSets{CoreProfile: "low-cpu", DisableUTP: true},
+			wantEffectiveConns: 24,
+			wantLowWater:       48,
+			wantHighWater:      144,
+			wantTrackers:       8,
+			wantLowCPU:         true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := connectionPolicyForSettings(tt.sets, 50)
+			if got.effectiveConns != tt.wantEffectiveConns {
+				t.Fatalf("effectiveConns = %d, want %d", got.effectiveConns, tt.wantEffectiveConns)
+			}
+
+			if got.peerLowWater != tt.wantLowWater || got.peerHighWater != tt.wantHighWater {
+				t.Fatalf("watermarks = (%d, %d), want (%d, %d)",
+					got.peerLowWater, got.peerHighWater, tt.wantLowWater, tt.wantHighWater)
+			}
+
+			if got.trackerBudget != tt.wantTrackers {
+				t.Fatalf("trackerBudget = %d, want %d", got.trackerBudget, tt.wantTrackers)
+			}
+
+			if got.lowCPU != tt.wantLowCPU {
+				t.Fatalf("lowCPU = %v, want %v", got.lowCPU, tt.wantLowCPU)
+			}
+		})
+	}
+}
+
+func TestApplyTrackerPolicyPreservesMagnetTrackersBeforeDefaults(t *testing.T) {
+	spec := &torrent.TorrentSpec{
+		Trackers: [][]string{{
+			"udp://magnet-a.example.com:6969/announce",
+			"UDP://MAGNET-A.EXAMPLE.COM:6969/announce",
+			"wss://webtorrent.example.com",
+		}},
+	}
+	sets := &settings.BTSets{
+		RetrackersMode:   1,
+		ConnectionsLimit: 12,
+		CoreProfile:      "low-cpu",
+	}
+
+	applyTrackerPolicy(spec, sets, true, []string{"https://file-tracker.example.com/announce"})
+
+	if len(spec.Trackers) == 0 || len(spec.Trackers[0]) == 0 {
+		t.Fatal("expected tracker tiers")
+	}
+
+	if got := spec.Trackers[0][0]; got != "udp://magnet-a.example.com:6969/announce" {
+		t.Fatalf("first tracker = %q, want magnet tracker first", got)
+	}
+
+	total := countSpecTrackers(spec)
+	if total != 8 {
+		t.Fatalf("tracker count = %d, want low-cpu budget cap 8", total)
+	}
+
+	for _, tier := range spec.Trackers {
+		for _, tracker := range tier {
+			if strings.HasPrefix(strings.ToLower(tracker), "ws") {
+				t.Fatalf("native tracker policy must drop WebTorrent tracker %q", tracker)
+			}
+		}
+	}
+}
+
+func TestApplyTrackerPolicyModes(t *testing.T) {
+	tests := []struct {
+		name       string
+		mode       int
+		wantFirst  string
+		wantMagnet bool
+	}{
+		{name: "remove retrackers keeps no trackers", mode: 2},
+		{name: "replace retrackers uses defaults", mode: 3, wantFirst: "http://retracker.local/announce"},
+		{name: "unset mode preserves magnet only", mode: 0, wantFirst: "udp://magnet.example.com:6969/announce", wantMagnet: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := &torrent.TorrentSpec{
+				Trackers: [][]string{{"udp://magnet.example.com:6969/announce"}},
+			}
+			sets := &settings.BTSets{RetrackersMode: tt.mode, ConnectionsLimit: 12}
+
+			applyTrackerPolicy(spec, sets, true, nil)
+
+			if tt.wantFirst == "" {
+				if len(spec.Trackers) != 0 {
+					t.Fatalf("trackers = %v, want none", spec.Trackers)
+				}
+
+				return
+			}
+
+			if len(spec.Trackers) == 0 || len(spec.Trackers[0]) == 0 {
+				t.Fatalf("trackers = %v, want first %q", spec.Trackers, tt.wantFirst)
+			}
+
+			if got := spec.Trackers[0][0]; got != tt.wantFirst {
+				t.Fatalf("first tracker = %q, want %q", got, tt.wantFirst)
+			}
+
+			if !tt.wantMagnet && trackerListContains(spec.Trackers, "udp://magnet.example.com:6969/announce") {
+				t.Fatalf("magnet tracker should not be preserved for mode %d", tt.mode)
+			}
+		})
+	}
+}
+
+func countSpecTrackers(spec *torrent.TorrentSpec) int {
+	total := 0
+	for _, tier := range spec.Trackers {
+		total += len(tier)
+	}
+
+	return total
+}
+
+func trackerListContains(trackers [][]string, want string) bool {
+	for _, tier := range trackers {
+		for _, tracker := range tier {
+			if tracker == want {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func TestActivePlaybackTorrents(t *testing.T) {

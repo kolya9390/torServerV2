@@ -59,6 +59,7 @@ type Server struct {
 const (
 	httpReadHeaderTimeout = 10 * time.Second
 	httpIdleTimeout       = 60 * time.Second
+	httpShutdownTimeout   = 5 * time.Second
 	httpMaxHeaderBytes    = 1 << 20
 )
 
@@ -152,11 +153,12 @@ func (s *Server) Start() error {
 	dlna.SetCatalog(catalog)
 	torrfs.SetCatalog(catalog)
 
-	// Initialize runtime metrics
-	metrics.InitWithDeps(metrics.Deps{
-		SettingsProvider: s.settings,
-		TorrentBackend:   torr.NewTorrentServiceWithBT(s.bts),
-	})
+	if s.debugEnabled() {
+		metrics.InitWithDeps(metrics.Deps{
+			SettingsProvider: s.settings,
+			TorrentBackend:   torr.NewTorrentServiceWithBT(s.bts),
+		})
+	}
 
 	route := setupMiddleware(s)
 	s.registerDebugRoutes(route)
@@ -377,19 +379,12 @@ func (s *Server) Stop() {
 
 	log.TLogln("Stopping TorrServer components...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
 	if httpsLocal != nil {
-		if err := httpsLocal.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.TLogln("HTTPS shutdown error:", err)
-		}
+		shutdownHTTPServer("HTTPS", httpsLocal)
 	}
 
 	if httpLocal != nil {
-		if err := httpLocal.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.TLogln("HTTP shutdown error:", err)
-		}
+		shutdownHTTPServer("HTTP", httpLocal)
 	}
 
 	modules.StopDLNA()
@@ -400,6 +395,33 @@ func (s *Server) Stop() {
 	}
 
 	log.TLogln("TorrServer stopped")
+}
+
+func shutdownHTTPServer(label string, srv *http.Server) {
+	shutdownHTTPServerWithTimeout(label, srv, httpShutdownTimeout)
+}
+
+func shutdownHTTPServerWithTimeout(label string, srv *http.Server, timeout time.Duration) {
+	if timeout <= 0 {
+		timeout = httpShutdownTimeout
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if errors.Is(err, context.DeadlineExceeded) {
+			log.TLogln(label, "graceful shutdown timed out; closing active connections")
+
+			if closeErr := srv.Close(); closeErr != nil && !errors.Is(closeErr, http.ErrServerClosed) {
+				log.TLogln(label, "close active connections error:", closeErr)
+			}
+
+			return
+		}
+
+		log.TLogln(label, "shutdown error:", err)
+	}
 }
 
 func echo(c *gin.Context) {

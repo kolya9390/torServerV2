@@ -29,7 +29,7 @@ func (t *Torrent) updateRA() {
 	}
 
 	if t.Torrent != nil {
-		targetConns := adaptiveMaxEstablishedConns(sets.ConnectionsLimit, playbackTorrents, localReaders)
+		targetConns := adaptiveMaxEstablishedConns(sets, playbackTorrents, localReaders)
 		if current := int(t.lifecycle.lastMaxEstablished); current != targetConns {
 			t.SetMaxEstablishedConns(targetConns)
 			t.lifecycle.lastMaxEstablished = int32(targetConns)

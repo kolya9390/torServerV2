@@ -182,7 +182,7 @@ func TestLegacyStreamEndpointUsesCompatibilityAdapter(t *testing.T) {
 	}
 
 	source := string(content)
-	if !strings.Contains(source, "newLegacyStreamAdapter(streamDepsFromContext(c)).Handle(c)") {
+	if !strings.Contains(source, "newLegacyStreamAdapter(") || !strings.Contains(source, ".Handle(c)") {
 		t.Fatalf("legacy stream endpoint must delegate to the compatibility adapter")
 	}
 

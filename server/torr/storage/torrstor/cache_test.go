@@ -19,6 +19,19 @@ func setupStorageTest() {
 	})
 }
 
+func drainMemPieceChunkPoolForTest(t *testing.T) {
+	t.Helper()
+
+	for {
+		select {
+		case <-memPieceChunkPool:
+			memPiecePooledChunks.Add(-1)
+		default:
+			return
+		}
+	}
+}
+
 func TestNewStorage(t *testing.T) {
 	stor := NewStorage(64 * 1024 * 1024)
 	if stor == nil {
@@ -166,6 +179,286 @@ func TestMemPieceWriteAt_TracksAllocatedChunks(t *testing.T) {
 
 	if got, want := piece.Size.Load(), int64(memPieceChunkSize*2); got != want {
 		t.Fatalf("piece.Size after second chunk = %d, want %d", got, want)
+	}
+}
+
+func TestMemPieceReleaseClearsChunksAndAccounting(t *testing.T) {
+	setupStorageTest()
+
+	stor := NewStorage(1 * 1024 * 1024)
+	cache := NewCache(1*1024*1024, stor)
+
+	info := &metainfo.Info{
+		Files:       []metainfo.FileInfo{{Path: []string{"test.bin"}, Length: 64 * 1024}},
+		PieceLength: 64 * 1024,
+	}
+	info.Pieces = make([]byte, 20)
+	hash := metainfo.NewHashFromHex("abcdef1234567890abcdef1234567890abcdef12")
+	cache.Init(info, hash)
+
+	before := SnapshotCacheStats()
+	piece := cache.pieces[0]
+	data := bytes.Repeat([]byte{0xAB}, memPieceChunkSize+1024)
+
+	if _, err := piece.WriteAt(data, 0); err != nil {
+		t.Fatalf("WriteAt error: %v", err)
+	}
+
+	if piece.mPiece.chunks == nil {
+		t.Fatal("chunks were not allocated")
+	}
+
+	afterWrite := SnapshotCacheStats()
+	if got, want := afterWrite.InMemoryChunks-before.InMemoryChunks, int64(2); got != want {
+		t.Fatalf("in-memory chunks delta after WriteAt = %d, want %d", got, want)
+	}
+
+	piece.mPiece.Release()
+
+	if piece.mPiece.chunks != nil {
+		t.Fatal("chunks were not cleared after Release")
+	}
+
+	afterRelease := SnapshotCacheStats()
+	if got, want := afterRelease.InMemoryChunks-before.InMemoryChunks, int64(0); got != want {
+		t.Fatalf("in-memory chunks delta after Release = %d, want %d", got, want)
+	}
+
+	if got, want := afterRelease.LogicalFilledBytes-before.LogicalFilledBytes, int64(0); got != want {
+		t.Fatalf("logical filled delta after Release = %d, want %d", got, want)
+	}
+}
+
+func TestMemPieceChunkPoolIsBounded(t *testing.T) {
+	drainMemPieceChunkPoolForTest(t)
+
+	for range memPieceChunkPoolLimit + 8 {
+		putMemPieceChunk(make([]byte, memPieceChunkSize))
+	}
+
+	if got, want := reusableMemPieceChunks(), int64(memPieceChunkPoolLimit); got != want {
+		t.Fatalf("reusable chunks = %d, want %d", got, want)
+	}
+
+	for range memPieceChunkPoolLimit {
+		chunk := getMemPieceChunk()
+		if len(chunk) != memPieceChunkSize {
+			t.Fatalf("chunk len = %d, want %d", len(chunk), memPieceChunkSize)
+		}
+	}
+
+	if got, want := reusableMemPieceChunks(), int64(0); got != want {
+		t.Fatalf("reusable chunks after drain = %d, want %d", got, want)
+	}
+}
+
+func TestCacheStatsTrackLogicalOverheadForTwoCaches(t *testing.T) {
+	setupStorageTest()
+
+	before := SnapshotCacheStats()
+	stor := NewStorage(64 * 1024)
+
+	first := NewCache(64*1024, stor)
+	second := NewCache(64*1024, stor)
+
+	info := &metainfo.Info{
+		Files:       []metainfo.FileInfo{{Path: []string{"test.bin"}, Length: 256 * 1024}},
+		PieceLength: 64 * 1024,
+	}
+	info.Pieces = make([]byte, 4*20)
+
+	first.Init(info, metainfo.NewHashFromHex("abcdef1234567890abcdef1234567890abcdef12"))
+	second.Init(info, metainfo.NewHashFromHex("1234567890abcdef1234567890abcdef12345678"))
+	t.Cleanup(func() {
+		_ = first.Close()
+		_ = second.Close()
+	})
+
+	writePiece := func(t *testing.T, cache *Cache, id int) {
+		t.Helper()
+
+		data := bytes.Repeat([]byte{0xAB}, 64*1024)
+		if _, err := cache.pieces[id].WriteAt(data, 0); err != nil {
+			t.Fatalf("WriteAt cache piece %d error: %v", id, err)
+		}
+	}
+
+	for i := 0; i < 2; i++ {
+		writePiece(t, first, i)
+		writePiece(t, second, i)
+	}
+
+	afterWrite := SnapshotCacheStats()
+	if got, want := afterWrite.ConfiguredCapacityBytes-before.ConfiguredCapacityBytes, int64(128*1024); got != want {
+		t.Fatalf("configured capacity delta = %d, want %d", got, want)
+	}
+
+	if got, want := afterWrite.LogicalFilledBytes-before.LogicalFilledBytes, int64(256*1024); got != want {
+		t.Fatalf("logical filled delta = %d, want %d", got, want)
+	}
+
+	logicalDelta := afterWrite.LogicalFilledBytes - before.LogicalFilledBytes
+	capacityDelta := afterWrite.ConfiguredCapacityBytes - before.ConfiguredCapacityBytes
+	if got, want := logicalDelta-capacityDelta, int64(128*1024); got != want {
+		t.Fatalf("logical overhead delta = %d, want %d", got, want)
+	}
+
+	first.pieces[0].mPiece.Release()
+	second.pieces[0].mPiece.Release()
+
+	afterClean := SnapshotCacheStats()
+	logicalDelta = afterClean.LogicalFilledBytes - before.LogicalFilledBytes
+	capacityDelta = afterClean.ConfiguredCapacityBytes - before.ConfiguredCapacityBytes
+	if got, want := logicalDelta-capacityDelta, int64(0); got != want {
+		t.Fatalf("logical overhead delta after releasing removable pieces = %d, want %d", got, want)
+	}
+
+	if err := first.Close(); err != nil {
+		t.Fatalf("first Close error: %v", err)
+	}
+
+	if err := second.Close(); err != nil {
+		t.Fatalf("second Close error: %v", err)
+	}
+}
+
+func TestReusableChunkPoolDrainsAfterCacheCloses(t *testing.T) {
+	setupStorageTest()
+	drainMemPieceChunkPoolForTest(t)
+
+	stor := NewStorage(64 * 1024)
+	first := NewCache(64*1024, stor)
+	second := NewCache(64*1024, stor)
+
+	info := &metainfo.Info{
+		Files:       []metainfo.FileInfo{{Path: []string{"test.bin"}, Length: 64 * 1024}},
+		PieceLength: 64 * 1024,
+	}
+	info.Pieces = make([]byte, 20)
+
+	first.Init(info, metainfo.NewHashFromHex("abcdef1234567890abcdef1234567890abcdef12"))
+	second.Init(info, metainfo.NewHashFromHex("1234567890abcdef1234567890abcdef12345678"))
+
+	data := bytes.Repeat([]byte{0xCD}, memPieceChunkSize)
+	if _, err := first.pieces[0].WriteAt(data, 0); err != nil {
+		t.Fatalf("WriteAt error: %v", err)
+	}
+
+	first.pieces[0].mPiece.Release()
+	if got, want := reusableMemPieceChunks(), int64(1); got != want {
+		t.Fatalf("reusable chunks after Release = %d, want %d", got, want)
+	}
+
+	if err := first.Close(); err != nil {
+		t.Fatalf("first Close error: %v", err)
+	}
+
+	if got, want := reusableMemPieceChunks(), int64(0); got != want {
+		t.Fatalf("reusable chunks after cache close = %d, want %d", got, want)
+	}
+
+	if err := second.Close(); err != nil {
+		t.Fatalf("second Close error: %v", err)
+	}
+
+	if got, want := reusableMemPieceChunks(), int64(0); got != want {
+		t.Fatalf("reusable chunks after last cache close = %d, want %d", got, want)
+	}
+}
+
+func TestCacheMetricsSnapshotTracksAggregateCacheLifecycle(t *testing.T) {
+	setupStorageTest()
+
+	before := SnapshotCacheStats()
+	stor := NewStorage(64 * 1024)
+	cache := NewCache(64*1024, stor)
+
+	info := &metainfo.Info{
+		Files:       []metainfo.FileInfo{{Path: []string{"test.bin"}, Length: 32 * 1024}},
+		PieceLength: 16 * 1024,
+	}
+	info.Pieces = make([]byte, 2*20)
+	hash := metainfo.NewHashFromHex("abcdef1234567890abcdef1234567890abcdef12")
+	cache.Init(info, hash)
+
+	afterInit := SnapshotCacheStats()
+	if got, want := afterInit.ActiveCaches-before.ActiveCaches, int64(1); got != want {
+		t.Fatalf("active caches delta = %d, want %d", got, want)
+	}
+
+	if got, want := afterInit.ConfiguredCapacityBytes-before.ConfiguredCapacityBytes, int64(64*1024); got != want {
+		t.Fatalf("configured capacity delta = %d, want %d", got, want)
+	}
+
+	if got, want := afterInit.PiecesCount-before.PiecesCount, int64(2); got != want {
+		t.Fatalf("pieces count delta = %d, want %d", got, want)
+	}
+
+	cache.RecordHit()
+	cache.RecordMiss()
+
+	piece := cache.pieces[0]
+	if _, err := piece.WriteAt(bytes.Repeat([]byte{0xAB}, 1024), 0); err != nil {
+		t.Fatalf("WriteAt error: %v", err)
+	}
+
+	afterWrite := SnapshotCacheStats()
+	if got, want := afterWrite.Hits-before.Hits, uint64(1); got != want {
+		t.Fatalf("cache hits delta = %d, want %d", got, want)
+	}
+
+	if got, want := afterWrite.Misses-before.Misses, uint64(1); got != want {
+		t.Fatalf("cache misses delta = %d, want %d", got, want)
+	}
+
+	if got, want := afterWrite.LogicalFilledBytes-before.LogicalFilledBytes, int64(memPieceChunkSize); got != want {
+		t.Fatalf("logical filled delta = %d, want %d", got, want)
+	}
+
+	if got, want := afterWrite.InMemoryChunks-before.InMemoryChunks, int64(1); got != want {
+		t.Fatalf("in-memory chunks delta = %d, want %d", got, want)
+	}
+
+	cache.SetCapacity(128 * 1024)
+
+	afterCapacity := SnapshotCacheStats()
+	if got, want := afterCapacity.ConfiguredCapacityBytes-before.ConfiguredCapacityBytes, int64(8<<20); got != want {
+		t.Fatalf("configured capacity delta after SetCapacity = %d, want %d", got, want)
+	}
+
+	piece.mPiece.Release()
+
+	afterRelease := SnapshotCacheStats()
+	if got, want := afterRelease.LogicalFilledBytes-before.LogicalFilledBytes, int64(0); got != want {
+		t.Fatalf("logical filled delta after Release = %d, want %d", got, want)
+	}
+
+	if got, want := afterRelease.InMemoryChunks-before.InMemoryChunks, int64(0); got != want {
+		t.Fatalf("in-memory chunks delta after Release = %d, want %d", got, want)
+	}
+
+	cache.addActiveReaders(1)
+
+	afterReader := SnapshotCacheStats()
+	if got, want := afterReader.ActiveReaders-before.ActiveReaders, int64(1); got != want {
+		t.Fatalf("active readers delta = %d, want %d", got, want)
+	}
+
+	if err := cache.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+
+	afterClose := SnapshotCacheStats()
+	if got, want := afterClose.ActiveCaches-before.ActiveCaches, int64(0); got != want {
+		t.Fatalf("active caches delta after Close = %d, want %d", got, want)
+	}
+
+	if got, want := afterClose.ConfiguredCapacityBytes-before.ConfiguredCapacityBytes, int64(0); got != want {
+		t.Fatalf("configured capacity delta after Close = %d, want %d", got, want)
+	}
+
+	if got, want := afterClose.ActiveReaders-before.ActiveReaders, int64(0); got != want {
+		t.Fatalf("active readers delta after Close = %d, want %d", got, want)
 	}
 }
 

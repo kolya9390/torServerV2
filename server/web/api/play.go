@@ -22,7 +22,11 @@ import (
 //	@Success		200	"Torrent data"
 //	@Router			/play/{hash}/{id} [get]
 func play(c *gin.Context) {
-	deps := playDepsFromContext(c)
+	deps, ok := playDepsFromContext(c)
+	if !ok {
+		return
+	}
+
 	hash := c.Param("hash")
 	indexStr := c.Param("id")
 	notAuth := c.GetBool("auth_required") && c.GetString(gin.AuthUserKey) == ""

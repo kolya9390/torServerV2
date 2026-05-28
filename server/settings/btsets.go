@@ -70,7 +70,7 @@ type BTSets struct {
 	// Reader
 	ResponsiveMode bool // enable Responsive reader (don't wait pieceComplete)
 	// CoreProfile controls predefined kernel tuning presets.
-	// Allowed: custom, low-end, balanced, high-throughput, nas.
+	// Allowed: custom, low-end, low-cpu, balanced, high-throughput, nas.
 	CoreProfile string
 	// Stream admission control
 	// MaxConcurrentStreams: 0 -> auto (2 * GOMAXPROCS), >0 -> fixed limit

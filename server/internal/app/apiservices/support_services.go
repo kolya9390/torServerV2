@@ -29,9 +29,9 @@ func (d viewedService) RemoveViewed(v *contracts.ViewedItem) {
 }
 
 func (d viewedService) ListViewed(hash string) []*contracts.ViewedItem {
-	log.TLogln("viewedService.ListViewed: calling backend with hash:", hash)
+	log.Debug("viewedService.ListViewed: calling backend", "hash", hash)
 	result := mapViewedItemsFromSettings(d.listViewed(hash))
-	log.TLogln("viewedService.ListViewed: got result:", result)
+	log.Debug("viewedService.ListViewed: got result", "items", len(result))
 
 	return result
 }

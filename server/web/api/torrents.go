@@ -33,7 +33,10 @@ func torrents(c *gin.Context) {
 		return
 	}
 
-	deps := torrentDepsFromContext(c)
+	deps, ok := torrentDepsFromContext(c)
+	if !ok {
+		return
+	}
 
 	logTorrentsActionRequest(c, req)
 
@@ -58,6 +61,10 @@ func torrents(c *gin.Context) {
 }
 
 func logTorrentsActionRequest(c *gin.Context, req torrReqJS) {
+	if !log.IsDebugEnabled() {
+		return
+	}
+
 	const maxLinkLogLen = 120
 
 	link := req.Link
@@ -65,13 +72,16 @@ func logTorrentsActionRequest(c *gin.Context, req torrReqJS) {
 		link = link[:maxLinkLogLen] + "..."
 	}
 
-	log.TLogln(
-		"[API /torrents] action=", req.Action,
-		" hash=", req.Hash,
-		" save_to_db=", req.SaveToDB,
-		" ip=", c.ClientIP(),
-		" request_id=", c.GetString("request_id"),
-		" link=", link,
+	log.DebugSampled(
+		"api.torrents.action."+req.Action,
+		100,
+		"api torrents action",
+		"action", req.Action,
+		"hash", req.Hash,
+		"save_to_db", req.SaveToDB,
+		"ip", c.ClientIP(),
+		"request_id", c.GetString("request_id"),
+		"link", link,
 	)
 }
 
@@ -82,7 +92,7 @@ func addTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {
 		return
 	}
 
-	log.TLogln("add torrent", req.Link)
+	log.Debug("addTorrent: parse link", "link", req.Link)
 	req.Link = strings.ReplaceAll(req.Link, "&amp;", "&")
 
 	torrSpec, meta, err := deps.Parser.ParseLink(req.Link, req.Title, req.Poster, req.Category)
@@ -100,18 +110,18 @@ func addTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {
 	hashHex := torrSpec.HashHex()
 	// Fast path for chatty clients: if torrent is already active in memory,
 	// don't call Add again (can block under heavy concurrent stream load).
-	log.TLogln("[TRACE] addTorrent: before Torrents.Get, hash=", hashHex)
+	log.Debug("addTorrent: before Torrents.Get", "hash", hashHex)
 	existing := deps.Queries.Get(hashHex)
-	log.TLogln("[TRACE] addTorrent: after Torrents.Get, hash=", hashHex, " tor=", existing != nil)
+	log.Debug("addTorrent: after Torrents.Get", "hash", hashHex, "torrent_exists", existing != nil)
 
 	if existing != nil && !deps.Queries.IsStored(existing) {
 		if req.SaveToDB {
-			log.TLogln("[TRACE] addTorrent: enqueue save_to_db finalize, hash=", hashHex)
+			log.Debug("addTorrent: enqueue save_to_db finalize", "hash", hashHex)
 
 			_ = deps.Commands.EnqueueMetadataFinalize(existing, nil, true)
 		}
 
-		log.TLogln("[TRACE] addTorrent: returning fast-path status, hash=", hashHex)
+		log.Debug("addTorrent: returning fast-path status", "hash", hashHex)
 		writeTorrentStatusResponse(c, deps.Queries.Status(existing))
 
 		return
@@ -159,12 +169,12 @@ func getTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {
 		return
 	}
 
-	log.TLogln("[TRACE] getTorrent: before Torrents.StatusByHash, hash=", req.Hash)
+	log.Debug("getTorrent: before Torrents.StatusByHash", "hash", req.Hash)
 	st, found := deps.Queries.StatusByHash(req.Hash)
-	log.TLogln("[TRACE] getTorrent: after Torrents.StatusByHash, hash=", req.Hash, " found=", found)
+	log.Debug("getTorrent: after Torrents.StatusByHash", "hash", req.Hash, "found", found)
 
 	if found {
-		log.TLogln("[TRACE] getTorrent: using status, hash=", req.Hash)
+		log.Debug("getTorrent: using status", "hash", req.Hash)
 		writeTorrentStatusResponse(c, st)
 	} else {
 		abortAPIError(c, http.StatusNotFound, newNotFoundError("torrent not found"))

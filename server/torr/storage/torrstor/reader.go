@@ -35,7 +35,7 @@ func newReader(file *torrent.File, cache *Cache) *Reader {
 	}
 	r.Reader = file.NewReader()
 	r.isUse.Store(true)
-	cache.readers.active.Add(1)
+	cache.addActiveReaders(1)
 
 	cache.readers.mu.Lock()
 	cache.readers.items[r] = struct{}{}
@@ -179,7 +179,7 @@ func (r *Reader) Close() {
 	}
 
 	if r.isUse.Swap(false) {
-		r.cache.readers.active.Add(-1)
+		r.cache.addActiveReaders(-1)
 	}
 
 	if len(r.file.Torrent().Files()) > 0 {
@@ -260,7 +260,7 @@ func (r *Reader) readerOnLocked() {
 		r.isUse.Store(true)
 
 		if r.cache != nil {
-			r.cache.readers.active.Add(1)
+			r.cache.addActiveReaders(1)
 		}
 	}
 }
@@ -272,7 +272,7 @@ func (r *Reader) readerOffLocked() {
 		r.isUse.Store(false)
 
 		if r.cache != nil {
-			r.cache.readers.active.Add(-1)
+			r.cache.addActiveReaders(-1)
 		}
 
 		if r.offset.Load() > 0 {

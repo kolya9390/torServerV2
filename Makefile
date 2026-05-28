@@ -1,4 +1,4 @@
-.PHONY: build build-all test lint lint-fix e2e docker docker-build docker-push clean help generate-mocks swagger
+.PHONY: build build-all test lint lint-fix e2e perf-config run-debug perf-capture docker docker-build docker-push clean help generate-mocks swagger
 
 # Go parameters
 GOCMD=go
@@ -15,6 +15,10 @@ BINARY_DIR=dist
 
 # Docker parameters
 DOCKER_TAG=latest
+
+# Performance profiling parameters
+PERF_VARIANT?=low-cpu-candidate
+PERF_CONFIG_OUT_DIR?=artifacts/perf-configs
 
 # Build flags
 LDFLAGS=-ldflags '-w -s'
@@ -63,6 +67,23 @@ lint-fix:
 e2e:
 	@echo "Running E2E smoke tests..."
 	cd server && ./scripts/e2e_smoke.sh
+
+## perf-config: Generate a local debug profiling config (PERF_VARIANT=low-cpu-candidate)
+perf-config:
+	@echo "Generating local profiling config: $(PERF_VARIANT)"
+	@PERF_CONFIG_OUT_DIR="$(PERF_CONFIG_OUT_DIR)" ./server/scripts/perf_config_variant.sh --variant "$(PERF_VARIANT)"
+
+## run-debug: Build and run TorrServer with a generated debug profiling config
+run-debug: build
+	@config_path=$$(PERF_CONFIG_OUT_DIR="$(PERF_CONFIG_OUT_DIR)" ./server/scripts/perf_config_variant.sh --variant "$(PERF_VARIANT)"); \
+	echo "Running TorrServer with debug profiling config: $$config_path"; \
+	echo "Debug endpoints will be available only for this local run."; \
+	TS_CONFIG="$$config_path" ./$(BINARY_DIR)/$(BINARY_NAME)
+
+## perf-capture: Capture profiles from a running TorrServer (PERF_LABEL=one-stream PERF_DURATION=30)
+perf-capture:
+	@echo "Capturing TorrServer performance profiles..."
+	./server/scripts/perf_capture.sh
 
 ## docker-build: Build Docker image for current platform
 docker-build:

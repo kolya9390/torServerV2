@@ -72,30 +72,12 @@ type Torrent struct {
 }
 
 func trackerBudget(sets *settings.BTSets) int {
-	if sets == nil {
-		sets = &settings.BTSets{}
-	}
+	return connectionPolicyForSettings(sets, defaultEstablishedConns).trackerBudget
+}
 
-	maxTrackers := 128
-
-	// Preserve a much larger tracker pool than before. Rare 4K swarms often
-	// benefit from the broader announce surface, and the original TorrServer
-	// didn't aggressively trim trackers at all.
-	if sets.DisableDHT && sets.DisablePEX {
-		maxTrackers = 192
-	}
-
-	// Slightly adapt to connection profile.
-	if sets.ConnectionsLimit > 0 {
-		switch {
-		case sets.ConnectionsLimit >= 80:
-			maxTrackers = 192
-		case sets.ConnectionsLimit <= 16:
-			maxTrackers = 96
-		}
-	}
-
-	return maxTrackers
+// TrackerBudgetForSettings exposes the tracker fan-out policy for diagnostics.
+func TrackerBudgetForSettings(sets *settings.BTSets) int {
+	return trackerBudget(sets)
 }
 
 func (t *Torrent) currentSettings() *settings.BTSets {
@@ -184,11 +166,11 @@ func adaptivePriorityInterval(playbackTorrents int) time.Duration {
 	return time.Second
 }
 
-func adaptiveMaxEstablishedConns(configuredLimit, playbackTorrents, localReaders int) int {
+func adaptiveMaxEstablishedConns(sets *settings.BTSets, playbackTorrents, localReaders int) int {
 	_ = playbackTorrents
 	_ = localReaders
 
-	return effectiveEstablishedConns(configuredLimit, 50)
+	return connectionPolicyForSettings(sets, defaultEstablishedConns).effectiveConns
 }
 
 func NewTorrent(spec *torrent.TorrentSpec, bt *BTServer) (*Torrent, error) {
@@ -204,21 +186,8 @@ func NewTorrent(spec *torrent.TorrentSpec, bt *BTServer) (*Torrent, error) {
 		enableIPv6 = false
 	}
 
-	switch sets.RetrackersMode {
-	case 1:
-		spec.Trackers = append(spec.Trackers, [][]string{utils.GetDefTrackers()}...)
-	case 2:
-		spec.Trackers = nil
-	case 3:
-		spec.Trackers = [][]string{utils.GetDefTrackers()}
-	}
-
 	trackers := utils.GetTrackerFromFileAtPath(bt.currentRuntimeState().PathConfig().Path)
-	if len(trackers) > 0 {
-		spec.Trackers = append(spec.Trackers, [][]string{trackers}...)
-	}
-
-	spec.Trackers = utils.NormalizeTrackers(spec.Trackers, enableIPv6, trackerBudget(sets))
+	applyTrackerPolicy(spec, sets, enableIPv6, trackers)
 
 	goTorrent, _, err := bt.client.AddTorrentSpec(spec)
 	if err != nil {
@@ -248,6 +217,31 @@ func NewTorrent(spec *torrent.TorrentSpec, bt *BTServer) (*Torrent, error) {
 	}
 
 	return torr, nil
+}
+
+func applyTrackerPolicy(spec *torrent.TorrentSpec, sets *settings.BTSets, enableIPv6 bool, fileTrackers []string) {
+	if spec == nil {
+		return
+	}
+
+	if sets == nil {
+		sets = &settings.BTSets{}
+	}
+
+	switch sets.RetrackersMode {
+	case 1:
+		spec.Trackers = append(spec.Trackers, [][]string{utils.GetDefTrackers()}...)
+	case 2:
+		spec.Trackers = nil
+	case 3:
+		spec.Trackers = [][]string{utils.GetDefTrackers()}
+	}
+
+	if len(fileTrackers) > 0 {
+		spec.Trackers = append(spec.Trackers, [][]string{fileTrackers}...)
+	}
+
+	spec.Trackers = utils.NormalizeTrackers(spec.Trackers, enableIPv6, trackerBudget(sets))
 }
 
 func (t *Torrent) Files() []*torrent.File {

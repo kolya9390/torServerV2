@@ -27,7 +27,10 @@ func settings(c *gin.Context) {
 		return
 	}
 
-	deps := settingsDepsFromContext(c)
+	deps, ok := settingsDepsFromContext(c)
+	if !ok {
+		return
+	}
 
 	switch req.Action {
 	case "get":

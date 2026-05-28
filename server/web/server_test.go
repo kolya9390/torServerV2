@@ -1,10 +1,14 @@
 package web
 
 import (
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -65,6 +69,91 @@ func TestNewHTTPServerHasHeaderLimitsAndStreamingTimeouts(t *testing.T) {
 
 	if srv.IdleTimeout != httpIdleTimeout {
 		t.Fatalf("IdleTimeout = %s, want %s", srv.IdleTimeout, httpIdleTimeout)
+	}
+}
+
+func TestShutdownHTTPServerWithTimeoutClosesActiveStreamingConnection(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("listen unavailable in this environment: %v", err)
+	}
+
+	started := make(chan struct{})
+	requestDone := make(chan struct{})
+	var startedOnce atomic.Bool
+
+	srv := newHTTPServer(listener.Addr().String(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if startedOnce.CompareAndSwap(false, true) {
+			close(started)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+
+		<-r.Context().Done()
+		close(requestDone)
+	}))
+
+	serveDone := make(chan error, 1)
+	go func() {
+		serveDone <- srv.Serve(listener)
+	}()
+
+	responseDone := make(chan error, 1)
+	go func() {
+		resp, err := http.Get("http://" + listener.Addr().String())
+		if err != nil {
+			responseDone <- err
+
+			return
+		}
+		_, err = io.Copy(io.Discard, resp.Body)
+		if closeErr := resp.Body.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+
+		responseDone <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not start")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		shutdownHTTPServerWithTimeout("HTTP", srv, 25*time.Millisecond)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown did not finish after closing active connections")
+	}
+
+	select {
+	case <-requestDone:
+	case <-time.After(time.Second):
+		t.Fatal("active request context was not cancelled")
+	}
+
+	select {
+	case err := <-serveDone:
+		if err != nil && err != http.ErrServerClosed {
+			t.Fatalf("Serve() error = %v, want ErrServerClosed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server loop did not exit")
+	}
+
+	select {
+	case <-responseDone:
+	case <-time.After(time.Second):
+		t.Fatal("client response did not finish after server close")
 	}
 }
 

@@ -8,7 +8,23 @@ import (
 	cacheSt "server/torr/storage/state"
 	"server/torrshash"
 	utils2 "server/utils"
+
+	"github.com/anacrolix/torrent"
 )
+
+// TorrentRuntimeMetrics is a lightweight, privacy-safe runtime view for diagnostics.
+type TorrentRuntimeMetrics struct {
+	ActivePeers      int   `json:"active_peers"`
+	TotalPeers       int   `json:"total_peers"`
+	PendingPeers     int   `json:"pending_peers"`
+	HalfOpenPeers    int   `json:"half_open_peers"`
+	ConnectedSeeders int   `json:"connected_seeders"`
+	ActiveReaders    int   `json:"active_readers"`
+	TrackerTiers     int   `json:"tracker_tiers"`
+	Trackers         int   `json:"trackers"`
+	DownloadSpeed    int64 `json:"download_speed"`
+	UploadSpeed      int64 `json:"upload_speed"`
+}
 
 func (t *Torrent) Status() *state.TorrentStatus {
 	t.muTorrent.Lock()
@@ -134,16 +150,59 @@ func (t *Torrent) ensureCachedStatusDataLocked(st *state.TorrentStatus) {
 
 // RuntimeSnapshot returns lightweight metrics needed by periodic collectors.
 func (t *Torrent) RuntimeSnapshot() (activePeers int, downloadSpeed int64, uploadSpeed int64, ok bool) {
+	snapshot, ok := t.RuntimeMetricsSnapshot()
+	if !ok {
+		return 0, 0, 0, false
+	}
+
+	return snapshot.ActivePeers, snapshot.DownloadSpeed, snapshot.UploadSpeed, true
+}
+
+// RuntimeMetricsSnapshot returns lightweight metrics needed by periodic collectors.
+func (t *Torrent) RuntimeMetricsSnapshot() (TorrentRuntimeMetrics, bool) {
+	if t == nil {
+		return TorrentRuntimeMetrics{}, false
+	}
+
 	t.muTorrent.Lock()
 	defer t.muTorrent.Unlock()
 
 	if t.Torrent == nil || t.Info() == nil {
-		return 0, 0, 0, false
+		return TorrentRuntimeMetrics{}, false
 	}
 
 	stats := t.Stats()
+	trackerTiers, trackers := countTrackerTiers(t.TorrentSpec)
 
-	return stats.ActivePeers, int64(t.transfer.downloadSpeed), int64(t.transfer.uploadSpeed), true
+	return TorrentRuntimeMetrics{
+		ActivePeers:      stats.ActivePeers,
+		TotalPeers:       stats.TotalPeers,
+		PendingPeers:     stats.PendingPeers,
+		HalfOpenPeers:    stats.HalfOpenPeers,
+		ConnectedSeeders: stats.ConnectedSeeders,
+		ActiveReaders:    t.ActiveReaders(),
+		TrackerTiers:     trackerTiers,
+		Trackers:         trackers,
+		DownloadSpeed:    int64(t.transfer.downloadSpeed),
+		UploadSpeed:      int64(t.transfer.uploadSpeed),
+	}, true
+}
+
+func countTrackerTiers(spec *torrent.TorrentSpec) (tiers int, trackers int) {
+	if spec == nil {
+		return 0, 0
+	}
+
+	for _, tier := range spec.Trackers {
+		if len(tier) == 0 {
+			continue
+		}
+
+		tiers++
+		trackers += len(tier)
+	}
+
+	return tiers, trackers
 }
 
 func (t *Torrent) CacheState() *cacheSt.CacheState {

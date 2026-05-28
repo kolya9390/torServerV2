@@ -34,7 +34,10 @@ func viewed(c *gin.Context) {
 		return
 	}
 
-	deps := viewedDepsFromContext(c)
+	deps, ok := viewedDepsFromContext(c)
+	if !ok {
+		return
+	}
 
 	switch req.Action {
 	case "set":
@@ -83,8 +86,7 @@ func remViewed(deps viewedHandlerDeps, req viewedReqJS, c *gin.Context) {
 }
 
 func listViewed(deps viewedHandlerDeps, req viewedReqJS, c *gin.Context) {
-	log.TLogln("listViewed: START")
-	log.TLogln("listViewed: deps.Viewed is nil?", deps.Viewed == nil)
+	log.Debug("listViewed: start", "viewed_service_nil", deps.Viewed == nil)
 
 	if deps.Viewed == nil {
 		abortAPIError(c, http.StatusInternalServerError, newInternalError("viewed service is unavailable", nil))
@@ -92,13 +94,11 @@ func listViewed(deps viewedHandlerDeps, req viewedReqJS, c *gin.Context) {
 		return
 	}
 
-	log.TLogln("listViewed: calling viewed service")
-
 	list := deps.Viewed.ListViewed(req.Hash)
 	if list == nil {
 		list = []*contracts.ViewedItem{}
 	}
 
-	log.TLogln("listViewed: got list:", list)
+	log.Debug("listViewed: got list", "items", len(list))
 	writeViewedListResponse(c, list)
 }

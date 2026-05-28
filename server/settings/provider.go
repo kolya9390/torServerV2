@@ -88,6 +88,7 @@ func staticToBTSets(cfg StaticConfig) *BTSets {
 		DownloadRateLimit: cfg.DownloadRateLimit,
 		UploadRateLimit:   cfg.UploadRateLimit,
 		PeersListenPort:   cfg.PeersListenPort,
+		CoreProfile:       cfg.CoreProfile,
 		ServiceOnlyDebug:  cfg.ServiceOnlyDebug,
 	}
 }
