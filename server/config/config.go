@@ -116,9 +116,11 @@ type WorkersConfig struct {
 }
 
 type DebugConfig struct {
-	Enabled          bool `yaml:"enabled"`
-	ServiceOnly      bool `yaml:"service_only"` // Only V2 code debug logs, no library logs
-	ShowFSActiveTorr bool `yaml:"show_fs_active_torr"`
+	Enabled                    bool  `yaml:"enabled"`
+	ServiceOnly                bool  `yaml:"service_only"` // Only V2 code debug logs, no library logs
+	ShowFSActiveTorr           bool  `yaml:"show_fs_active_torr"`
+	EstablishedConnsPerTorrent int   `yaml:"established_conns_per_torrent_override"`
+	MaxUnverifiedBytesMB       int64 `yaml:"max_unverified_bytes_mb"`
 }
 
 type ProxyConfig struct {
@@ -418,6 +420,8 @@ func applyDebugSettings(c *Config, sets *settings.BTSets) {
 	sets.EnableDebug = c.Debug.Enabled
 	sets.ServiceOnlyDebug = c.Debug.ServiceOnly
 	sets.ShowFSActiveTorr = c.Debug.ShowFSActiveTorr
+	sets.DebugEstablishedConnsOverride = c.Debug.EstablishedConnsPerTorrent
+	sets.DebugMaxUnverifiedBytesMB = c.Debug.MaxUnverifiedBytesMB
 
 	// Always enable local V2 debug logs when either mode is enabled.
 	// service_only: true gives you V2 logs without library spam.

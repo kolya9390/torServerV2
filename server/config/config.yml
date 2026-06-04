@@ -74,6 +74,8 @@ debug:
   enabled: false  # Release-safe default. Set true only for local profiling: /debug/pprof/* and /debug/vars
   service_only: false  # Set true locally for V2 debug logs without library spam or HTTP debug endpoints
   show_fs_active_torr: false
+  established_conns_per_torrent_override: 0  # Local profiling only. Ignored unless debug.enabled=true.
+  max_unverified_bytes_mb: 0  # Local profiling only. 0 keeps anacrolix default; ignored unless debug.enabled=true.
 
 proxy:
   enabled: false

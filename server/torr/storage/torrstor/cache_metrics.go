@@ -1,6 +1,9 @@
 package torrstor
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+	"time"
+)
 
 // CacheStats is an aggregate, privacy-safe view of cache residency and churn.
 // It intentionally avoids per-torrent labels to keep /debug/vars bounded and
@@ -21,6 +24,17 @@ type CacheStats struct {
 	Misses                  uint64 `json:"misses"`
 }
 
+type CachePriorityStats struct {
+	UpdatesTotal       uint64 `json:"updates_total"`
+	DesiredPiecesTotal uint64 `json:"desired_pieces_total"`
+	BudgetLimitedTotal uint64 `json:"budget_limited_total"`
+	ClearedPiecesTotal uint64 `json:"cleared_pieces_total"`
+	SetPiecesTotal     uint64 `json:"set_pieces_total"`
+	NoopPiecesTotal    uint64 `json:"noop_pieces_total"`
+	TrackedPieces      int64  `json:"tracked_pieces"`
+	LastUpdateUnixMS   int64  `json:"last_update_unix_ms"`
+}
+
 type cacheStatsCounters struct {
 	activeCaches            atomic.Int64
 	activeReaders           atomic.Int64
@@ -32,6 +46,14 @@ type cacheStatsCounters struct {
 	cleanedBytes            atomic.Uint64
 	hits                    atomic.Uint64
 	misses                  atomic.Uint64
+	priorityUpdates         atomic.Uint64
+	priorityDesiredPieces   atomic.Uint64
+	priorityBudgetLimited   atomic.Uint64
+	priorityClearedPieces   atomic.Uint64
+	prioritySetPieces       atomic.Uint64
+	priorityNoopPieces      atomic.Uint64
+	priorityTrackedPieces   atomic.Int64
+	priorityLastUpdateMS    atomic.Int64
 }
 
 var globalCacheStats cacheStatsCounters
@@ -67,6 +89,19 @@ func SnapshotCacheStats() CacheStats {
 	}
 }
 
+func SnapshotCachePriorityStats() CachePriorityStats {
+	return CachePriorityStats{
+		UpdatesTotal:       globalCacheStats.priorityUpdates.Load(),
+		DesiredPiecesTotal: globalCacheStats.priorityDesiredPieces.Load(),
+		BudgetLimitedTotal: globalCacheStats.priorityBudgetLimited.Load(),
+		ClearedPiecesTotal: globalCacheStats.priorityClearedPieces.Load(),
+		SetPiecesTotal:     globalCacheStats.prioritySetPieces.Load(),
+		NoopPiecesTotal:    globalCacheStats.priorityNoopPieces.Load(),
+		TrackedPieces:      globalCacheStats.priorityTrackedPieces.Load(),
+		LastUpdateUnixMS:   globalCacheStats.priorityLastUpdateMS.Load(),
+	}
+}
+
 func (c *Cache) registerMetrics() {
 	if c == nil || !c.metrics.registered.CompareAndSwap(false, true) {
 		return
@@ -85,6 +120,7 @@ func (c *Cache) unregisterMetrics() {
 	filled := c.filled.Swap(0)
 	chunks := c.metrics.inMemoryChunks.Swap(0)
 	readers := c.readers.active.Load()
+	trackedPriorityPieces := c.metrics.priorityTrackedPieces.Swap(0)
 
 	globalCacheStats.activeCaches.Add(-1)
 	globalCacheStats.activeReaders.Add(-int64(readers))
@@ -92,6 +128,7 @@ func (c *Cache) unregisterMetrics() {
 	globalCacheStats.piecesCount.Add(-int64(c.pieceCount))
 	globalCacheStats.logicalFilledBytes.Add(-filled)
 	globalCacheStats.inMemoryChunks.Add(-chunks)
+	globalCacheStats.priorityTrackedPieces.Add(-trackedPriorityPieces)
 	trimReusableMemPieceChunks(0)
 }
 
@@ -186,6 +223,69 @@ func (c *Cache) recordCleanupRun() {
 
 	c.metrics.cleanupRuns.Add(1)
 	globalCacheStats.cleanupRuns.Add(1)
+}
+
+func (c *Cache) recordPrioritySelection(desiredPieces int, budgetLimited bool) {
+	if c == nil {
+		return
+	}
+
+	c.metrics.priorityUpdates.Add(1)
+	globalCacheStats.priorityUpdates.Add(1)
+
+	now := time.Now().UnixMilli()
+	c.metrics.priorityLastUpdateMS.Store(now)
+	globalCacheStats.priorityLastUpdateMS.Store(now)
+
+	if desiredPieces > 0 {
+		c.metrics.priorityDesiredPieces.Add(uint64(desiredPieces))
+		globalCacheStats.priorityDesiredPieces.Add(uint64(desiredPieces))
+	}
+
+	if budgetLimited {
+		c.metrics.priorityBudgetLimited.Add(1)
+		globalCacheStats.priorityBudgetLimited.Add(1)
+	}
+}
+
+func (c *Cache) recordPriorityChurn(clearedPieces, setPieces, noopPieces, trackedPieces int) {
+	if c == nil {
+		return
+	}
+
+	if clearedPieces > 0 {
+		c.metrics.priorityClearedPieces.Add(uint64(clearedPieces))
+		globalCacheStats.priorityClearedPieces.Add(uint64(clearedPieces))
+	}
+
+	if setPieces > 0 {
+		c.metrics.prioritySetPieces.Add(uint64(setPieces))
+		globalCacheStats.prioritySetPieces.Add(uint64(setPieces))
+	}
+
+	if noopPieces > 0 {
+		c.metrics.priorityNoopPieces.Add(uint64(noopPieces))
+		globalCacheStats.priorityNoopPieces.Add(uint64(noopPieces))
+	}
+
+	c.setTrackedPriorityPieces(trackedPieces)
+}
+
+func (c *Cache) setTrackedPriorityPieces(trackedPieces int) {
+	if c == nil {
+		return
+	}
+
+	if trackedPieces < 0 {
+		trackedPieces = 0
+	}
+
+	next := int64(trackedPieces)
+	old := c.metrics.priorityTrackedPieces.Swap(next)
+
+	if c.metrics.registered.Load() {
+		globalCacheStats.priorityTrackedPieces.Add(next - old)
+	}
 }
 
 func (c *Cache) recordCleanedBytes(bytes int64) {

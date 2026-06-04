@@ -69,7 +69,6 @@ func SnapshotStreamHealth() streamHealthSnapshot {
 
 func recordStreamCompleted(firstByte time.Duration, bytesWritten int64, err error) {
 	streamHealth.requestsTotal.Add(1)
-	streamHealth.bytesWrittenTotal.Add(bytesWritten)
 
 	if bytesWritten == 0 {
 		streamHealth.zeroByteResponsesTotal.Add(1)
@@ -87,6 +86,14 @@ func recordStreamCompleted(firstByte time.Duration, bytesWritten int64, err erro
 	if isClientDisconnect(err) {
 		streamHealth.clientDisconnectsTotal.Add(1)
 	}
+}
+
+func recordStreamBytesWritten(bytesWritten int64) {
+	if bytesWritten <= 0 {
+		return
+	}
+
+	streamHealth.bytesWrittenTotal.Add(bytesWritten)
 }
 
 func recordStreamReadWait(wait time.Duration) {

@@ -1,6 +1,7 @@
 package torr
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -17,15 +18,65 @@ import (
 	"server/torr/storage/torrstor"
 )
 
-func streamReaderReadahead(pieceLength, cacheCap int64) int64 {
-	_ = pieceLength
+const (
+	defaultStreamReaderReadahead        = int64(16 << 20)
+	minConcurrentStreamReaderReadahead  = int64(4 << 20)
+	concurrentStreamReadaheadShareRatio = int64(4)
+)
 
-	ra := int64(16 << 20)
+type streamReaderContextSetter interface {
+	SetContext(context.Context)
+}
+
+func streamReaderReadahead(pieceLength, cacheCap int64, activeReaders int) int64 {
+	if activeReaders < 1 {
+		activeReaders = 1
+	}
+
+	ra := defaultStreamReaderReadahead
+	minRA := minConcurrentStreamReaderReadahead
+
+	if pieceLength > 0 && pieceLength*2 > minRA {
+		minRA = pieceLength * 2
+	}
+
+	if minRA > defaultStreamReaderReadahead {
+		minRA = defaultStreamReaderReadahead
+	}
+
+	if activeReaders > 1 && cacheCap > 0 {
+		perReaderCap := cacheCap / int64(activeReaders)
+		if perReaderCap <= 0 {
+			return 0
+		}
+
+		concurrentRA := perReaderCap / concurrentStreamReadaheadShareRatio
+		if concurrentRA < minRA {
+			concurrentRA = minRA
+		}
+
+		if concurrentRA < ra {
+			ra = concurrentRA
+		}
+
+		if ra > perReaderCap {
+			ra = perReaderCap
+		}
+	}
+
 	if cacheCap > 0 && cacheCap < ra {
 		return cacheCap
 	}
 
 	return ra
+}
+
+func bindStreamReaderContext(reader streamReaderContextSetter, req *http.Request) {
+	if reader == nil || req == nil {
+		return
+	}
+
+	reader.SetContext(req.Context())
 }
 
 func requestedRangeStart(req *http.Request, size int64) (int64, bool) {
@@ -132,13 +183,20 @@ func (t *Torrent) newReaderForRequest(fileID int, file *torrent.File, req *http.
 		reader.SetResponsive()
 	}
 
-	readahead := int64(16 << 20)
+	bindStreamReaderContext(reader, req)
+
+	activeReaders := 1
+	if t.cache != nil {
+		activeReaders = t.cache.GetUseReaders()
+	}
+
+	readahead := defaultStreamReaderReadahead
 	if t.Info() != nil {
-		readahead = streamReaderReadahead(t.Info().PieceLength, 0)
+		readahead = streamReaderReadahead(t.Info().PieceLength, 0, activeReaders)
 	}
 
 	if t.cache != nil {
-		readahead = streamReaderReadahead(0, t.cache.GetCapacity())
+		readahead = streamReaderReadahead(0, t.cache.GetCapacity(), activeReaders)
 	}
 
 	reader.SetReadahead(readahead)

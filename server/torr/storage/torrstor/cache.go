@@ -44,12 +44,20 @@ type cacheCleanupState struct {
 }
 
 type cacheMetricsState struct {
-	registered     atomic.Bool
-	hits           atomic.Uint64
-	misses         atomic.Uint64
-	inMemoryChunks atomic.Int64
-	cleanupRuns    atomic.Uint64
-	cleanedBytes   atomic.Uint64
+	registered            atomic.Bool
+	hits                  atomic.Uint64
+	misses                atomic.Uint64
+	inMemoryChunks        atomic.Int64
+	cleanupRuns           atomic.Uint64
+	cleanedBytes          atomic.Uint64
+	priorityUpdates       atomic.Uint64
+	priorityDesiredPieces atomic.Uint64
+	priorityBudgetLimited atomic.Uint64
+	priorityClearedPieces atomic.Uint64
+	prioritySetPieces     atomic.Uint64
+	priorityNoopPieces    atomic.Uint64
+	priorityTrackedPieces atomic.Int64
+	priorityLastUpdateMS  atomic.Int64
 }
 
 type cacheHost interface {

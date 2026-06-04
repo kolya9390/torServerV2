@@ -367,6 +367,59 @@ func TestReusableChunkPoolDrainsAfterCacheCloses(t *testing.T) {
 	}
 }
 
+func TestCacheCloseReleasesResidentMemPieceChunksAndTrimsPool(t *testing.T) {
+	setupStorageTest()
+	drainMemPieceChunkPoolForTest(t)
+
+	before := SnapshotCacheStats()
+	stor := NewStorage(64 * 1024)
+	cache := NewCache(64*1024, stor)
+
+	info := &metainfo.Info{
+		Files:       []metainfo.FileInfo{{Path: []string{"test.bin"}, Length: 64 * 1024}},
+		PieceLength: 64 * 1024,
+	}
+	info.Pieces = make([]byte, 20)
+
+	cache.Init(info, metainfo.NewHashFromHex("abcdef1234567890abcdef1234567890abcdef12"))
+
+	piece := cache.pieces[0]
+	data := bytes.Repeat([]byte{0xCD}, memPieceChunkSize)
+	if _, err := piece.WriteAt(data, 0); err != nil {
+		t.Fatalf("WriteAt error: %v", err)
+	}
+
+	afterWrite := SnapshotCacheStats()
+	if got, want := afterWrite.InMemoryChunks-before.InMemoryChunks, int64(1); got != want {
+		t.Fatalf("in-memory chunks delta after WriteAt = %d, want %d", got, want)
+	}
+
+	if err := cache.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+
+	if piece.mPiece.chunks != nil {
+		t.Fatal("resident chunks were not released during cache close")
+	}
+
+	afterClose := SnapshotCacheStats()
+	if got, want := afterClose.ActiveCaches-before.ActiveCaches, int64(0); got != want {
+		t.Fatalf("active caches delta after Close = %d, want %d", got, want)
+	}
+
+	if got, want := afterClose.LogicalFilledBytes-before.LogicalFilledBytes, int64(0); got != want {
+		t.Fatalf("logical filled delta after Close = %d, want %d", got, want)
+	}
+
+	if got, want := afterClose.InMemoryChunks-before.InMemoryChunks, int64(0); got != want {
+		t.Fatalf("in-memory chunks delta after Close = %d, want %d", got, want)
+	}
+
+	if got, want := reusableMemPieceChunks(), int64(0); got != want {
+		t.Fatalf("reusable chunks after Close = %d, want %d", got, want)
+	}
+}
+
 func TestCacheMetricsSnapshotTracksAggregateCacheLifecycle(t *testing.T) {
 	setupStorageTest()
 
@@ -676,11 +729,55 @@ func TestPriorityPieceBudget(t *testing.T) {
 		pieceLength      int64
 		want             int
 	}{
-		{name: "single reader uses full connection budget", connectionsLimit: 25, activeReaders: 1, pieceLength: 4 << 20, want: 25},
-		{name: "two readers split connection budget", connectionsLimit: 25, activeReaders: 2, pieceLength: 4 << 20, want: 12},
-		{name: "three readers split connection budget", connectionsLimit: 6, activeReaders: 3, pieceLength: 4 << 20, want: 2},
-		{name: "reader count floor", connectionsLimit: 4, activeReaders: 0, pieceLength: 1 << 20, want: 4},
-		{name: "connection floor", connectionsLimit: 0, activeReaders: 3, pieceLength: 1 << 20, want: 1},
+		{
+			name:             "single reader uses connection budget within horizon",
+			connectionsLimit: 25,
+			activeReaders:    1,
+			pieceLength:      4 << 20,
+			want:             25,
+		},
+		{
+			name:             "two readers split connection budget",
+			connectionsLimit: 25,
+			activeReaders:    2,
+			pieceLength:      4 << 20,
+			want:             12,
+		},
+		{
+			name:             "multi playback does not change budget",
+			connectionsLimit: 25,
+			activeReaders:    1,
+			pieceLength:      4 << 20,
+			want:             25,
+		},
+		{
+			name:             "same torrent multiple readers split connection budget",
+			connectionsLimit: 50,
+			activeReaders:    2,
+			pieceLength:      8 << 20,
+			want:             25,
+		},
+		{
+			name:             "three readers split connection budget",
+			connectionsLimit: 6,
+			activeReaders:    3,
+			pieceLength:      4 << 20,
+			want:             2,
+		},
+		{
+			name:             "reader count floor",
+			connectionsLimit: 4,
+			activeReaders:    0,
+			pieceLength:      1 << 20,
+			want:             4,
+		},
+		{
+			name:             "connection floor",
+			connectionsLimit: 0,
+			activeReaders:    3,
+			pieceLength:      1 << 20,
+			want:             1,
+		},
 	}
 
 	for _, tt := range tests {
@@ -699,6 +796,74 @@ func TestPriorityPieceBudget(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestCachePrioritySelectionStats(t *testing.T) {
+	before := SnapshotCachePriorityStats()
+	cache := NewCache(64<<20, nil)
+
+	cache.recordPrioritySelection(7, true)
+
+	after := SnapshotCachePriorityStats()
+	if got, want := after.UpdatesTotal-before.UpdatesTotal, uint64(1); got != want {
+		t.Fatalf("UpdatesTotal delta = %d, want %d", got, want)
+	}
+
+	if got, want := after.DesiredPiecesTotal-before.DesiredPiecesTotal, uint64(7); got != want {
+		t.Fatalf("DesiredPiecesTotal delta = %d, want %d", got, want)
+	}
+
+	if got, want := after.BudgetLimitedTotal-before.BudgetLimitedTotal, uint64(1); got != want {
+		t.Fatalf("BudgetLimitedTotal delta = %d, want %d", got, want)
+	}
+
+	if after.LastUpdateUnixMS <= 0 {
+		t.Fatal("LastUpdateUnixMS must be set after priority selection")
+	}
+}
+
+func TestCachePriorityChurnStats(t *testing.T) {
+	before := SnapshotCachePriorityStats()
+	cache := NewCache(64<<20, nil)
+
+	cache.recordPriorityChurn(2, 3, 5, 8)
+
+	after := SnapshotCachePriorityStats()
+	if got, want := after.ClearedPiecesTotal-before.ClearedPiecesTotal, uint64(2); got != want {
+		t.Fatalf("ClearedPiecesTotal delta = %d, want %d", got, want)
+	}
+
+	if got, want := after.SetPiecesTotal-before.SetPiecesTotal, uint64(3); got != want {
+		t.Fatalf("SetPiecesTotal delta = %d, want %d", got, want)
+	}
+
+	if got, want := after.NoopPiecesTotal-before.NoopPiecesTotal, uint64(5); got != want {
+		t.Fatalf("NoopPiecesTotal delta = %d, want %d", got, want)
+	}
+
+	if got, want := after.TrackedPieces-before.TrackedPieces, int64(0); got != want {
+		t.Fatalf("unregistered cache tracked pieces delta = %d, want %d", got, want)
+	}
+}
+
+func TestCachePriorityTrackedPiecesCleanup(t *testing.T) {
+	before := SnapshotCachePriorityStats()
+	cache := NewCache(64<<20, nil)
+	cache.registerMetrics()
+
+	cache.recordPriorityChurn(0, 1, 0, 6)
+
+	afterRecord := SnapshotCachePriorityStats()
+	if got, want := afterRecord.TrackedPieces-before.TrackedPieces, int64(6); got != want {
+		t.Fatalf("TrackedPieces delta after record = %d, want %d", got, want)
+	}
+
+	cache.unregisterMetrics()
+
+	afterCleanup := SnapshotCachePriorityStats()
+	if got, want := afterCleanup.TrackedPieces-before.TrackedPieces, int64(0); got != want {
+		t.Fatalf("TrackedPieces delta after cleanup = %d, want %d", got, want)
 	}
 }
 

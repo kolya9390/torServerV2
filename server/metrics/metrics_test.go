@@ -52,6 +52,8 @@ func TestTorrentConnectionPolicySnapshot(t *testing.T) {
 	assertIntMetric(t, got, "peer_low_water", 100)
 	assertIntMetric(t, got, "peer_high_water", 500)
 	assertIntMetric(t, got, "tracker_budget", 16)
+	assertIntMetric(t, got, "debug_established_conns_override", 0)
+	assertInt64Metric(t, got, "debug_max_unverified_bytes", 0)
 	assertBoolMetric(t, got, "low_cpu_profile", false)
 	assertBoolMetric(t, got, "dht_enabled", false)
 	assertBoolMetric(t, got, "pex_enabled", true)
@@ -70,6 +72,8 @@ func TestTorrentConnectionPolicySnapshotNilSettings(t *testing.T) {
 	assertIntMetric(t, got, "peer_low_water", 100)
 	assertIntMetric(t, got, "peer_high_water", 500)
 	assertIntMetric(t, got, "tracker_budget", 16)
+	assertIntMetric(t, got, "debug_established_conns_override", 0)
+	assertInt64Metric(t, got, "debug_max_unverified_bytes", 0)
 	assertBoolMetric(t, got, "low_cpu_profile", false)
 	assertBoolMetric(t, got, "dht_enabled", true)
 	assertBoolMetric(t, got, "pex_enabled", true)
@@ -92,8 +96,50 @@ func TestTorrentConnectionPolicySnapshotLowCPUProfile(t *testing.T) {
 	assertIntMetric(t, got, "peer_low_water", 24)
 	assertIntMetric(t, got, "peer_high_water", 72)
 	assertIntMetric(t, got, "tracker_budget", 8)
+	assertIntMetric(t, got, "debug_established_conns_override", 0)
+	assertInt64Metric(t, got, "debug_max_unverified_bytes", 0)
 	assertBoolMetric(t, got, "low_cpu_profile", true)
 	assertBoolMetric(t, got, "utp_enabled", false)
+}
+
+func TestTorrentConnectionPolicySnapshotDebugEstablishedConnsOverride(t *testing.T) {
+	sets := &settings.BTSets{
+		EnableDebug:                   true,
+		ConnectionsLimit:              25,
+		DebugEstablishedConnsOverride: 36,
+	}
+
+	got := torrentConnectionPolicySnapshot(sets)
+
+	assertIntMetric(t, got, "connections_limit", 25)
+	assertIntMetric(t, got, "effective_conns", 36)
+	assertIntMetric(t, got, "peer_low_water", 100)
+	assertIntMetric(t, got, "peer_high_water", 500)
+	assertIntMetric(t, got, "tracker_budget", 16)
+	assertIntMetric(t, got, "debug_established_conns_override", 36)
+	assertInt64Metric(t, got, "debug_max_unverified_bytes", 0)
+	assertBoolMetric(t, got, "utp_enabled", true)
+}
+
+func TestTorrentConnectionPolicySnapshotDebugMaxUnverifiedBytes(t *testing.T) {
+	sets := &settings.BTSets{
+		EnableDebug:               true,
+		DebugMaxUnverifiedBytesMB: 32,
+	}
+
+	got := torrentConnectionPolicySnapshot(sets)
+
+	assertInt64Metric(t, got, "debug_max_unverified_bytes", 32<<20)
+}
+
+func TestTorrentConnectionPolicySnapshotIgnoresMaxUnverifiedOutsideDebug(t *testing.T) {
+	sets := &settings.BTSets{
+		DebugMaxUnverifiedBytesMB: 32,
+	}
+
+	got := torrentConnectionPolicySnapshot(sets)
+
+	assertInt64Metric(t, got, "debug_max_unverified_bytes", 0)
 }
 
 func TestTorrentRuntimeSnapshotNilBackend(t *testing.T) {

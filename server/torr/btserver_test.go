@@ -187,6 +187,84 @@ func TestBuildClientConfigLowCPUProfile(t *testing.T) {
 	}
 }
 
+func TestBuildClientConfigDebugEstablishedConnsOverride(t *testing.T) {
+	bt := NewBTSWithProvidersRuntimeAndDB(
+		btTestSettingsProvider{sets: &settings.BTSets{
+			EnableDebug:                   true,
+			ConnectionsLimit:              25,
+			DebugEstablishedConnsOverride: 36,
+		}},
+		settings.NewNoopArgsProvider(),
+		func() settings.RuntimeState { return settings.RuntimeState{} },
+		NewNoopTorrentDBStore(),
+	)
+
+	cfg := bt.buildClientConfig()
+	if cfg.EstablishedConnsPerTorrent != 36 {
+		t.Fatalf("EstablishedConnsPerTorrent = %d, want 36", cfg.EstablishedConnsPerTorrent)
+	}
+
+	if cfg.TorrentPeersLowWater != 100 || cfg.TorrentPeersHighWater != 500 {
+		t.Fatalf("peer watermarks = (%d, %d), want compatibility watermarks (100, 500)",
+			cfg.TorrentPeersLowWater, cfg.TorrentPeersHighWater)
+	}
+}
+
+func TestBuildClientConfigDebugMaxUnverifiedBytes(t *testing.T) {
+	tests := []struct {
+		name string
+		sets *settings.BTSets
+		want int64
+	}{
+		{
+			name: "disabled outside debug",
+			sets: &settings.BTSets{
+				DebugMaxUnverifiedBytesMB: 32,
+			},
+			want: torrent.NewDefaultClientConfig().MaxUnverifiedBytes,
+		},
+		{
+			name: "zero preserves library default",
+			sets: &settings.BTSets{
+				EnableDebug: true,
+			},
+			want: torrent.NewDefaultClientConfig().MaxUnverifiedBytes,
+		},
+		{
+			name: "debug enables measured override",
+			sets: &settings.BTSets{
+				EnableDebug:               true,
+				DebugMaxUnverifiedBytesMB: 32,
+			},
+			want: 32 << 20,
+		},
+		{
+			name: "service-only without debug does not alter request strategy",
+			sets: &settings.BTSets{
+				ServiceOnlyDebug:          true,
+				DebugMaxUnverifiedBytesMB: 32,
+			},
+			want: torrent.NewDefaultClientConfig().MaxUnverifiedBytes,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bt := NewBTSWithProvidersRuntimeAndDB(
+				btTestSettingsProvider{sets: tt.sets},
+				settings.NewNoopArgsProvider(),
+				func() settings.RuntimeState { return settings.RuntimeState{} },
+				NewNoopTorrentDBStore(),
+			)
+
+			cfg := bt.buildClientConfig()
+			if cfg.MaxUnverifiedBytes != tt.want {
+				t.Fatalf("MaxUnverifiedBytes = %d, want %d", cfg.MaxUnverifiedBytes, tt.want)
+			}
+		})
+	}
+}
+
 func TestBTServerGetTorrent(t *testing.T) {
 	setupTestSettings()
 
@@ -355,6 +433,7 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 		wantHighWater      int
 		wantTrackers       int
 		wantLowCPU         bool
+		wantDebugOverride  int
 	}{
 		{
 			name:               "compatibility default floors low limit",
@@ -390,6 +469,30 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 			wantTrackers:       8,
 			wantLowCPU:         true,
 		},
+		{
+			name: "debug override isolates established connections",
+			sets: &settings.BTSets{
+				EnableDebug:                   true,
+				DebugEstablishedConnsOverride: 36,
+				ConnectionsLimit:              25,
+			},
+			wantEffectiveConns: 36,
+			wantLowWater:       100,
+			wantHighWater:      500,
+			wantTrackers:       16,
+			wantDebugOverride:  36,
+		},
+		{
+			name: "debug override ignored without debug mode",
+			sets: &settings.BTSets{
+				DebugEstablishedConnsOverride: 24,
+				ConnectionsLimit:              25,
+			},
+			wantEffectiveConns: 50,
+			wantLowWater:       100,
+			wantHighWater:      500,
+			wantTrackers:       16,
+		},
 	}
 
 	for _, tt := range tests {
@@ -410,6 +513,10 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 
 			if got.lowCPU != tt.wantLowCPU {
 				t.Fatalf("lowCPU = %v, want %v", got.lowCPU, tt.wantLowCPU)
+			}
+
+			if got.debugOverride != tt.wantDebugOverride {
+				t.Fatalf("debugOverride = %d, want %d", got.debugOverride, tt.wantDebugOverride)
 			}
 		})
 	}

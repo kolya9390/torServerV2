@@ -49,21 +49,25 @@ func (c *Cache) UpdatePriorities() {
 		return
 	}
 
-	c.clearPrioritiesOutsideRanges(ranges)
-	c.applyDesiredPriorities(c.desiredPriorities(ranges))
+	clearedPieces := c.clearPrioritiesOutsideRanges(ranges)
+	setPieces, noopPieces, trackedPieces := c.applyDesiredPriorities(c.desiredPriorities(ranges))
+
+	c.recordPriorityChurn(clearedPieces, setPieces, noopPieces, trackedPieces)
 }
 
 func (c *Cache) RequestPriorityUpdate() {
 	c.queuePriorityUpdate()
 }
 
-func (c *Cache) clearPrioritiesOutsideRanges(ranges []Range) {
+func (c *Cache) clearPrioritiesOutsideRanges(ranges []Range) int {
 	if c == nil || c.isClosed.Load() || c.torrent == nil {
-		return
+		return 0
 	}
 
 	c.priorities.mu.Lock()
 	defer c.priorities.mu.Unlock()
+
+	clearedPieces := 0
 
 	for id := range c.priorities.pieces {
 		if len(ranges) > 0 && inRanges(ranges, id) {
@@ -72,10 +76,14 @@ func (c *Cache) clearPrioritiesOutsideRanges(ranges []Range) {
 
 		if c.torrent.PieceState(id).Priority != torrent.PiecePriorityNone {
 			c.torrent.Piece(id).SetPriority(torrent.PiecePriorityNone)
+
+			clearedPieces++
 		}
 
 		delete(c.priorities.pieces, id)
 	}
+
+	return clearedPieces
 }
 
 func (c *Cache) queuePriorityUpdate() {
@@ -107,12 +115,12 @@ func (c *Cache) queuePriorityUpdate() {
 func priorityPieceBudget(connectionsLimit, activeReaders int, pieceLength int64) int {
 	_ = pieceLength
 
-	if activeReaders <= 0 {
-		activeReaders = 1
-	}
-
 	if connectionsLimit <= 0 {
 		connectionsLimit = 1
+	}
+
+	if activeReaders <= 0 {
+		activeReaders = 1
 	}
 
 	budget := connectionsLimit / activeReaders
@@ -197,12 +205,14 @@ func (c *Cache) desiredPriorities(ranges []Range) map[int]torrent.PiecePriority 
 		}
 	}
 
+	c.recordPrioritySelection(len(desired), false)
+
 	return desired
 }
 
-func (c *Cache) applyDesiredPriorities(desired map[int]torrent.PiecePriority) {
+func (c *Cache) applyDesiredPriorities(desired map[int]torrent.PiecePriority) (int, int, int) {
 	if c == nil || c.isClosed.Load() || c.torrent == nil {
-		return
+		return 0, 0, 0
 	}
 
 	c.priorities.mu.Lock()
@@ -211,6 +221,9 @@ func (c *Cache) applyDesiredPriorities(desired map[int]torrent.PiecePriority) {
 	if c.priorities.pieces == nil {
 		c.priorities.pieces = make(map[int]torrent.PiecePriority)
 	}
+
+	setPieces := 0
+	noopPieces := 0
 
 	for id, tracked := range c.priorities.pieces {
 		want, keep := desired[id]
@@ -227,6 +240,8 @@ func (c *Cache) applyDesiredPriorities(desired map[int]torrent.PiecePriority) {
 		}
 
 		if tracked == want && actual == want {
+			noopPieces++
+
 			delete(desired, id)
 
 			continue
@@ -234,6 +249,8 @@ func (c *Cache) applyDesiredPriorities(desired map[int]torrent.PiecePriority) {
 
 		if actual != want {
 			c.torrent.Piece(id).SetPriority(want)
+
+			setPieces++
 		}
 
 		c.priorities.pieces[id] = want
@@ -244,10 +261,14 @@ func (c *Cache) applyDesiredPriorities(desired map[int]torrent.PiecePriority) {
 	for id, want := range desired {
 		if c.torrent.PieceState(id).Priority != want {
 			c.torrent.Piece(id).SetPriority(want)
+
+			setPieces++
 		}
 
 		c.priorities.pieces[id] = want
 	}
+
+	return setPieces, noopPieces, len(c.priorities.pieces)
 }
 
 func (c *Cache) NewReader(file *torrent.File) *Reader {

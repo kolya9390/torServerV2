@@ -18,6 +18,7 @@ type connectionPolicy struct {
 	peerHighWater   int
 	trackerBudget   int
 	lowCPU          bool
+	debugOverride   int
 }
 
 // ConnectionPolicySnapshot is a typed diagnostic view of the torrent connection policy.
@@ -28,6 +29,7 @@ type ConnectionPolicySnapshot struct {
 	PeerHighWater    int
 	TrackerBudget    int
 	LowCPUProfile    bool
+	DebugOverride    int
 }
 
 func connectionPolicyForSettings(sets *settings.BTSets, defaultConns int) connectionPolicy {
@@ -43,6 +45,11 @@ func connectionPolicyForSettings(sets *settings.BTSets, defaultConns int) connec
 	configuredLimit := sets.NetworkConfig().ConnectionsLimit
 	effectiveConns := effectiveEstablishedConnsForProfile(configuredLimit, defaultConns, lowCPU)
 	lowWater, highWater := peerWatermarksForProfile(effectiveConns, lowCPU)
+	debugOverride := debugEstablishedConnsOverride(sets)
+
+	if debugOverride > 0 {
+		effectiveConns = debugOverride
+	}
 
 	return connectionPolicy{
 		configuredLimit: configuredLimit,
@@ -51,7 +58,16 @@ func connectionPolicyForSettings(sets *settings.BTSets, defaultConns int) connec
 		peerHighWater:   highWater,
 		trackerBudget:   trackerBudgetForSettings(sets, lowCPU),
 		lowCPU:          lowCPU,
+		debugOverride:   debugOverride,
 	}
+}
+
+func debugEstablishedConnsOverride(sets *settings.BTSets) int {
+	if sets == nil || !sets.DebugConfig().EnableDebug {
+		return 0
+	}
+
+	return maxInt(sets.DebugConfig().EstablishedConnsOverride, 0)
 }
 
 func isLowCPUCoreProfile(profile string) bool {
@@ -140,5 +156,6 @@ func ConnectionPolicyForSettings(sets *settings.BTSets) ConnectionPolicySnapshot
 		PeerHighWater:    policy.peerHighWater,
 		TrackerBudget:    policy.trackerBudget,
 		LowCPUProfile:    policy.lowCPU,
+		DebugOverride:    policy.debugOverride,
 	}
 }

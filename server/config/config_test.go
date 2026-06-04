@@ -114,6 +114,14 @@ func TestShippedConfigDisablesFullDebugByDefault(t *testing.T) {
 	if cfg.Debug.ServiceOnly {
 		t.Fatal("release config template must keep debug.service_only=false")
 	}
+
+	if cfg.Debug.EstablishedConnsPerTorrent != 0 {
+		t.Fatal("release config template must keep debug established connections override disabled")
+	}
+
+	if cfg.Debug.MaxUnverifiedBytesMB != 0 {
+		t.Fatal("release config template must keep debug max unverified bytes disabled")
+	}
 }
 
 func TestApplyDebugSettingsMapsFullDebugMode(t *testing.T) {
@@ -121,9 +129,11 @@ func TestApplyDebugSettingsMapsFullDebugMode(t *testing.T) {
 
 	cfg := &Config{
 		Debug: DebugConfig{
-			Enabled:          true,
-			ServiceOnly:      false,
-			ShowFSActiveTorr: true,
+			Enabled:                    true,
+			ServiceOnly:                false,
+			ShowFSActiveTorr:           true,
+			EstablishedConnsPerTorrent: 36,
+			MaxUnverifiedBytesMB:       32,
 		},
 	}
 	sets := &settings.BTSets{}
@@ -140,6 +150,14 @@ func TestApplyDebugSettingsMapsFullDebugMode(t *testing.T) {
 
 	if !sets.ShowFSActiveTorr {
 		t.Fatal("debug.show_fs_active_torr=true must set BTSets.ShowFSActiveTorr")
+	}
+
+	if sets.DebugEstablishedConnsOverride != 36 {
+		t.Fatalf("debug established connections override = %d, want 36", sets.DebugEstablishedConnsOverride)
+	}
+
+	if sets.DebugMaxUnverifiedBytesMB != 32 {
+		t.Fatalf("debug max unverified bytes MB = %d, want 32", sets.DebugMaxUnverifiedBytesMB)
 	}
 }
 
@@ -168,8 +186,10 @@ func TestApplyDebugSettingsMapsServiceOnlyMode(t *testing.T) {
 func TestToStaticConfigPreservesDebugServiceOnly(t *testing.T) {
 	cfg := &Config{
 		Debug: DebugConfig{
-			Enabled:     true,
-			ServiceOnly: true,
+			Enabled:                    true,
+			ServiceOnly:                true,
+			EstablishedConnsPerTorrent: 36,
+			MaxUnverifiedBytesMB:       32,
 		},
 	}
 
@@ -180,6 +200,14 @@ func TestToStaticConfigPreservesDebugServiceOnly(t *testing.T) {
 
 	if !staticCfg.ServiceOnlyDebug {
 		t.Fatal("ToStaticConfig must preserve debug.service_only")
+	}
+
+	if staticCfg.DebugEstablishedConnsOverride != 36 {
+		t.Fatalf("debug established connections override = %d, want 36", staticCfg.DebugEstablishedConnsOverride)
+	}
+
+	if staticCfg.DebugMaxUnverifiedBytesMB != 32 {
+		t.Fatalf("debug max unverified bytes MB = %d, want 32", staticCfg.DebugMaxUnverifiedBytesMB)
 	}
 }
 

@@ -2,11 +2,14 @@ package torr
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -22,6 +25,14 @@ type slowOnceReader struct {
 	delay time.Duration
 	data  []byte
 	done  bool
+}
+
+type fakeContextReader struct {
+	ctx context.Context
+}
+
+func (r *fakeContextReader) SetContext(ctx context.Context) {
+	r.ctx = ctx
 }
 
 func (r *slowOnceReader) Read(p []byte) (int, error) {
@@ -142,21 +153,51 @@ func TestStreamReaderReadahead(t *testing.T) {
 		name      string
 		pieceLen  int64
 		cacheCap  int64
+		readers   int
 		wantBytes int64
 	}{
-		{name: "fixed reader window", pieceLen: 2 << 20, cacheCap: 64 << 20, wantBytes: 16 << 20},
-		{name: "fixed oversized cache", pieceLen: 2 << 20, cacheCap: 256 << 20, wantBytes: 16 << 20},
-		{name: "falls back to fixed baseline", pieceLen: 4 << 20, cacheCap: 0, wantBytes: 16 << 20},
-		{name: "respects tiny cache", pieceLen: 1 << 20, cacheCap: 6 << 20, wantBytes: 6 << 20},
+		{name: "fixed reader window", pieceLen: 2 << 20, cacheCap: 64 << 20, readers: 1, wantBytes: 16 << 20},
+		{name: "fixed oversized cache", pieceLen: 2 << 20, cacheCap: 256 << 20, readers: 1, wantBytes: 16 << 20},
+		{name: "falls back to fixed baseline", pieceLen: 4 << 20, cacheCap: 0, readers: 1, wantBytes: 16 << 20},
+		{name: "respects tiny cache", pieceLen: 1 << 20, cacheCap: 6 << 20, readers: 1, wantBytes: 6 << 20},
+		{name: "narrows two reader cache share", pieceLen: 2 << 20, cacheCap: 64 << 20, readers: 2, wantBytes: 8 << 20},
+		{name: "keeps at least two large pieces", pieceLen: 4 << 20, cacheCap: 64 << 20, readers: 3, wantBytes: 8 << 20},
+		{name: "does not exceed per reader capacity", pieceLen: 1 << 20, cacheCap: 8 << 20, readers: 4, wantBytes: 2 << 20},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := streamReaderReadahead(tt.pieceLen, tt.cacheCap); got != tt.wantBytes {
-				t.Fatalf("streamReaderReadahead(%d, %d) = %d, want %d", tt.pieceLen, tt.cacheCap, got, tt.wantBytes)
+			if got := streamReaderReadahead(tt.pieceLen, tt.cacheCap, tt.readers); got != tt.wantBytes {
+				t.Fatalf(
+					"streamReaderReadahead(%d, %d, %d) = %d, want %d",
+					tt.pieceLen,
+					tt.cacheCap,
+					tt.readers,
+					got,
+					tt.wantBytes,
+				)
 			}
 		})
 	}
+}
+
+func TestBindStreamReaderContext_UsesRequestContext(t *testing.T) {
+	reader := &fakeContextReader{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/stream/movie.mkv", nil).WithContext(ctx)
+
+	bindStreamReaderContext(reader, req)
+
+	if reader.ctx != ctx {
+		t.Fatalf("reader context = %v, want request context %v", reader.ctx, ctx)
+	}
+}
+
+func TestBindStreamReaderContext_NilSafe(t *testing.T) {
+	bindStreamReaderContext(nil, nil)
+	bindStreamReaderContext(&fakeContextReader{}, nil)
 }
 
 type readerFromRecorder struct {
@@ -169,6 +210,27 @@ type writeOnlyRecorder struct {
 	header http.Header
 	body   bytes.Buffer
 	status int
+}
+
+type slowResponseWriter struct {
+	header http.Header
+	delay  time.Duration
+}
+
+func (w *slowResponseWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+
+	return w.header
+}
+
+func (*slowResponseWriter) WriteHeader(int) {}
+
+func (w *slowResponseWriter) Write(p []byte) (int, error) {
+	time.Sleep(w.delay)
+
+	return len(p), nil
 }
 
 func (r *readerFromRecorder) Header() http.Header {
@@ -208,10 +270,10 @@ func (r *writeOnlyRecorder) Write(p []byte) (int, error) {
 }
 
 func TestStreamMetricsWriter_Write(t *testing.T) {
-	t.Parallel()
+	resetStreamHealthForTest()
 
 	rec := httptest.NewRecorder()
-	w := &streamMetricsWriter{ResponseWriter: rec}
+	w := &streamMetricsWriter{ResponseWriter: rec, trackReadWait: true}
 
 	n, err := w.Write([]byte("hello"))
 	if err != nil {
@@ -229,13 +291,17 @@ func TestStreamMetricsWriter_Write(t *testing.T) {
 	if got := w.firstWriteUnixNano.Load(); got == 0 {
 		t.Fatal("firstWriteUnixNano was not recorded")
 	}
+
+	if got, want := SnapshotStreamHealth().BytesWrittenTotal, int64(5); got != want {
+		t.Fatalf("BytesWrittenTotal = %d, want %d", got, want)
+	}
 }
 
 func TestStreamMetricsWriter_ReadFrom(t *testing.T) {
-	t.Parallel()
+	resetStreamHealthForTest()
 
 	rec := &readerFromRecorder{}
-	w := &streamMetricsWriter{ResponseWriter: rec}
+	w := &streamMetricsWriter{ResponseWriter: rec, trackReadWait: true}
 
 	n, err := w.ReadFrom(bytes.NewBufferString("stream-data"))
 	if err != nil {
@@ -252,6 +318,10 @@ func TestStreamMetricsWriter_ReadFrom(t *testing.T) {
 
 	if got := w.firstWriteUnixNano.Load(); got == 0 {
 		t.Fatal("firstWriteUnixNano was not recorded")
+	}
+
+	if got, want := SnapshotStreamHealth().BytesWrittenTotal, int64(len("stream-data")); got != want {
+		t.Fatalf("BytesWrittenTotal = %d, want %d", got, want)
 	}
 }
 
@@ -286,6 +356,7 @@ func TestStreamMetricsWriter_ReadFromFallback(t *testing.T) {
 func TestStreamHealthRecordsFirstByteAndBytes(t *testing.T) {
 	resetStreamHealthForTest()
 
+	recordStreamBytesWritten(1024)
 	recordStreamCompleted(150*time.Millisecond, 1024, nil)
 
 	snapshot := SnapshotStreamHealth()
@@ -424,6 +495,252 @@ func TestStreamMetricsWriterReadFromSkipsReadWaitWhenDebugDisabled(t *testing.T)
 
 	if got := snapshot.ReadWaitMSBuckets["le_1000"]; got != 0 {
 		t.Fatalf("read wait le_1000 bucket = %d, want 0", got)
+	}
+}
+
+func TestStreamDeliveryRegistryTracksAndRemovesActiveStream(t *testing.T) {
+	resetStreamDeliveryForTest()
+
+	started := time.Now().Add(-time.Second)
+	delivery, release := registerStreamDelivery(started)
+	delivery.recordWrite(1024, 10*time.Millisecond)
+
+	snapshot := SnapshotStreamDelivery()
+	if got, want := snapshot.ActiveStreams, 1; got != want {
+		t.Fatalf("ActiveStreams = %d, want %d", got, want)
+	}
+
+	if got, want := len(snapshot.Streams), 1; got != want {
+		t.Fatalf("len(Streams) = %d, want %d", got, want)
+	}
+
+	stream := snapshot.Streams[0]
+	if stream.ID == 0 {
+		t.Fatal("stream ID must be non-zero")
+	}
+
+	if got, want := stream.BytesWritten, int64(1024); got != want {
+		t.Fatalf("BytesWritten = %d, want %d", got, want)
+	}
+
+	if stream.FirstByteMS < 0 {
+		t.Fatalf("FirstByteMS = %d, want non-negative", stream.FirstByteMS)
+	}
+
+	release()
+
+	afterRelease := SnapshotStreamDelivery()
+	if got := afterRelease.ActiveStreams; got != 0 {
+		t.Fatalf("ActiveStreams after release = %d, want 0", got)
+	}
+
+	if got, want := afterRelease.BytesWrittenTotal, int64(1024); got != want {
+		t.Fatalf("BytesWrittenTotal after release = %d, want %d", got, want)
+	}
+}
+
+func TestStreamMetricsWriterRecordsSlowDeliveryWrite(t *testing.T) {
+	resetStreamDeliveryForTest()
+
+	delivery, release := registerStreamDelivery(time.Now())
+	defer release()
+
+	rec := &slowResponseWriter{delay: streamSlowWriteThreshold + 20*time.Millisecond}
+	writer := &streamMetricsWriter{
+		ResponseWriter: rec,
+		delivery:       delivery,
+	}
+
+	if _, err := writer.Write([]byte("slow-write")); err != nil {
+		t.Fatalf("Write() err = %v", err)
+	}
+
+	snapshot := SnapshotStreamDelivery()
+	if got, want := snapshot.SlowWritesTotal, int64(1); got != want {
+		t.Fatalf("SlowWritesTotal = %d, want %d", got, want)
+	}
+
+	if snapshot.MaxWriteMS < streamSlowWriteThreshold.Milliseconds() {
+		t.Fatalf("MaxWriteMS = %d, want >= %d", snapshot.MaxWriteMS, streamSlowWriteThreshold.Milliseconds())
+	}
+}
+
+func TestStreamDeliveryRecordsLongWriteThresholds(t *testing.T) {
+	resetStreamDeliveryForTest()
+
+	delivery, release := registerStreamDelivery(time.Now())
+	defer release()
+
+	delivery.recordWrite(1, 4*time.Second)
+	delivery.recordWrite(1, 11*time.Second)
+
+	snapshot := SnapshotStreamDelivery()
+	if got, want := snapshot.SlowWritesTotal, int64(2); got != want {
+		t.Fatalf("SlowWritesTotal = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.WritesOver3sTotal, int64(2); got != want {
+		t.Fatalf("WritesOver3sTotal = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.WritesOver10sTotal, int64(1); got != want {
+		t.Fatalf("WritesOver10sTotal = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.MaxWriteMS, int64(11000); got != want {
+		t.Fatalf("MaxWriteMS = %d, want %d", got, want)
+	}
+}
+
+func TestStreamMetricsWriterSkipsDeliveryMetricsWhenDebugDisabled(t *testing.T) {
+	resetStreamDeliveryForTest()
+
+	writer := &streamMetricsWriter{ResponseWriter: httptest.NewRecorder()}
+	if _, err := writer.Write([]byte("production-fast-path")); err != nil {
+		t.Fatalf("Write() err = %v", err)
+	}
+
+	snapshot := SnapshotStreamDelivery()
+	if got := snapshot.ActiveStreams; got != 0 {
+		t.Fatalf("ActiveStreams = %d, want 0", got)
+	}
+
+	if got := snapshot.WriteCallsTotal; got != 0 {
+		t.Fatalf("WriteCallsTotal = %d, want 0", got)
+	}
+}
+
+func TestStreamDeliverySnapshotIsPrivacySafe(t *testing.T) {
+	resetStreamDeliveryForTest()
+
+	delivery, release := registerStreamDelivery(time.Now())
+	defer release()
+	delivery.recordWrite(512, time.Millisecond)
+
+	raw, err := json.Marshal(SnapshotStreamDelivery())
+	if err != nil {
+		t.Fatalf("Marshal() err = %v", err)
+	}
+
+	joined := strings.ToLower(string(raw))
+	for _, forbidden := range []string{"hash", "magnet", "path", "title", "ip", "remote"} {
+		if strings.Contains(joined, forbidden) {
+			t.Fatalf("snapshot contains privacy-sensitive field %q: %s", forbidden, joined)
+		}
+	}
+}
+
+func TestStreamFairnessSkipsSingleStream(t *testing.T) {
+	resetStreamFairnessForTest()
+	defer resetStreamFairnessForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	flow, release := registerStreamFairness(time.Now().Add(-streamFairnessMinAge - time.Second))
+	defer release()
+
+	flow.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 4))
+
+	if len(delays) != 0 {
+		t.Fatalf("single stream delays = %v, want none", delays)
+	}
+
+	if got := SnapshotStreamFairness().DelayedWritesTotal; got != 0 {
+		t.Fatalf("DelayedWritesTotal = %d, want 0", got)
+	}
+}
+
+func TestStreamFairnessSkipsBalancedStreams(t *testing.T) {
+	resetStreamFairnessForTest()
+	defer resetStreamFairnessForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	started := time.Now().Add(-streamFairnessMinAge - time.Second)
+	left, releaseLeft := registerStreamFairness(started)
+	right, releaseRight := registerStreamFairness(started)
+
+	defer releaseLeft()
+	defer releaseRight()
+
+	left.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 4))
+	right.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 4))
+
+	if len(delays) != 0 {
+		t.Fatalf("balanced stream delays = %v, want none", delays)
+	}
+}
+
+func TestStreamFairnessDelaysDominantStream(t *testing.T) {
+	resetStreamFairnessForTest()
+	defer resetStreamFairnessForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	started := time.Now().Add(-streamFairnessMinAge - time.Second)
+	slow, releaseSlow := registerStreamFairness(started)
+	fast, releaseFast := registerStreamFairness(started)
+
+	defer releaseSlow()
+	defer releaseFast()
+
+	slow.recordWriteAndMaybeDelay(int(streamFairnessMinBytes + 1))
+	fast.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 6))
+
+	if len(delays) != 1 {
+		t.Fatalf("dominant stream delays = %v, want one delay", delays)
+	}
+
+	if delays[0] != streamFairnessMaxDelay {
+		t.Fatalf("dominant stream delay = %s, want %s", delays[0], streamFairnessMaxDelay)
+	}
+
+	snapshot := SnapshotStreamFairness()
+	if got, want := snapshot.ActiveStreams, 2; got != want {
+		t.Fatalf("ActiveStreams = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.DelayedWritesTotal, int64(1); got != want {
+		t.Fatalf("DelayedWritesTotal = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.MaxDelayMicros, streamFairnessMaxDelay.Microseconds(); got != want {
+		t.Fatalf("MaxDelayMicros = %d, want %d", got, want)
+	}
+}
+
+func TestStreamFairnessReleaseRemovesActiveStream(t *testing.T) {
+	resetStreamFairnessForTest()
+	defer resetStreamFairnessForTest()
+
+	_, release := registerStreamFairness(time.Now())
+
+	if got, want := SnapshotStreamFairness().ActiveStreams, 1; got != want {
+		t.Fatalf("ActiveStreams = %d, want %d", got, want)
+	}
+
+	release()
+
+	if got := SnapshotStreamFairness().ActiveStreams; got != 0 {
+		t.Fatalf("ActiveStreams after release = %d, want 0", got)
 	}
 }
 

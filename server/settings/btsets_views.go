@@ -41,8 +41,10 @@ type PlaybackConfig struct {
 }
 
 type DebugConfig struct {
-	EnableDebug      bool
-	ServiceOnlyDebug bool
+	EnableDebug              bool
+	ServiceOnlyDebug         bool
+	EstablishedConnsOverride int
+	MaxUnverifiedBytesMB     int64
 }
 
 type TLSConfig struct {
@@ -158,8 +160,10 @@ func (s *BTSets) DebugConfig() DebugConfig {
 	}
 
 	return DebugConfig{
-		EnableDebug:      s.EnableDebug,
-		ServiceOnlyDebug: s.ServiceOnlyDebug,
+		EnableDebug:              s.EnableDebug,
+		ServiceOnlyDebug:         s.ServiceOnlyDebug,
+		EstablishedConnsOverride: s.DebugEstablishedConnsOverride,
+		MaxUnverifiedBytesMB:     s.DebugMaxUnverifiedBytesMB,
 	}
 }
 

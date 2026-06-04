@@ -120,6 +120,8 @@ func TestAdaptiveMaxEstablishedConns(t *testing.T) {
 		{name: "high configured limit preserved", sets: &settings.BTSets{ConnectionsLimit: 120}, playbackTorrents: 1, localReaders: 1, want: 120},
 		{name: "low cpu profile honors measured low limit", sets: &settings.BTSets{CoreProfile: "low-cpu", ConnectionsLimit: 12}, playbackTorrents: 2, localReaders: 1, want: 12},
 		{name: "low cpu profile default stays bounded", sets: &settings.BTSets{CoreProfile: "low-cpu"}, playbackTorrents: 1, localReaders: 1, want: 24},
+		{name: "debug override bounds active policy", sets: &settings.BTSets{EnableDebug: true, DebugEstablishedConnsOverride: 36}, playbackTorrents: 2, localReaders: 1, want: 36},
+		{name: "debug override ignored outside debug", sets: &settings.BTSets{DebugEstablishedConnsOverride: 24}, playbackTorrents: 2, localReaders: 1, want: 50},
 	}
 
 	for _, tt := range tests {

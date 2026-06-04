@@ -22,6 +22,8 @@ type streamMetricsWriter struct {
 	bytesWritten       atomic.Int64
 	lastError          atomic.Value
 	trackReadWait      bool
+	delivery           *streamDelivery
+	fairness           *streamFairnessFlow
 }
 
 type writeOnly struct {
@@ -38,8 +40,26 @@ func (w *streamMetricsWriter) Write(p []byte) (int, error) {
 		w.markFirstWrite()
 	}
 
+	var started time.Time
+	if w.delivery != nil {
+		started = time.Now()
+	}
+
 	n, err := w.ResponseWriter.Write(p)
 	w.bytesWritten.Add(int64(n))
+
+	if w.trackReadWait {
+		recordStreamBytesWritten(int64(n))
+	}
+
+	if w.delivery != nil {
+		w.delivery.recordWrite(n, time.Since(started))
+	}
+
+	if w.fairness != nil {
+		w.fairness.recordWriteAndMaybeDelay(n)
+	}
+
 	w.recordError(err)
 
 	return n, err
@@ -51,11 +71,17 @@ func (w *streamMetricsWriter) ReadFrom(r io.Reader) (int64, error) {
 		mark:          w.markFirstWrite,
 		trackReadWait: w.trackReadWait,
 	}
-	rf, ok := w.ResponseWriter.(io.ReaderFrom)
 
+	if w.trackReadWait {
+		return io.Copy(writeOnly{Writer: w}, tr)
+	}
+
+	rf, ok := w.ResponseWriter.(io.ReaderFrom)
 	if !ok {
 		return io.Copy(writeOnly{Writer: w}, tr)
 	}
+
+	tr.fairness = w.fairness
 
 	n, err := rf.ReadFrom(tr)
 	w.bytesWritten.Add(n)
@@ -111,6 +137,7 @@ type firstByteTrackingReader struct {
 	reader        io.Reader
 	mark          func()
 	trackReadWait bool
+	fairness      *streamFairnessFlow
 	seen          bool
 }
 
@@ -129,6 +156,10 @@ func (r *firstByteTrackingReader) Read(p []byte) (int, error) {
 	if n > 0 && !r.seen {
 		r.seen = true
 		r.mark()
+	}
+
+	if r.fairness != nil {
+		r.fairness.recordWriteAndMaybeDelay(n)
 	}
 
 	return n, err

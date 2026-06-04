@@ -78,11 +78,23 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 	setStreamHeaders(resp, file, t, streamTimeout, req)
 
 	content := newServeContentReadSeeker(reader, file.Length())
+	streamStarted := time.Now()
+
+	fairness, releaseFairness := registerStreamFairness(streamStarted)
+	defer releaseFairness()
+
 	metricsWriter := &streamMetricsWriter{
 		ResponseWriter: resp,
 		trackReadWait:  debugCfg.EnableDebug,
+		fairness:       fairness,
 	}
-	streamStarted := time.Now()
+
+	if debugCfg.EnableDebug {
+		delivery, releaseDelivery := registerStreamDelivery(streamStarted)
+		metricsWriter.delivery = delivery
+		defer releaseDelivery()
+	}
+
 	http.ServeContent(metricsWriter, req, file.Path(), time.Unix(t.Timestamp, 0), content)
 	markStreamActivity()
 

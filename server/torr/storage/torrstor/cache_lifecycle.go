@@ -83,6 +83,7 @@ func (c *Cache) Close() error {
 		c.host.unregisterCache(c.hash)
 	}
 
+	c.releaseInMemoryPieces()
 	c.unregisterMetrics()
 
 	cacheCfg := c.currentCacheConfig()
@@ -114,6 +115,23 @@ func (c *Cache) Close() error {
 	utils.FreeOSMemGC()
 
 	return nil
+}
+
+func (c *Cache) releaseInMemoryPieces() {
+	c.mu.RLock()
+
+	pieces := make([]*Piece, 0, len(c.pieces))
+	for _, piece := range c.pieces {
+		pieces = append(pieces, piece)
+	}
+
+	c.mu.RUnlock()
+
+	for _, piece := range pieces {
+		if piece != nil && piece.mPiece != nil {
+			piece.mPiece.Release()
+		}
+	}
 }
 
 func (c *Cache) removePiece(piece *Piece) {

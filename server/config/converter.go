@@ -51,7 +51,9 @@ func (c *Config) ToStaticConfig() settings.StaticConfig {
 		TMDBAPIKey: c.TMDB.APIKey,
 
 		// Debug
-		EnableDebug:      c.Debug.Enabled,
-		ServiceOnlyDebug: c.Debug.ServiceOnly,
+		EnableDebug:                   c.Debug.Enabled,
+		ServiceOnlyDebug:              c.Debug.ServiceOnly,
+		DebugEstablishedConnsOverride: c.Debug.EstablishedConnsPerTorrent,
+		DebugMaxUnverifiedBytesMB:     c.Debug.MaxUnverifiedBytesMB,
 	}
 }

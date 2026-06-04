@@ -79,6 +79,10 @@ func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
 		config.UploadRateLimiter = utils.Limit(networkCfg.UploadRateLimitKB * 1024)
 	}
 
+	if maxUnverifiedBytes := debugMaxUnverifiedBytes(debugCfg); maxUnverifiedBytes > 0 {
+		config.MaxUnverifiedBytes = maxUnverifiedBytes
+	}
+
 	if identityCfg.TorAddr != "" {
 		log.TLogln("Set listen addr", identityCfg.TorAddr)
 		config.SetListenAddr(identityCfg.TorAddr)
@@ -104,6 +108,14 @@ func configureTorrentLibraryLogging(config *torrent.ClientConfig, debugCfg setti
 	config.Slogger = slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
 		Level: slog.Level(100),
 	}))
+}
+
+func debugMaxUnverifiedBytes(debugCfg settings.DebugConfig) int64 {
+	if !debugCfg.EnableDebug || debugCfg.MaxUnverifiedBytesMB <= 0 {
+		return 0
+	}
+
+	return debugCfg.MaxUnverifiedBytesMB << 20
 }
 
 func effectiveEstablishedConns(userLimit, defaultConns int) int {

@@ -92,6 +92,9 @@ func registerCacheMetrics() {
 	expvar.Publish("cache_memory", expvar.Func(func() any {
 		return torrstor.SnapshotCacheStats()
 	}))
+	expvar.Publish("cache_priority", expvar.Func(func() any {
+		return torrstor.SnapshotCachePriorityStats()
+	}))
 }
 
 func registerRuntimeMetrics(resolved Deps) {
@@ -148,6 +151,12 @@ func registerRuntimeMetrics(resolved Deps) {
 	expvar.Publish("stream_health", expvar.Func(func() any {
 		return torr.SnapshotStreamHealth()
 	}))
+	expvar.Publish("active_stream_delivery", expvar.Func(func() any {
+		return torr.SnapshotStreamDelivery()
+	}))
+	expvar.Publish("stream_fairness", expvar.Func(func() any {
+		return torr.SnapshotStreamFairness()
+	}))
 }
 
 func shouldStartRuntimeUpdater(provider settings.SettingsProvider) bool {
@@ -169,23 +178,34 @@ func torrentConnectionPolicySnapshot(sets *settings.BTSets) map[string]any {
 	}
 
 	networkCfg := sets.NetworkConfig()
+	debugCfg := sets.DebugConfig()
 	policy := torr.ConnectionPolicyForSettings(sets)
 
 	return map[string]any{
-		"connections_limit":       networkCfg.ConnectionsLimit,
-		"effective_conns":         policy.EffectiveConns,
-		"peer_low_water":          policy.PeerLowWater,
-		"peer_high_water":         policy.PeerHighWater,
-		"tracker_budget":          policy.TrackerBudget,
-		"low_cpu_profile":         policy.LowCPUProfile,
-		"dht_enabled":             !networkCfg.DisableDHT,
-		"pex_enabled":             !networkCfg.DisablePEX,
-		"tcp_enabled":             !networkCfg.DisableTCP,
-		"utp_enabled":             !networkCfg.DisableUTP,
-		"upload_enabled":          !networkCfg.DisableUpload,
-		"download_rate_limit_kbs": networkCfg.DownloadRateLimitKB,
-		"upload_rate_limit_kbs":   networkCfg.UploadRateLimitKB,
+		"connections_limit":                networkCfg.ConnectionsLimit,
+		"effective_conns":                  policy.EffectiveConns,
+		"peer_low_water":                   policy.PeerLowWater,
+		"peer_high_water":                  policy.PeerHighWater,
+		"tracker_budget":                   policy.TrackerBudget,
+		"low_cpu_profile":                  policy.LowCPUProfile,
+		"debug_established_conns_override": policy.DebugOverride,
+		"debug_max_unverified_bytes":       torrentDebugMaxUnverifiedBytes(debugCfg),
+		"dht_enabled":                      !networkCfg.DisableDHT,
+		"pex_enabled":                      !networkCfg.DisablePEX,
+		"tcp_enabled":                      !networkCfg.DisableTCP,
+		"utp_enabled":                      !networkCfg.DisableUTP,
+		"upload_enabled":                   !networkCfg.DisableUpload,
+		"download_rate_limit_kbs":          networkCfg.DownloadRateLimitKB,
+		"upload_rate_limit_kbs":            networkCfg.UploadRateLimitKB,
 	}
+}
+
+func torrentDebugMaxUnverifiedBytes(debugCfg settings.DebugConfig) int64 {
+	if !debugCfg.EnableDebug || debugCfg.MaxUnverifiedBytesMB <= 0 {
+		return 0
+	}
+
+	return debugCfg.MaxUnverifiedBytesMB << 20
 }
 
 func torrentRuntimeSnapshot(backend torr.TorrentService) map[string]any {
