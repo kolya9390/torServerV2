@@ -13,6 +13,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/anacrolix/torrent"
+	"github.com/anacrolix/torrent/metainfo"
 )
 
 type fakeStreamContentSource struct {
@@ -453,9 +456,17 @@ func TestStreamHealthRecordsLongReadWaits(t *testing.T) {
 
 func TestStreamMetricsWriterReadFromRecordsSlowReadWait(t *testing.T) {
 	resetStreamHealthForTest()
+	resetStreamDeliveryForTest()
 
 	rec := &readerFromRecorder{}
-	w := &streamMetricsWriter{ResponseWriter: rec, trackReadWait: true}
+	delivery, release := registerStreamDelivery(time.Now(), 42)
+	defer release()
+
+	w := &streamMetricsWriter{
+		ResponseWriter: rec,
+		trackReadWait:  true,
+		delivery:       delivery,
+	}
 	reader := &slowOnceReader{delay: streamReadWaitThreshold + 50*time.Millisecond, data: []byte("stream-data")}
 
 	if _, err := w.ReadFrom(reader); err != nil {
@@ -467,13 +478,64 @@ func TestStreamMetricsWriterReadFromRecordsSlowReadWait(t *testing.T) {
 	if got, want := snapshot.ReadWaitMSBuckets["le_1000"], int64(1); got != want {
 		t.Fatalf("read wait le_1000 bucket = %d, want %d", got, want)
 	}
+
+	deliverySnapshot := SnapshotStreamDelivery()
+	if got, want := len(deliverySnapshot.Streams), 1; got != want {
+		t.Fatalf("len(delivery streams) = %d, want %d", got, want)
+	}
+
+	stream := deliverySnapshot.Streams[0]
+	if got, want := stream.TorrentID, uint64(42); got != want {
+		t.Fatalf("TorrentID = %d, want %d", got, want)
+	}
+
+	if got, want := stream.ReadWaitsTotal, int64(1); got != want {
+		t.Fatalf("stream ReadWaitsTotal = %d, want %d", got, want)
+	}
+
+	if stream.MaxReadWaitMS < streamReadWaitThreshold.Milliseconds() {
+		t.Fatalf("stream MaxReadWaitMS = %d, want >= %d", stream.MaxReadWaitMS, streamReadWaitThreshold.Milliseconds())
+	}
+}
+
+func TestStreamMetricsWriterReadFromRecordsReadWaitWithoutDelivery(t *testing.T) {
+	resetStreamHealthForTest()
+	resetStreamDeliveryForTest()
+
+	rec := &readerFromRecorder{}
+	w := &streamMetricsWriter{
+		ResponseWriter: rec,
+		trackReadWait:  true,
+	}
+	reader := &slowOnceReader{delay: streamReadWaitThreshold + 50*time.Millisecond, data: []byte("stream-data")}
+
+	if _, err := w.ReadFrom(reader); err != nil {
+		t.Fatalf("ReadFrom() err = %v", err)
+	}
+
+	snapshot := SnapshotStreamHealth()
+	if got, want := snapshot.ReadWaitsTotal, int64(1); got != want {
+		t.Fatalf("ReadWaitsTotal = %d, want %d", got, want)
+	}
+
+	deliverySnapshot := SnapshotStreamDelivery()
+	if got := deliverySnapshot.ActiveStreams; got != 0 {
+		t.Fatalf("delivery ActiveStreams = %d, want 0", got)
+	}
 }
 
 func TestStreamMetricsWriterReadFromSkipsReadWaitWhenDebugDisabled(t *testing.T) {
 	resetStreamHealthForTest()
+	resetStreamDeliveryForTest()
 
 	rec := &readerFromRecorder{}
-	w := &streamMetricsWriter{ResponseWriter: rec}
+	delivery, release := registerStreamDelivery(time.Now(), 42)
+	defer release()
+
+	w := &streamMetricsWriter{
+		ResponseWriter: rec,
+		delivery:       delivery,
+	}
 	reader := &slowOnceReader{delay: streamReadWaitThreshold + 50*time.Millisecond, data: []byte("stream-data")}
 
 	if _, err := w.ReadFrom(reader); err != nil {
@@ -496,13 +558,22 @@ func TestStreamMetricsWriterReadFromSkipsReadWaitWhenDebugDisabled(t *testing.T)
 	if got := snapshot.ReadWaitMSBuckets["le_1000"]; got != 0 {
 		t.Fatalf("read wait le_1000 bucket = %d, want 0", got)
 	}
+
+	deliverySnapshot := SnapshotStreamDelivery()
+	if got, want := len(deliverySnapshot.Streams), 1; got != want {
+		t.Fatalf("len(delivery streams) = %d, want %d", got, want)
+	}
+
+	if got := deliverySnapshot.Streams[0].ReadWaitsTotal; got != 0 {
+		t.Fatalf("stream ReadWaitsTotal = %d, want 0", got)
+	}
 }
 
 func TestStreamDeliveryRegistryTracksAndRemovesActiveStream(t *testing.T) {
 	resetStreamDeliveryForTest()
 
 	started := time.Now().Add(-time.Second)
-	delivery, release := registerStreamDelivery(started)
+	delivery, release := registerStreamDelivery(started, 42)
 	delivery.recordWrite(1024, 10*time.Millisecond)
 
 	snapshot := SnapshotStreamDelivery()
@@ -515,6 +586,10 @@ func TestStreamDeliveryRegistryTracksAndRemovesActiveStream(t *testing.T) {
 	}
 
 	stream := snapshot.Streams[0]
+	if got, want := stream.TorrentID, uint64(42); got != want {
+		t.Fatalf("TorrentID = %d, want %d", got, want)
+	}
+
 	if stream.ID == 0 {
 		t.Fatal("stream ID must be non-zero")
 	}
@@ -542,7 +617,7 @@ func TestStreamDeliveryRegistryTracksAndRemovesActiveStream(t *testing.T) {
 func TestStreamMetricsWriterRecordsSlowDeliveryWrite(t *testing.T) {
 	resetStreamDeliveryForTest()
 
-	delivery, release := registerStreamDelivery(time.Now())
+	delivery, release := registerStreamDelivery(time.Now(), 0)
 	defer release()
 
 	rec := &slowResponseWriter{delay: streamSlowWriteThreshold + 20*time.Millisecond}
@@ -568,7 +643,7 @@ func TestStreamMetricsWriterRecordsSlowDeliveryWrite(t *testing.T) {
 func TestStreamDeliveryRecordsLongWriteThresholds(t *testing.T) {
 	resetStreamDeliveryForTest()
 
-	delivery, release := registerStreamDelivery(time.Now())
+	delivery, release := registerStreamDelivery(time.Now(), 0)
 	defer release()
 
 	delivery.recordWrite(1, 4*time.Second)
@@ -613,7 +688,7 @@ func TestStreamMetricsWriterSkipsDeliveryMetricsWhenDebugDisabled(t *testing.T) 
 func TestStreamDeliverySnapshotIsPrivacySafe(t *testing.T) {
 	resetStreamDeliveryForTest()
 
-	delivery, release := registerStreamDelivery(time.Now())
+	delivery, release := registerStreamDelivery(time.Now(), 7)
 	defer release()
 	delivery.recordWrite(512, time.Millisecond)
 
@@ -630,6 +705,29 @@ func TestStreamDeliverySnapshotIsPrivacySafe(t *testing.T) {
 	}
 }
 
+func TestTorrentRuntimeDiagnosticIDIsStableAndAnonymous(t *testing.T) {
+	resetTorrentRuntimeIDsForTest()
+
+	firstHash := metainfo.NewHashFromHex("abcdef1234567890abcdef1234567890abcdef12")
+	secondHash := metainfo.NewHashFromHex("1234567890abcdef1234567890abcdef12345678")
+	first := &Torrent{TorrentSpec: &torrent.TorrentSpec{AddTorrentOpts: torrent.AddTorrentOpts{InfoHash: firstHash}}}
+	same := &Torrent{TorrentSpec: &torrent.TorrentSpec{AddTorrentOpts: torrent.AddTorrentOpts{InfoHash: firstHash}}}
+	second := &Torrent{TorrentSpec: &torrent.TorrentSpec{AddTorrentOpts: torrent.AddTorrentOpts{InfoHash: secondHash}}}
+
+	firstID := first.RuntimeDiagnosticID()
+	if firstID == 0 {
+		t.Fatal("RuntimeDiagnosticID() = 0, want non-zero")
+	}
+
+	if got := same.RuntimeDiagnosticID(); got != firstID {
+		t.Fatalf("same hash RuntimeDiagnosticID() = %d, want %d", got, firstID)
+	}
+
+	if got := second.RuntimeDiagnosticID(); got == 0 || got == firstID {
+		t.Fatalf("second hash RuntimeDiagnosticID() = %d, want non-zero id different from %d", got, firstID)
+	}
+}
+
 func TestStreamFairnessSkipsSingleStream(t *testing.T) {
 	resetStreamFairnessForTest()
 	defer resetStreamFairnessForTest()
@@ -642,7 +740,7 @@ func TestStreamFairnessSkipsSingleStream(t *testing.T) {
 	}
 	streamFairness.mu.Unlock()
 
-	flow, release := registerStreamFairness(time.Now().Add(-streamFairnessMinAge - time.Second))
+	flow, release := registerStreamFairness(time.Now().Add(-(streamFairnessMinAge + time.Second)), 0)
 	defer release()
 
 	flow.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 4))
@@ -669,8 +767,8 @@ func TestStreamFairnessSkipsBalancedStreams(t *testing.T) {
 	streamFairness.mu.Unlock()
 
 	started := time.Now().Add(-streamFairnessMinAge - time.Second)
-	left, releaseLeft := registerStreamFairness(started)
-	right, releaseRight := registerStreamFairness(started)
+	left, releaseLeft := registerStreamFairness(started, 0)
+	right, releaseRight := registerStreamFairness(started, 0)
 
 	defer releaseLeft()
 	defer releaseRight()
@@ -696,8 +794,8 @@ func TestStreamFairnessDelaysDominantStream(t *testing.T) {
 	streamFairness.mu.Unlock()
 
 	started := time.Now().Add(-streamFairnessMinAge - time.Second)
-	slow, releaseSlow := registerStreamFairness(started)
-	fast, releaseFast := registerStreamFairness(started)
+	slow, releaseSlow := registerStreamFairness(started, 11)
+	fast, releaseFast := registerStreamFairness(started, 12)
 
 	defer releaseSlow()
 	defer releaseFast()
@@ -718,6 +816,15 @@ func TestStreamFairnessDelaysDominantStream(t *testing.T) {
 		t.Fatalf("ActiveStreams = %d, want %d", got, want)
 	}
 
+	seenTorrentIDs := map[uint64]bool{}
+	for _, stream := range snapshot.Streams {
+		seenTorrentIDs[stream.TorrentID] = true
+	}
+
+	if !seenTorrentIDs[11] || !seenTorrentIDs[12] {
+		t.Fatalf("fairness torrent ids = %v, want 11 and 12", seenTorrentIDs)
+	}
+
 	if got, want := snapshot.DelayedWritesTotal, int64(1); got != want {
 		t.Fatalf("DelayedWritesTotal = %d, want %d", got, want)
 	}
@@ -731,7 +838,7 @@ func TestStreamFairnessReleaseRemovesActiveStream(t *testing.T) {
 	resetStreamFairnessForTest()
 	defer resetStreamFairnessForTest()
 
-	_, release := registerStreamFairness(time.Now())
+	_, release := registerStreamFairness(time.Now(), 0)
 
 	if got, want := SnapshotStreamFairness().ActiveStreams, 1; got != want {
 		t.Fatalf("ActiveStreams = %d, want %d", got, want)

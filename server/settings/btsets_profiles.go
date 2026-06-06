@@ -78,6 +78,29 @@ var balancedProfile = BTSets{
 	DiskWriteBatchSize:   16,
 }
 
+// tcpOnlyBalancedProfile keeps the balanced streaming budget but avoids the
+// high-CPU uTP path observed in anacrolix v1.61.0 profiling runs.
+var tcpOnlyBalancedProfile = BTSets{
+	CacheSize:            64 * 1024 * 1024,
+	PreloadCache:         50,
+	DisableUTP:           true,
+	ConnectionsLimit:     25,
+	MaxConcurrentStreams: 0,
+	StreamQueueSize:      0,
+	StreamQueueWaitSec:   3,
+	AdaptiveRAMinMB:      4,
+	AdaptiveRAMaxMB:      64,
+	WarmDiskCacheSizeMB:  0,
+	WarmDiskCacheTTLMin:  180,
+	MetadataWorkers:      0,
+	MetadataQueueSize:    0,
+	PreloadWorkers:       0,
+	PreloadQueueSize:     0,
+	DiskSyncPolicy:       "periodic",
+	DiskSyncIntervalMS:   1000,
+	DiskWriteBatchSize:   16,
+}
+
 // highThroughputProfile defines a preset optimized for high-performance systems.
 var highThroughputProfile = BTSets{
 	CacheSize:            256 * 1024 * 1024,
@@ -122,11 +145,12 @@ var nasProfile = BTSets{
 
 // profilePresets maps profile names to their preset configurations.
 var profilePresets = map[string]BTSets{
-	"low-end":         lowEndProfile,
-	"low-cpu":         lowCPUProfile,
-	"balanced":        balancedProfile,
-	"high-throughput": highThroughputProfile,
-	"nas":             nasProfile,
+	"low-end":           lowEndProfile,
+	"low-cpu":           lowCPUProfile,
+	"balanced":          balancedProfile,
+	"tcp-only-balanced": tcpOnlyBalancedProfile,
+	"high-throughput":   highThroughputProfile,
+	"nas":               nasProfile,
 }
 
 // computeCPUFields applies runtime-computed CPU-dependent values to preset.
@@ -284,11 +308,29 @@ func normalizeCoreProfile(profile string) string {
 	switch p {
 	case "", "custom":
 		return "custom"
-	case "low-end", "low-cpu", "balanced", "high-throughput", "nas":
+	case "low-end", "low-cpu", "balanced", "tcp-only-balanced", "high-throughput", "nas":
 		return p
 	default:
 		return "custom"
 	}
+}
+
+// ApplyCoreProfile materializes the selected core profile into concrete BTSets
+// values while preserving explicit per-field overrides from the caller.
+func ApplyCoreProfile(sets *BTSets) {
+	if sets == nil {
+		return
+	}
+
+	input := *sets
+	sets.CoreProfile = normalizeCoreProfile(sets.CoreProfile)
+
+	if sets.CoreProfile == "custom" {
+		return
+	}
+
+	applyCoreProfilePreset(sets, sets.CoreProfile)
+	applyCoreProfileOverrides(sets, &input)
 }
 
 func applyCoreProfileOverrides(dst, src *BTSets) {

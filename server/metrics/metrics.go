@@ -240,6 +240,7 @@ func torrentRuntimeSnapshot(backend torr.TorrentService) map[string]any {
 		trackers += snapshot.Trackers
 
 		items = append(items, map[string]any{
+			"torrent_id":        snapshot.RuntimeID,
 			"index":             index,
 			"active_peers":      snapshot.ActivePeers,
 			"total_peers":       snapshot.TotalPeers,

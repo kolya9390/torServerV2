@@ -77,20 +77,44 @@ func (p *Piece) Completion() storage.Completion {
 }
 
 func (p *Piece) Release() {
+	wasComplete := p.Complete
+
 	if p.useDisk() {
 		p.dPiece.Release()
 	} else {
 		p.mPiece.Release()
 	}
 
-	if p.cache != nil && !p.cache.isClosed.Load() {
-		p.cache.torrent.Piece(p.ID).SetPriority(torrent.PiecePriorityNone)
-		p.cache.torrent.Piece(p.ID).UpdateCompletion()
+	p.syncTorrentPieceAfterRelease(wasComplete)
+}
+
+func (p *Piece) syncTorrentPieceAfterRelease(wasComplete bool) {
+	if p.cache == nil || p.cache.torrent == nil {
+		return
+	}
+
+	torr := p.cache.torrent
+	p.cache.untrackPriorityPiece(p.ID)
+
+	if shouldClearReleasedPiecePriority(torr.PieceState(p.ID).Priority) {
+		torr.Piece(p.ID).SetPriority(torrent.PiecePriorityNone)
+	}
+
+	if shouldRefreshReleasedPieceCompletion(wasComplete) {
+		torr.Piece(p.ID).UpdateCompletion()
 	}
 }
 
 func (p *Piece) useDisk() bool {
 	return p != nil && p.cache != nil && p.cache.currentCacheConfig().UseDisk
+}
+
+func shouldClearReleasedPiecePriority(priority torrent.PiecePriority) bool {
+	return priority != torrent.PiecePriorityNone
+}
+
+func shouldRefreshReleasedPieceCompletion(wasComplete bool) bool {
+	return wasComplete
 }
 
 // markAccessed updates LRU position and Accessed timestamp.

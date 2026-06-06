@@ -4,14 +4,15 @@ import "testing"
 
 func TestNormalizeCoreProfile(t *testing.T) {
 	cases := map[string]string{
-		"":                "custom",
-		"custom":          "custom",
-		"LOW-END":         "low-end",
-		"LOW-CPU":         "low-cpu",
-		"balanced":        "balanced",
-		"high-throughput": "high-throughput",
-		"nas":             "nas",
-		"unknown":         "custom",
+		"":                  "custom",
+		"custom":            "custom",
+		"LOW-END":           "low-end",
+		"LOW-CPU":           "low-cpu",
+		"balanced":          "balanced",
+		"TCP-ONLY-BALANCED": "tcp-only-balanced",
+		"high-throughput":   "high-throughput",
+		"nas":               "nas",
+		"unknown":           "custom",
 	}
 	for in, want := range cases {
 		if got := normalizeCoreProfile(in); got != want {
@@ -74,6 +75,31 @@ func TestApplyCoreProfilePresetAndOverride(t *testing.T) {
 	}
 }
 
+func TestApplyCoreProfileMaterializesPreset(t *testing.T) {
+	sets := &BTSets{
+		CoreProfile:      "TCP-ONLY-BALANCED",
+		ConnectionsLimit: 33,
+	}
+
+	ApplyCoreProfile(sets)
+
+	if sets.CoreProfile != "tcp-only-balanced" {
+		t.Fatalf("CoreProfile = %q, want tcp-only-balanced", sets.CoreProfile)
+	}
+
+	if !sets.DisableUTP {
+		t.Fatal("tcp-only-balanced profile must disable uTP")
+	}
+
+	if sets.ConnectionsLimit != 33 {
+		t.Fatalf("ConnectionsLimit override = %d, want 33", sets.ConnectionsLimit)
+	}
+
+	if sets.CacheSize != 64*1024*1024 {
+		t.Fatalf("CacheSize = %d, want 64MiB from profile", sets.CacheSize)
+	}
+}
+
 func TestBalancedProfileDefaults(t *testing.T) {
 	sets := &BTSets{}
 	applyCoreProfilePreset(sets, "balanced")
@@ -88,5 +114,38 @@ func TestBalancedProfileDefaults(t *testing.T) {
 
 	if sets.DiskSyncPolicy != "periodic" {
 		t.Fatalf("unexpected balanced DiskSyncPolicy: %s", sets.DiskSyncPolicy)
+	}
+}
+
+func TestTCPOnlyBalancedProfileDefaults(t *testing.T) {
+	sets := &BTSets{}
+	applyCoreProfilePreset(sets, "tcp-only-balanced")
+
+	if !sets.DisableUTP {
+		t.Fatal("tcp-only-balanced profile must disable uTP")
+	}
+
+	if sets.DisableTCP {
+		t.Fatal("tcp-only-balanced profile must keep TCP enabled")
+	}
+
+	if sets.DisableDHT {
+		t.Fatal("tcp-only-balanced profile must keep DHT enabled")
+	}
+
+	if sets.DisablePEX {
+		t.Fatal("tcp-only-balanced profile must keep PEX enabled")
+	}
+
+	if sets.ConnectionsLimit != 25 {
+		t.Fatalf("tcp-only-balanced ConnectionsLimit = %d, want 25", sets.ConnectionsLimit)
+	}
+
+	if sets.CacheSize != 64*1024*1024 {
+		t.Fatalf("tcp-only-balanced CacheSize = %d, want 64MiB", sets.CacheSize)
+	}
+
+	if sets.StreamQueueWaitSec != 3 {
+		t.Fatalf("tcp-only-balanced StreamQueueWaitSec = %d, want 3", sets.StreamQueueWaitSec)
 	}
 }

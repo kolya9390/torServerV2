@@ -3,6 +3,7 @@ package api
 import (
 	"mime/multipart"
 	"net/http"
+	"sort"
 
 	"server/log"
 
@@ -17,16 +18,15 @@ const (
 )
 
 // processUploadFile handles a single uploaded torrent file.
-// Returns torSet flag, torrent status, and any error encountered.
 func processUploadFile(
 	file *multipart.FileHeader,
 	deps uploadHandlerDeps,
 	save bool,
 	title, category, poster, data string,
-) (torSet bool, status any, err error) {
+) (any, error) {
 	torrFile, openErr := file.Open()
 	if openErr != nil {
-		return false, nil, openErr
+		return nil, openErr
 	}
 
 	defer func() {
@@ -37,12 +37,12 @@ func processUploadFile(
 
 	spec, parseErr := deps.Parser.ParseTorrentFile(torrFile)
 	if parseErr != nil {
-		return false, nil, parseErr
+		return nil, parseErr
 	}
 
 	tor, addErr := deps.Commands.Add(spec, title, poster, data, category)
 	if addErr != nil {
-		return false, nil, addErr
+		return nil, addErr
 	}
 
 	torStatus := deps.Queries.Status(tor)
@@ -58,17 +58,17 @@ func processUploadFile(
 		log.TLogln("metadata finalize queue is full, skipping async finalize")
 	}
 
-	return true, torStatus, nil
+	return torStatus, nil
 }
 
 // torrentUpload godoc
 //
 //	@Summary		Add .torrent file
-//	@Description	Only one file support. Multipart request body is limited to 4 MiB.
+//	@Description	Supports one or more files. Multipart request body is limited to 4 MiB.
 //
 //	@Tags			API
 //
-//	@Param			file	formData	file	true	"Torrent file to insert"
+//	@Param			file	formData	file	true	"Torrent file(s) to insert"
 //	@Param			save	formData	string	false	"Save to DB"
 //	@Param			title	formData	string	false	"Torrent title"
 //	@Param			category	formData	string	false	"Torrent category"
@@ -78,7 +78,7 @@ func processUploadFile(
 //	@Accept			multipart/form-data
 //
 //	@Produce		json
-//	@Success		200	{object}	object	"Torrent status"
+//	@Success		200	{object}	object	"Torrent status for one file, array of statuses for multiple files"
 //	@Router			/torrent/upload [post]
 func torrentUpload(c *gin.Context) {
 	deps, ok := uploadDepsFromContext(c)
@@ -104,24 +104,20 @@ func torrentUpload(c *gin.Context) {
 		return
 	}
 
-	var (
-		torSet bool
-		status any
-	)
+	files := collectUploadFiles(uploadReq.Form)
+	statuses := make([]any, 0, len(files))
 
-	for name, file := range uploadReq.Form.File {
+	for _, file := range files {
 		if ctxErr := c.Request.Context().Err(); ctxErr != nil {
 			log.TLogln("upload request canceled:", ctxErr)
 
 			break
 		}
 
-		log.TLogln("add .torrent", name)
+		log.TLogln("add .torrent", file.Filename)
 
-		var procErr error
-
-		torSet, status, procErr = processUploadFile(
-			file[0],
+		status, procErr := processUploadFile(
+			file,
 			deps,
 			uploadReq.Fields.Save,
 			uploadReq.Fields.Title,
@@ -135,14 +131,47 @@ func torrentUpload(c *gin.Context) {
 			continue
 		}
 
-		break
+		statuses = append(statuses, status)
 	}
 
-	if !torSet {
+	if len(statuses) == 0 {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("file", "unable to parse/upload torrent"))
 
 		return
 	}
 
-	c.JSON(200, status)
+	c.JSON(http.StatusOK, uploadResponse(statuses, len(files)))
+}
+
+func collectUploadFiles(form *multipart.Form) []*multipart.FileHeader {
+	if form == nil {
+		return nil
+	}
+
+	fieldNames := make([]string, 0, len(form.File))
+	for fieldName := range form.File {
+		fieldNames = append(fieldNames, fieldName)
+	}
+
+	sort.Strings(fieldNames)
+
+	totalFiles := 0
+	for _, fieldName := range fieldNames {
+		totalFiles += len(form.File[fieldName])
+	}
+
+	files := make([]*multipart.FileHeader, 0, totalFiles)
+	for _, fieldName := range fieldNames {
+		files = append(files, form.File[fieldName]...)
+	}
+
+	return files
+}
+
+func uploadResponse(statuses []any, requestedFiles int) any {
+	if requestedFiles == 1 && len(statuses) == 1 {
+		return statuses[0]
+	}
+
+	return statuses
 }

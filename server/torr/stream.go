@@ -66,10 +66,6 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 
 	defer closeReader()
 
-	logStreamLifecycle := debugCfg.EnableDebug && !strings.HasPrefix(req.Header.Get("Range"), "bytes=")
-	streamID := atomic.LoadInt32(&activeStreams)
-	logStreamConnect(logStreamLifecycle, streamID, req.RemoteAddr)
-
 	sets.SetViewed(&sets.Viewed{
 		Hash:      t.Hash().HexString(),
 		FileIndex: fileID,
@@ -77,39 +73,89 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 
 	setStreamHeaders(resp, file, t, streamTimeout, req)
 
+	instrumentation := startStreamInstrumentation(t, req, resp, debugCfg.EnableDebug)
+	defer instrumentation.release()
+
 	content := newServeContentReadSeeker(reader, file.Length())
-	streamStarted := time.Now()
+	http.ServeContent(instrumentation.writer, req, file.Path(), time.Unix(t.Timestamp, 0), content)
+	markStreamActivity()
+	finishStreamInstrumentation(instrumentation, req.RemoteAddr)
 
-	fairness, releaseFairness := registerStreamFairness(streamStarted)
-	defer releaseFairness()
+	return nil
+}
 
-	metricsWriter := &streamMetricsWriter{
+type streamInstrumentation struct {
+	debugEnabled bool
+	logLifecycle bool
+	streamID     int32
+	started      time.Time
+	writer       *streamMetricsWriter
+	release      func()
+}
+
+func startStreamInstrumentation(
+	t *Torrent,
+	req *http.Request,
+	resp http.ResponseWriter,
+	debugEnabled bool,
+) streamInstrumentation {
+	started := time.Now()
+	streamID := atomic.LoadInt32(&activeStreams)
+	logLifecycle := debugEnabled && !strings.HasPrefix(req.Header.Get("Range"), "bytes=")
+	torrentID := streamTorrentDiagnosticID(t, debugEnabled)
+	fairness, releaseFairness := registerStreamFairness(started, torrentID)
+	writer := &streamMetricsWriter{
 		ResponseWriter: resp,
-		trackReadWait:  debugCfg.EnableDebug,
+		trackReadWait:  debugEnabled,
 		fairness:       fairness,
 	}
+	release := releaseFairness
 
-	if debugCfg.EnableDebug {
-		delivery, releaseDelivery := registerStreamDelivery(streamStarted)
-		metricsWriter.delivery = delivery
-		defer releaseDelivery()
+	if debugEnabled {
+		delivery, releaseDelivery := registerStreamDelivery(started, torrentID)
+		writer.delivery = delivery
+		release = func() {
+			releaseDelivery()
+			releaseFairness()
+		}
 	}
 
-	http.ServeContent(metricsWriter, req, file.Path(), time.Unix(t.Timestamp, 0), content)
-	markStreamActivity()
+	logStreamConnect(logLifecycle, streamID, req.RemoteAddr)
 
-	if debugCfg.EnableDebug {
+	return streamInstrumentation{
+		debugEnabled: debugEnabled,
+		logLifecycle: logLifecycle,
+		streamID:     streamID,
+		started:      started,
+		writer:       writer,
+		release:      release,
+	}
+}
+
+func streamTorrentDiagnosticID(t *Torrent, debugEnabled bool) uint64 {
+	if !debugEnabled {
+		return 0
+	}
+
+	return t.RuntimeDiagnosticID()
+}
+
+func finishStreamInstrumentation(instrumentation streamInstrumentation, remoteAddr string) {
+	if instrumentation.debugEnabled {
 		recordStreamCompleted(
-			streamFirstByteDuration(streamStarted, metricsWriter),
-			metricsWriter.bytesWritten.Load(),
-			metricsWriter.err(),
+			streamFirstByteDuration(instrumentation.started, instrumentation.writer),
+			instrumentation.writer.bytesWritten.Load(),
+			instrumentation.writer.err(),
 		)
 	}
 
-	logStreamDisconnect(logStreamLifecycle, streamID, req.RemoteAddr)
-	logStreamMetrics(debugCfg.EnableDebug, streamID, streamStarted, metricsWriter)
-
-	return nil
+	logStreamDisconnect(instrumentation.logLifecycle, instrumentation.streamID, remoteAddr)
+	logStreamMetrics(
+		instrumentation.debugEnabled,
+		instrumentation.streamID,
+		instrumentation.started,
+		instrumentation.writer,
+	)
 }
 
 func logStreamConnect(enabled bool, streamID int32, remoteAddr string) {

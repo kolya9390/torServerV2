@@ -14,16 +14,17 @@ import (
 
 // TorrentRuntimeMetrics is a lightweight, privacy-safe runtime view for diagnostics.
 type TorrentRuntimeMetrics struct {
-	ActivePeers      int   `json:"active_peers"`
-	TotalPeers       int   `json:"total_peers"`
-	PendingPeers     int   `json:"pending_peers"`
-	HalfOpenPeers    int   `json:"half_open_peers"`
-	ConnectedSeeders int   `json:"connected_seeders"`
-	ActiveReaders    int   `json:"active_readers"`
-	TrackerTiers     int   `json:"tracker_tiers"`
-	Trackers         int   `json:"trackers"`
-	DownloadSpeed    int64 `json:"download_speed"`
-	UploadSpeed      int64 `json:"upload_speed"`
+	RuntimeID        uint64 `json:"torrent_id"`
+	ActivePeers      int    `json:"active_peers"`
+	TotalPeers       int    `json:"total_peers"`
+	PendingPeers     int    `json:"pending_peers"`
+	HalfOpenPeers    int    `json:"half_open_peers"`
+	ConnectedSeeders int    `json:"connected_seeders"`
+	ActiveReaders    int    `json:"active_readers"`
+	TrackerTiers     int    `json:"tracker_tiers"`
+	Trackers         int    `json:"trackers"`
+	DownloadSpeed    int64  `json:"download_speed"`
+	UploadSpeed      int64  `json:"upload_speed"`
 }
 
 func (t *Torrent) Status() *state.TorrentStatus {
@@ -175,6 +176,7 @@ func (t *Torrent) RuntimeMetricsSnapshot() (TorrentRuntimeMetrics, bool) {
 	trackerTiers, trackers := countTrackerTiers(t.TorrentSpec)
 
 	return TorrentRuntimeMetrics{
+		RuntimeID:        t.RuntimeDiagnosticID(),
 		ActivePeers:      stats.ActivePeers,
 		TotalPeers:       stats.TotalPeers,
 		PendingPeers:     stats.PendingPeers,

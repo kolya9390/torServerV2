@@ -25,29 +25,8 @@ func (c *Cache) GetState() *state.CacheState {
 	}
 	c.mu.RUnlock()
 
-	readersState := make([]*state.ReaderState, 0)
-
-	if c.Readers() > 0 {
-		c.readers.mu.Lock()
-		activeReaders := 0
-
-		for r := range c.readers.items {
-			if r.isActive() {
-				activeReaders++
-			}
-		}
-
-		for r := range c.readers.items {
-			rng := r.getPiecesRangeForReaders(activeReaders)
-			pc := r.getReaderPiece()
-			readersState = append(readersState, &state.ReaderState{
-				Start:  rng.Start,
-				End:    rng.End,
-				Reader: pc,
-			})
-		}
-		c.readers.mu.Unlock()
-	}
+	readers := c.copyReaders()
+	readersState := buildReaderStates(readers)
 
 	cState.Capacity = c.GetCapacity()
 	cState.PiecesLength = c.pieceLength
@@ -58,6 +37,43 @@ func (c *Cache) GetState() *state.CacheState {
 	cState.Readers = readersState
 
 	return cState
+}
+
+func buildReaderStates(readers []*Reader) []*state.ReaderState {
+	if len(readers) == 0 {
+		return nil
+	}
+
+	activeReaders := countActiveReaders(readers)
+	readersState := make([]*state.ReaderState, 0, len(readers))
+
+	for _, r := range readers {
+		if r == nil {
+			continue
+		}
+
+		rng := r.getPiecesRangeForReaders(activeReaders)
+		pc := r.getReaderPiece()
+		readersState = append(readersState, &state.ReaderState{
+			Start:  rng.Start,
+			End:    rng.End,
+			Reader: pc,
+		})
+	}
+
+	return readersState
+}
+
+func countActiveReaders(readers []*Reader) int {
+	activeReaders := 0
+
+	for _, r := range readers {
+		if r != nil && r.isActive() {
+			activeReaders++
+		}
+	}
+
+	return activeReaders
 }
 
 func (c *Cache) GetCapacity() int64 {

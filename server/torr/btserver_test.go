@@ -187,6 +187,45 @@ func TestBuildClientConfigLowCPUProfile(t *testing.T) {
 	}
 }
 
+func TestBuildClientConfigTCPOnlyBalancedProfile(t *testing.T) {
+	bt := NewBTSWithProvidersRuntimeAndDB(
+		btTestSettingsProvider{sets: &settings.BTSets{
+			CoreProfile:      "tcp-only-balanced",
+			DisableUTP:       true,
+			ConnectionsLimit: 25,
+		}},
+		settings.NewNoopArgsProvider(),
+		func() settings.RuntimeState { return settings.RuntimeState{} },
+		NewNoopTorrentDBStore(),
+	)
+
+	cfg := bt.buildClientConfig()
+	if !cfg.DisableUTP {
+		t.Fatal("tcp-only-balanced profile must disable uTP in torrent client config")
+	}
+
+	if cfg.DisableTCP {
+		t.Fatal("tcp-only-balanced profile must keep TCP enabled")
+	}
+
+	if cfg.NoDHT {
+		t.Fatal("tcp-only-balanced profile must keep DHT enabled")
+	}
+
+	if cfg.DisablePEX {
+		t.Fatal("tcp-only-balanced profile must keep PEX enabled")
+	}
+
+	if cfg.EstablishedConnsPerTorrent != 25 {
+		t.Fatalf("EstablishedConnsPerTorrent = %d, want 25", cfg.EstablishedConnsPerTorrent)
+	}
+
+	if cfg.TorrentPeersLowWater != 50 || cfg.TorrentPeersHighWater != 500 {
+		t.Fatalf("peer watermarks = (%d, %d), want balanced watermarks (50, 500)",
+			cfg.TorrentPeersLowWater, cfg.TorrentPeersHighWater)
+	}
+}
+
 func TestBuildClientConfigDebugEstablishedConnsOverride(t *testing.T) {
 	bt := NewBTSWithProvidersRuntimeAndDB(
 		btTestSettingsProvider{sets: &settings.BTSets{
@@ -204,8 +243,8 @@ func TestBuildClientConfigDebugEstablishedConnsOverride(t *testing.T) {
 		t.Fatalf("EstablishedConnsPerTorrent = %d, want 36", cfg.EstablishedConnsPerTorrent)
 	}
 
-	if cfg.TorrentPeersLowWater != 100 || cfg.TorrentPeersHighWater != 500 {
-		t.Fatalf("peer watermarks = (%d, %d), want compatibility watermarks (100, 500)",
+	if cfg.TorrentPeersLowWater != 72 || cfg.TorrentPeersHighWater != 500 {
+		t.Fatalf("peer watermarks = (%d, %d), want debug override watermarks (72, 500)",
 			cfg.TorrentPeersLowWater, cfg.TorrentPeersHighWater)
 	}
 }
@@ -410,7 +449,7 @@ func TestEffectiveEstablishedConns(t *testing.T) {
 		want         int
 	}{
 		{name: "uses library default when unset", userLimit: 0, defaultConns: 50, want: 50},
-		{name: "floors low user limit to default", userLimit: 25, defaultConns: 50, want: 50},
+		{name: "honors explicit user limit below default", userLimit: 25, defaultConns: 50, want: 25},
 		{name: "keeps higher user limit", userLimit: 80, defaultConns: 50, want: 80},
 		{name: "fallback default when invalid", userLimit: 0, defaultConns: 0, want: 50},
 	}
@@ -436,10 +475,10 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 		wantDebugOverride  int
 	}{
 		{
-			name:               "compatibility default floors low limit",
+			name:               "custom profile honors configured low limit",
 			sets:               &settings.BTSets{ConnectionsLimit: 12},
-			wantEffectiveConns: 50,
-			wantLowWater:       100,
+			wantEffectiveConns: 12,
+			wantLowWater:       50,
 			wantHighWater:      500,
 			wantTrackers:       8,
 		},
@@ -477,7 +516,7 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 				ConnectionsLimit:              25,
 			},
 			wantEffectiveConns: 36,
-			wantLowWater:       100,
+			wantLowWater:       72,
 			wantHighWater:      500,
 			wantTrackers:       16,
 			wantDebugOverride:  36,
@@ -488,8 +527,8 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 				DebugEstablishedConnsOverride: 24,
 				ConnectionsLimit:              25,
 			},
-			wantEffectiveConns: 50,
-			wantLowWater:       100,
+			wantEffectiveConns: 25,
+			wantLowWater:       50,
 			wantHighWater:      500,
 			wantTrackers:       16,
 		},

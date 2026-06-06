@@ -87,12 +87,51 @@ func TestApplyDefaults(t *testing.T) {
 		t.Errorf("Stream.CoreProfile = %q, want %q", cfg.Stream.CoreProfile, "custom")
 	}
 
+	if cfg.Network.DisableUTP {
+		t.Error("Network.DisableUTP = true, want false for compatibility defaults")
+	}
+
 	if cfg.DiskCache.SyncPolicy != "periodic" {
 		t.Errorf("DiskCache.SyncPolicy = %q, want %q", cfg.DiskCache.SyncPolicy, "periodic")
 	}
 
 	if cfg.Debug.Enabled {
 		t.Error("Debug.Enabled = true, want false by default")
+	}
+}
+
+func TestApplyToBTSetsMaterializesTCPOnlyBalancedProfile(t *testing.T) {
+	cfg := &Config{
+		Stream: StreamConfig{
+			CoreProfile: "tcp-only-balanced",
+		},
+	}
+	sets := &settings.BTSets{}
+
+	cfg.ApplyToBTSets(sets)
+
+	if sets.CoreProfile != "tcp-only-balanced" {
+		t.Fatalf("CoreProfile = %q, want tcp-only-balanced", sets.CoreProfile)
+	}
+
+	if !sets.DisableUTP {
+		t.Fatal("tcp-only-balanced profile must disable uTP when applied from config")
+	}
+
+	if sets.DisableTCP {
+		t.Fatal("tcp-only-balanced profile must keep TCP enabled when applied from config")
+	}
+
+	if sets.DisableDHT {
+		t.Fatal("tcp-only-balanced profile must keep DHT enabled when applied from config")
+	}
+
+	if sets.DisablePEX {
+		t.Fatal("tcp-only-balanced profile must keep PEX enabled when applied from config")
+	}
+
+	if sets.ConnectionsLimit != 25 {
+		t.Fatalf("ConnectionsLimit = %d, want 25", sets.ConnectionsLimit)
 	}
 }
 
@@ -121,6 +160,14 @@ func TestShippedConfigDisablesFullDebugByDefault(t *testing.T) {
 
 	if cfg.Debug.MaxUnverifiedBytesMB != 0 {
 		t.Fatal("release config template must keep debug max unverified bytes disabled")
+	}
+
+	if cfg.Stream.CoreProfile != "custom" {
+		t.Fatalf("release config template must keep core_profile=custom, got %q", cfg.Stream.CoreProfile)
+	}
+
+	if cfg.Network.DisableUTP {
+		t.Fatal("release config template must keep uTP enabled unless low-cpu is explicitly selected")
 	}
 }
 

@@ -127,10 +127,6 @@ func effectiveEstablishedConns(userLimit, defaultConns int) int {
 		return defaultConns
 	}
 
-	if userLimit < defaultConns {
-		return defaultConns
-	}
-
 	return userLimit
 }
 

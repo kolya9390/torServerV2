@@ -44,12 +44,13 @@ func connectionPolicyForSettings(sets *settings.BTSets, defaultConns int) connec
 	lowCPU := isLowCPUCoreProfile(sets.CoreProfile)
 	configuredLimit := sets.NetworkConfig().ConnectionsLimit
 	effectiveConns := effectiveEstablishedConnsForProfile(configuredLimit, defaultConns, lowCPU)
-	lowWater, highWater := peerWatermarksForProfile(effectiveConns, lowCPU)
 	debugOverride := debugEstablishedConnsOverride(sets)
 
 	if debugOverride > 0 {
 		effectiveConns = debugOverride
 	}
+
+	lowWater, highWater := peerWatermarksForProfile(effectiveConns, lowCPU)
 
 	return connectionPolicy{
 		configuredLimit: configuredLimit,
@@ -140,7 +141,7 @@ func trackerBudgetForSettings(sets *settings.BTSets, lowCPU bool) int {
 	return maxTrackers
 }
 
-// EffectiveEstablishedConnsForLimit exposes the compatibility connection-budget policy for diagnostics.
+// EffectiveEstablishedConnsForLimit exposes the configured connection-budget policy for diagnostics.
 func EffectiveEstablishedConnsForLimit(userLimit int) int {
 	return effectiveEstablishedConns(userLimit, defaultEstablishedConns)
 }

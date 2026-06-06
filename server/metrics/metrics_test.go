@@ -48,8 +48,8 @@ func TestTorrentConnectionPolicySnapshot(t *testing.T) {
 	got := torrentConnectionPolicySnapshot(sets)
 
 	assertIntMetric(t, got, "connections_limit", 25)
-	assertIntMetric(t, got, "effective_conns", 50)
-	assertIntMetric(t, got, "peer_low_water", 100)
+	assertIntMetric(t, got, "effective_conns", 25)
+	assertIntMetric(t, got, "peer_low_water", 50)
 	assertIntMetric(t, got, "peer_high_water", 500)
 	assertIntMetric(t, got, "tracker_budget", 16)
 	assertIntMetric(t, got, "debug_established_conns_override", 0)
@@ -113,7 +113,7 @@ func TestTorrentConnectionPolicySnapshotDebugEstablishedConnsOverride(t *testing
 
 	assertIntMetric(t, got, "connections_limit", 25)
 	assertIntMetric(t, got, "effective_conns", 36)
-	assertIntMetric(t, got, "peer_low_water", 100)
+	assertIntMetric(t, got, "peer_low_water", 72)
 	assertIntMetric(t, got, "peer_high_water", 500)
 	assertIntMetric(t, got, "tracker_budget", 16)
 	assertIntMetric(t, got, "debug_established_conns_override", 36)

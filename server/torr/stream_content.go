@@ -70,6 +70,7 @@ func (w *streamMetricsWriter) ReadFrom(r io.Reader) (int64, error) {
 		reader:        r,
 		mark:          w.markFirstWrite,
 		trackReadWait: w.trackReadWait,
+		delivery:      w.delivery,
 	}
 
 	if w.trackReadWait {
@@ -137,6 +138,7 @@ type firstByteTrackingReader struct {
 	reader        io.Reader
 	mark          func()
 	trackReadWait bool
+	delivery      *streamDelivery
 	fairness      *streamFairnessFlow
 	seen          bool
 }
@@ -150,7 +152,9 @@ func (r *firstByteTrackingReader) Read(p []byte) (int, error) {
 	n, err := r.reader.Read(p)
 
 	if r.trackReadWait {
-		recordStreamReadWait(time.Since(started))
+		wait := time.Since(started)
+		recordStreamReadWait(wait)
+		r.delivery.recordReadWait(wait)
 	}
 
 	if n > 0 && !r.seen {

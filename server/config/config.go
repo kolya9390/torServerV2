@@ -319,6 +319,7 @@ func (c *Config) ApplyToBTSets(sets *settings.BTSets) {
 	applyProxySettings(c, sets)
 	applyStorageSettings(c, sets)
 	applySSLSettings(c, sets)
+	settings.ApplyCoreProfile(sets)
 }
 
 // applyCacheSettings maps cache-related config fields to BTSets.

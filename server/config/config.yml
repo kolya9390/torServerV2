@@ -49,7 +49,11 @@ search:
 
 streaming:
   responsive_mode: true
-  core_profile: "custom"  # custom, low-end, low-cpu, balanced, high-throughput, nas
+  # Allowed: custom, balanced, tcp-only-balanced, low-cpu, low-end, high-throughput, nas
+  # custom is the compatibility default: TCP/uTP/DHT/PEX stay enabled for broad peer reach.
+  # tcp-only-balanced is the measured recommended profile for heavy home streaming when uTP CPU is too high.
+  # low-cpu is opt-in for CPU-constrained deployments; it is not recommended for heavy/default playback.
+  core_profile: "custom"
   max_concurrent_streams: 0  # 0 = auto
   stream_queue_size: 0  # 0 = auto
   stream_queue_wait_sec: 3

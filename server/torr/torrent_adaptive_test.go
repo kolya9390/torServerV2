@@ -112,10 +112,10 @@ func TestAdaptiveMaxEstablishedConns(t *testing.T) {
 		localReaders     int
 		want             int
 	}{
-		{name: "idle keeps base default", sets: &settings.BTSets{ConnectionsLimit: 25}, playbackTorrents: 1, localReaders: 0, want: 50},
-		{name: "single playback keeps base default", sets: &settings.BTSets{ConnectionsLimit: 25}, playbackTorrents: 1, localReaders: 1, want: 50},
-		{name: "dual playback keeps base default", sets: &settings.BTSets{ConnectionsLimit: 25}, playbackTorrents: 2, localReaders: 1, want: 50},
-		{name: "many playback keeps default floor", sets: &settings.BTSets{ConnectionsLimit: 25}, playbackTorrents: 4, localReaders: 1, want: 50},
+		{name: "idle honors configured peer budget", sets: &settings.BTSets{ConnectionsLimit: 25}, playbackTorrents: 1, localReaders: 0, want: 25},
+		{name: "single playback honors configured peer budget", sets: &settings.BTSets{ConnectionsLimit: 25}, playbackTorrents: 1, localReaders: 1, want: 25},
+		{name: "dual playback honors configured peer budget", sets: &settings.BTSets{ConnectionsLimit: 25}, playbackTorrents: 2, localReaders: 1, want: 25},
+		{name: "many playback keeps configured peer budget", sets: &settings.BTSets{ConnectionsLimit: 25}, playbackTorrents: 4, localReaders: 1, want: 25},
 		{name: "higher configured limit preserved", sets: &settings.BTSets{ConnectionsLimit: 96}, playbackTorrents: 1, localReaders: 1, want: 96},
 		{name: "high configured limit preserved", sets: &settings.BTSets{ConnectionsLimit: 120}, playbackTorrents: 1, localReaders: 1, want: 120},
 		{name: "low cpu profile honors measured low limit", sets: &settings.BTSets{CoreProfile: "low-cpu", ConnectionsLimit: 12}, playbackTorrents: 2, localReaders: 1, want: 12},

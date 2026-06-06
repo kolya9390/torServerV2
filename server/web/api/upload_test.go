@@ -2,11 +2,14 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"server/internal/app/contracts"
 	"testing"
 
@@ -18,30 +21,40 @@ import (
 type uploadTorrentService struct {
 	mockTorrentService
 
-	addCalled      bool
-	finalizeCalled bool
+	addCalls      int
+	finalizeCalls int
+	statusCalls   int
+	addErrors     map[int]error
 }
 
-func (s *uploadTorrentService) Add(spec contracts.TorrentSpec, title, poster, data, category string) (contracts.TorrentHandle, error) {
+func (s *uploadTorrentService) Add(
+	spec contracts.TorrentSpec,
+	title, poster, data, category string,
+) (contracts.TorrentHandle, error) {
 	if spec.HashHex() == "" {
 		return nil, errors.New("torrent spec is nil")
 	}
 
-	s.addCalled = true
+	s.addCalls++
+	if err := s.addErrors[s.addCalls]; err != nil {
+		return nil, err
+	}
 
 	return nil, nil
 }
 
 func (s *uploadTorrentService) Status(contracts.TorrentHandle) *contracts.TorrentStatus {
+	s.statusCalls++
+
 	return &contracts.TorrentStatus{
-		Title: "uploaded",
-		Hash:  "0123456789abcdef0123456789abcdef01234567",
+		Title: fmt.Sprintf("uploaded-%d", s.statusCalls),
+		Hash:  fmt.Sprintf("%040d", s.statusCalls),
 		Stat:  contracts.TorrentAdded,
 	}
 }
 
 func (s *uploadTorrentService) EnqueueMetadataFinalize(contracts.TorrentHandle, *contracts.TorrentSpec, bool) bool {
-	s.finalizeCalled = true
+	s.finalizeCalls++
 
 	return true
 }
@@ -61,7 +74,12 @@ func TestTorrentUploadRejectsOversizedMultipartBody(t *testing.T) {
 
 	torrentsSvc := &uploadTorrentService{}
 
-	body, contentType := multipartBody(t, "file", "large.torrent", io.LimitReader(zeroReader{}, maxTorrentUploadBodyBytes+1024))
+	body, contentType := multipartBody(
+		t,
+		"file",
+		"large.torrent",
+		io.LimitReader(zeroReader{}, maxTorrentUploadBodyBytes+1024),
+	)
 
 	r := gin.New()
 	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
@@ -80,12 +98,12 @@ func TestTorrentUploadRejectsOversizedMultipartBody(t *testing.T) {
 		t.Fatalf("expected 413, got %d body=%s", w.Code, w.Body.String())
 	}
 
-	if torrentsSvc.addCalled {
+	if torrentsSvc.addCalls > 0 {
 		t.Fatal("oversized upload should be rejected before torrent service is called")
 	}
 }
 
-func TestTorrentUploadAcceptsNormalTorrentFile(t *testing.T) {
+func TestTorrentUploadSingleFileReturnsLegacyObject(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	torrentsSvc := &uploadTorrentService{}
@@ -109,12 +127,189 @@ func TestTorrentUploadAcceptsNormalTorrentFile(t *testing.T) {
 		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
 	}
 
-	if !torrentsSvc.addCalled {
+	var got map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("expected single-file upload to return JSON object: %v body=%s", err, w.Body.String())
+	}
+
+	if got["title"] != "uploaded-1" {
+		t.Fatalf("expected uploaded-1 title, got %#v", got["title"])
+	}
+
+	if torrentsSvc.addCalls != 1 {
 		t.Fatal("expected torrent service Add to be called")
 	}
 
-	if !torrentsSvc.finalizeCalled {
+	if torrentsSvc.finalizeCalls != 1 {
 		t.Fatal("expected metadata finalization to be queued")
+	}
+}
+
+func TestTorrentUploadMultipleFilesReturnsArray(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	torrentsSvc := &uploadTorrentService{}
+
+	body, contentType := multipartBodyWithFiles(t,
+		multipartUploadFile{"file", "first.torrent", bytes.NewReader(validTorrentBytes(t))},
+		multipartUploadFile{"file", "second.torrent", bytes.NewReader(validTorrentBytes(t))},
+	)
+
+	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
+		Torrents: torrentsSvc,
+		Streams:  uploadStreamService{},
+	})))
+	r.POST("/torrent/upload", torrentUpload)
+
+	req := httptest.NewRequest(http.MethodPost, "/torrent/upload", body)
+	req.Header.Set("Content-Type", contentType)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var got []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("expected multi-file upload to return JSON array: %v body=%s", err, w.Body.String())
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 statuses, got %d body=%s", len(got), w.Body.String())
+	}
+
+	if torrentsSvc.addCalls != 2 {
+		t.Fatalf("expected 2 Add calls, got %d", torrentsSvc.addCalls)
+	}
+
+	if torrentsSvc.finalizeCalls != 2 {
+		t.Fatalf("expected 2 finalize calls, got %d", torrentsSvc.finalizeCalls)
+	}
+}
+
+func TestTorrentUploadMultipleFilesKeepsArrayWhenOneFileFails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	torrentsSvc := &uploadTorrentService{
+		addErrors: map[int]error{
+			2: errors.New("duplicate torrent"),
+		},
+	}
+
+	body, contentType := multipartBodyWithFiles(t,
+		multipartUploadFile{"file", "first.torrent", bytes.NewReader(validTorrentBytes(t))},
+		multipartUploadFile{"file", "duplicate.torrent", bytes.NewReader(validTorrentBytes(t))},
+	)
+
+	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
+		Torrents: torrentsSvc,
+		Streams:  uploadStreamService{},
+	})))
+	r.POST("/torrent/upload", torrentUpload)
+
+	req := httptest.NewRequest(http.MethodPost, "/torrent/upload", body)
+	req.Header.Set("Content-Type", contentType)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var got []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("expected partial multi-file upload to keep JSON array response: %v body=%s", err, w.Body.String())
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("expected one successful status, got %d body=%s", len(got), w.Body.String())
+	}
+
+	if torrentsSvc.addCalls != 2 {
+		t.Fatalf("expected both files to be attempted, got %d Add calls", torrentsSvc.addCalls)
+	}
+
+	if torrentsSvc.finalizeCalls != 1 {
+		t.Fatalf("expected only successful torrent to finalize, got %d", torrentsSvc.finalizeCalls)
+	}
+}
+
+func TestTorrentUploadReturnsBadRequestWhenAllFilesFail(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	torrentsSvc := &uploadTorrentService{
+		addErrors: map[int]error{
+			1: errors.New("parse duplicate"),
+		},
+	}
+
+	body, contentType := multipartBody(t, "file", "duplicate.torrent", bytes.NewReader(validTorrentBytes(t)))
+
+	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
+		Torrents: torrentsSvc,
+		Streams:  uploadStreamService{},
+	})))
+	r.POST("/torrent/upload", torrentUpload)
+
+	req := httptest.NewRequest(http.MethodPost, "/torrent/upload", body)
+	req.Header.Set("Content-Type", contentType)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if torrentsSvc.finalizeCalls != 0 {
+		t.Fatalf("expected no finalize calls, got %d", torrentsSvc.finalizeCalls)
+	}
+}
+
+func TestTorrentUploadRemovesTemporaryMultipartFiles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tmpDir := t.TempDir()
+	t.Setenv("TMPDIR", tmpDir)
+
+	body, contentType := multipartBody(
+		t,
+		"file",
+		"spilled.torrent",
+		bytes.NewReader(bytes.Repeat(validTorrentBytes(t), 64)),
+	)
+
+	r := gin.New()
+	r.MaxMultipartMemory = 32
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
+		Torrents: &uploadTorrentService{},
+		Streams:  uploadStreamService{},
+	})))
+	r.POST("/torrent/upload", torrentUpload)
+
+	req := httptest.NewRequest(http.MethodPost, "/torrent/upload", body)
+	req.Header.Set("Content-Type", contentType)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		t.Fatalf("read temp dir: %v", err)
+	}
+
+	if len(entries) != 0 {
+		t.Fatalf("expected multipart temp files to be removed, found %d", len(entries))
 	}
 }
 
@@ -218,16 +413,30 @@ func TestBindTorrentUploadRequestRequiresFile(t *testing.T) {
 func multipartBody(t *testing.T, fieldName, fileName string, src io.Reader) (*bytes.Buffer, string) {
 	t.Helper()
 
+	return multipartBodyWithFiles(t, multipartUploadFile{fieldName, fileName, src})
+}
+
+type multipartUploadFile struct {
+	fieldName string
+	fileName  string
+	src       io.Reader
+}
+
+func multipartBodyWithFiles(t *testing.T, files ...multipartUploadFile) (*bytes.Buffer, string) {
+	t.Helper()
+
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
 
-	part, err := writer.CreateFormFile(fieldName, fileName)
-	if err != nil {
-		t.Fatalf("create multipart file: %v", err)
-	}
+	for _, file := range files {
+		part, err := writer.CreateFormFile(file.fieldName, file.fileName)
+		if err != nil {
+			t.Fatalf("create multipart file: %v", err)
+		}
 
-	if _, err := io.Copy(part, src); err != nil {
-		t.Fatalf("write multipart file: %v", err)
+		if _, err := io.Copy(part, file.src); err != nil {
+			t.Fatalf("write multipart file: %v", err)
+		}
 	}
 
 	if err := writer.Close(); err != nil {

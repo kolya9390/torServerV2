@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
@@ -18,6 +19,8 @@ type btserverAdapter struct {
 }
 
 type noopTorrentService struct{}
+
+const torrentCloseWaitTimeout = 5 * time.Second
 
 func NewNoopTorrentService() TorrentService {
 	return noopTorrentService{}
@@ -129,11 +132,34 @@ func (a *btserverAdapter) RemoveTorrent(hash string) {
 	log.TLogln("API RemTorrent call", "hash=", hash, "active_streams=", GetActiveStreams())
 
 	infoHash := metainfo.NewHashFromHex(hash)
-	if a.bt.RemoveTorrent(infoHash) {
+	torr := a.bt.GetTorrent(infoHash)
+	removed := a.bt.RemoveTorrent(infoHash)
+
+	if removed {
+		waitTorrentClosed(hash, torr)
+		cleanupTorrentDiskCache(hash, a.bt.currentSettings())
+	} else if torr == nil {
 		cleanupTorrentDiskCache(hash, a.bt.currentSettings())
 	}
 
 	a.bt.currentDBStore().Remove(infoHash)
+}
+
+func waitTorrentClosed(hash string, torr *Torrent) {
+	waitTorrentClosedWithTimeout(hash, torr, torrentCloseWaitTimeout)
+}
+
+func waitTorrentClosedWithTimeout(hash string, torr *Torrent, timeout time.Duration) {
+	if torr == nil || torr.lifecycle.closed == nil {
+		return
+	}
+
+	select {
+	case <-torr.lifecycle.closed:
+		log.TLogln("Torrent closed by library:", hash)
+	case <-time.After(timeout):
+		log.TLogln("Warning: timeout waiting for torrent close:", hash)
+	}
 }
 
 func (a *btserverAdapter) ListTorrents() []*Torrent {

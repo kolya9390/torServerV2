@@ -6,31 +6,87 @@ import (
 	"github.com/anacrolix/torrent"
 )
 
+type activeReaderSnapshot struct {
+	readerPos    int
+	readerRAHPos int
+	piecesRange  Range
+}
+
 func (c *Cache) getActiveReaderRanges() []Range {
-	ranges := make([]Range, 0)
+	readers := c.snapshotActiveReaders(true)
+	if len(readers) == 0 {
+		return nil
+	}
+
+	ranges := make([]Range, 0, len(readers))
+	for _, reader := range readers {
+		ranges = append(ranges, reader.piecesRange)
+	}
+
+	return mergeRange(ranges)
+}
+
+func (c *Cache) copyReaders() []*Reader {
+	if c == nil {
+		return nil
+	}
 
 	c.readers.mu.Lock()
-	totalReaders := len(c.readers.items)
+	defer c.readers.mu.Unlock()
+
+	if len(c.readers.items) == 0 {
+		return nil
+	}
+
+	readers := make([]*Reader, 0, len(c.readers.items))
+	for r := range c.readers.items {
+		readers = append(readers, r)
+	}
+
+	return readers
+}
+
+func (c *Cache) snapshotActiveReaders(refreshActivity bool) []activeReaderSnapshot {
+	readers := c.copyReaders()
+	if len(readers) == 0 {
+		return nil
+	}
+
+	totalReaders := len(readers)
+
+	for _, reader := range readers {
+		if reader != nil && refreshActivity {
+			reader.checkReader(totalReaders)
+		}
+	}
+
 	activeReaders := 0
 
-	for r := range c.readers.items {
-		r.checkReader(totalReaders)
-
-		if r.isActive() {
+	for _, reader := range readers {
+		if reader != nil && reader.isActive() {
 			activeReaders++
 		}
 	}
 
-	if activeReaders > 0 {
-		for r := range c.readers.items {
-			if r.isActive() {
-				ranges = append(ranges, r.getPiecesRangeForReaders(activeReaders))
-			}
-		}
+	if activeReaders == 0 {
+		return nil
 	}
-	c.readers.mu.Unlock()
 
-	return mergeRange(ranges)
+	snapshots := make([]activeReaderSnapshot, 0, activeReaders)
+
+	for _, reader := range readers {
+		if reader == nil || !reader.isActive() {
+			continue
+		}
+
+		snapshots = append(snapshots, activeReaderSnapshot{
+			readerPos:    reader.getReaderPiece(),
+			readerRAHPos: reader.getReaderRAHPiece(),
+			piecesRange:  reader.getPiecesRangeForReaders(activeReaders),
+		})
+	}
+
+	return snapshots
 }
 
 // UpdatePriorities refreshes piece download priorities based on reader positions.
@@ -84,6 +140,28 @@ func (c *Cache) clearPrioritiesOutsideRanges(ranges []Range) int {
 	}
 
 	return clearedPieces
+}
+
+func (c *Cache) untrackPriorityPiece(id int) bool {
+	if c == nil {
+		return false
+	}
+
+	c.priorities.mu.Lock()
+	defer c.priorities.mu.Unlock()
+
+	if c.priorities.pieces == nil {
+		return false
+	}
+
+	if _, ok := c.priorities.pieces[id]; !ok {
+		return false
+	}
+
+	delete(c.priorities.pieces, id)
+	c.setTrackedPriorityPieces(len(c.priorities.pieces))
+
+	return true
 }
 
 func (c *Cache) queuePriorityUpdate() {
@@ -155,51 +233,36 @@ func desiredPiecePriority(pieceID, readerPos, readerRAHPos int) torrent.PiecePri
 }
 
 func (c *Cache) desiredPriorities(ranges []Range) map[int]torrent.PiecePriority {
-	c.readers.mu.Lock()
-	defer c.readers.mu.Unlock()
-
-	readerCount := len(c.readers.items)
-	if readerCount == 0 {
+	readers := c.snapshotActiveReaders(false)
+	if len(readers) == 0 {
 		return nil
 	}
 
-	activeReaders := 0
-
-	for r := range c.readers.items {
-		if r.isActive() {
-			activeReaders++
-		}
-	}
-
-	if activeReaders == 0 {
-		return nil
-	}
-
+	activeReaders := len(readers)
 	count := priorityPieceBudget(c.currentNetworkConfig().ConnectionsLimit, activeReaders, c.pieceLength)
 	desired := make(map[int]torrent.PiecePriority, activeReaders*count)
 
-	for r := range c.readers.items {
-		if !r.isActive() {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	for _, reader := range readers {
+		if c.isIDInFileBE(ranges, reader.readerPos) {
 			continue
 		}
 
-		if c.isIDInFileBE(ranges, r.getReaderPiece()) {
-			continue
-		}
-
-		readerPos := r.getReaderPiece()
-		readerRAHPos := r.getReaderRAHPiece()
-		end := r.getPiecesRangeForReaders(activeReaders).End
 		limit := 0
 
-		for i := readerPos; i < end && limit < count; i++ {
+		for i := reader.readerPos; i < reader.piecesRange.End && limit < count; i++ {
 			piece, ok := c.pieces[i]
 			if !ok {
 				continue
 			}
 
 			if !piece.Complete {
-				desired[i] = maxPiecePriority(desired[i], desiredPiecePriority(i, readerPos, readerRAHPos))
+				desired[i] = maxPiecePriority(
+					desired[i],
+					desiredPiecePriority(i, reader.readerPos, reader.readerRAHPos),
+				)
 				limit++
 			}
 		}
@@ -345,29 +408,5 @@ func (c *Cache) clearPriority() {
 		return
 	}
 
-	ranges := make([]Range, 0)
-
-	c.readers.mu.Lock()
-	totalReaders := len(c.readers.items)
-	activeReaders := 0
-
-	for r := range c.readers.items {
-		r.checkReader(totalReaders)
-
-		if r.isActive() {
-			activeReaders++
-		}
-	}
-
-	if activeReaders > 0 {
-		for r := range c.readers.items {
-			if r.isActive() {
-				ranges = append(ranges, r.getPiecesRangeForReaders(activeReaders))
-			}
-		}
-	}
-	c.readers.mu.Unlock()
-
-	ranges = mergeRange(ranges)
-	c.clearPrioritiesOutsideRanges(ranges)
+	c.clearPrioritiesOutsideRanges(c.getActiveReaderRanges())
 }

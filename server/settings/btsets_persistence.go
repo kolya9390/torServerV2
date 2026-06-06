@@ -15,14 +15,7 @@ func SetBTSets(sets *BTSets) {
 		return
 	}
 
-	input := *sets
-
-	sets.CoreProfile = normalizeCoreProfile(sets.CoreProfile)
-	if sets.CoreProfile != "custom" {
-		applyCoreProfilePreset(sets, sets.CoreProfile)
-		applyCoreProfileOverrides(sets, &input)
-	}
-
+	ApplyCoreProfile(sets)
 	sets.validateAndNormalize()
 
 	cacheCfg := sets.CacheConfig()

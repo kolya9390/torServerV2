@@ -3,7 +3,9 @@ package torrstor
 import (
 	"bytes"
 	"context"
+	"sync"
 	"testing"
+	"time"
 
 	"server/settings"
 
@@ -417,6 +419,200 @@ func TestCacheCloseReleasesResidentMemPieceChunksAndTrimsPool(t *testing.T) {
 
 	if got, want := reusableMemPieceChunks(), int64(0); got != want {
 		t.Fatalf("reusable chunks after Close = %d, want %d", got, want)
+	}
+}
+
+func TestCacheCloseIsIdempotent(t *testing.T) {
+	setupStorageTest()
+
+	before := SnapshotCacheStats()
+	stor := NewStorage(64 * 1024)
+	cache := NewCache(64*1024, stor)
+
+	info := &metainfo.Info{
+		Files:       []metainfo.FileInfo{{Path: []string{"test.bin"}, Length: 64 * 1024}},
+		PieceLength: 64 * 1024,
+	}
+	info.Pieces = make([]byte, 20)
+
+	cache.Init(info, metainfo.NewHashFromHex("abcdef1234567890abcdef1234567890abcdef12"))
+
+	if err := cache.Close(); err != nil {
+		t.Fatalf("first Close error: %v", err)
+	}
+
+	afterFirstClose := SnapshotCacheStats()
+
+	if err := cache.Close(); err != nil {
+		t.Fatalf("second Close error: %v", err)
+	}
+
+	afterSecondClose := SnapshotCacheStats()
+	if afterSecondClose != afterFirstClose {
+		t.Fatalf("second Close changed cache stats: first=%+v second=%+v", afterFirstClose, afterSecondClose)
+	}
+
+	if got, want := afterSecondClose.ActiveCaches-before.ActiveCaches, int64(0); got != want {
+		t.Fatalf("active caches delta after double Close = %d, want %d", got, want)
+	}
+}
+
+func TestPieceReleaseDoesNotDependOnCacheClosedState(t *testing.T) {
+	setupStorageTest()
+	drainMemPieceChunkPoolForTest(t)
+
+	before := SnapshotCacheStats()
+	stor := NewStorage(64 * 1024)
+	cache := NewCache(64*1024, stor)
+
+	info := &metainfo.Info{
+		Files:       []metainfo.FileInfo{{Path: []string{"test.bin"}, Length: 64 * 1024}},
+		PieceLength: 64 * 1024,
+	}
+	info.Pieces = make([]byte, 20)
+
+	cache.Init(info, metainfo.NewHashFromHex("abcdef1234567890abcdef1234567890abcdef12"))
+	cache.isClosed.Store(true)
+
+	piece := cache.pieces[0]
+	if _, err := piece.WriteAt(bytes.Repeat([]byte{0xEF}, memPieceChunkSize), 0); err != nil {
+		t.Fatalf("WriteAt error: %v", err)
+	}
+
+	piece.Release()
+
+	if piece.mPiece.chunks != nil {
+		t.Fatal("Release should clear memory chunks even when cache is marked closed")
+	}
+
+	afterRelease := SnapshotCacheStats()
+	if got, want := afterRelease.InMemoryChunks-before.InMemoryChunks, int64(0); got != want {
+		t.Fatalf("in-memory chunks delta after Release = %d, want %d", got, want)
+	}
+
+	if got, want := afterRelease.LogicalFilledBytes-before.LogicalFilledBytes, int64(0); got != want {
+		t.Fatalf("logical filled delta after Release = %d, want %d", got, want)
+	}
+}
+
+func TestReleasedPieceTorrentSyncDecisions(t *testing.T) {
+	t.Parallel()
+
+	if shouldClearReleasedPiecePriority(torrent.PiecePriorityNone) {
+		t.Fatal("release should not clear an already-none torrent piece priority")
+	}
+
+	if !shouldClearReleasedPiecePriority(torrent.PiecePriorityNormal) {
+		t.Fatal("release should clear non-none torrent piece priority")
+	}
+
+	if shouldRefreshReleasedPieceCompletion(false) {
+		t.Fatal("release should not refresh torrent completion for an already-incomplete piece")
+	}
+
+	if !shouldRefreshReleasedPieceCompletion(true) {
+		t.Fatal("release should refresh torrent completion after evicting a complete piece")
+	}
+}
+
+func TestCleanPiecesConcurrentCallsAreSafe(t *testing.T) {
+	setupStorageTest()
+	drainMemPieceChunkPoolForTest(t)
+
+	stor := NewStorage(1 * 1024 * 1024)
+	cache := NewCache(1*1024*1024, stor)
+
+	info := &metainfo.Info{
+		Files:       []metainfo.FileInfo{{Path: []string{"test.bin"}, Length: 8 * memPieceChunkSize}},
+		PieceLength: memPieceChunkSize,
+	}
+	info.Pieces = make([]byte, 8*20)
+
+	cache.Init(info, metainfo.NewHashFromHex("abcdef1234567890abcdef1234567890abcdef12"))
+
+	for i := range 8 {
+		data := bytes.Repeat([]byte{byte(i)}, memPieceChunkSize)
+		if _, err := cache.pieces[i].WriteAt(data, 0); err != nil {
+			t.Fatalf("WriteAt piece %d error: %v", i, err)
+		}
+	}
+
+	cache.mu.Lock()
+	cache.capacity = 2 * memPieceChunkSize
+	cache.mu.Unlock()
+
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+			cache.CleanPieces()
+		}()
+	}
+
+	wg.Wait()
+
+	if got, wantMax := cache.filled.Load(), int64(2*memPieceChunkSize); got > wantMax {
+		t.Fatalf("filled bytes after concurrent CleanPieces = %d, want <= %d", got, wantMax)
+	}
+}
+
+func TestGetActiveReaderRangesDoesNotHoldReadersLockWhileCheckingReader(t *testing.T) {
+	setupStorageTest()
+
+	stor := NewStorage(64 * 1024)
+	cache := NewCache(64*1024, stor)
+
+	blockedReader := &Reader{cache: cache}
+	idleReader := &Reader{cache: cache}
+
+	blockedReader.isUse.Store(false)
+	idleReader.isUse.Store(false)
+
+	cache.readers.items[blockedReader] = struct{}{}
+	cache.readers.items[idleReader] = struct{}{}
+
+	blockedReader.mu.Lock()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		_ = cache.getActiveReaderRanges()
+	}()
+
+	if !canLockCacheReaders(t, cache, 200*time.Millisecond) {
+		blockedReader.mu.Unlock()
+		t.Fatal("getActiveReaderRanges held readers.mu while waiting on an individual reader lock")
+	}
+
+	blockedReader.mu.Unlock()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("getActiveReaderRanges did not finish after blocked reader lock was released")
+	}
+}
+
+func canLockCacheReaders(t *testing.T, cache *Cache, timeout time.Duration) bool {
+	t.Helper()
+
+	locked := make(chan struct{})
+
+	go func() {
+		cache.readers.mu.Lock()
+		_ = len(cache.readers.items)
+		cache.readers.mu.Unlock()
+		close(locked)
+	}()
+
+	select {
+	case <-locked:
+		return true
+	case <-time.After(timeout):
+		return false
 	}
 }
 
@@ -864,6 +1060,43 @@ func TestCachePriorityTrackedPiecesCleanup(t *testing.T) {
 	afterCleanup := SnapshotCachePriorityStats()
 	if got, want := afterCleanup.TrackedPieces-before.TrackedPieces, int64(0); got != want {
 		t.Fatalf("TrackedPieces delta after cleanup = %d, want %d", got, want)
+	}
+}
+
+func TestCacheUntrackPriorityPieceRemovesReleasedPieceState(t *testing.T) {
+	before := SnapshotCachePriorityStats()
+	cache := NewCache(64<<20, nil)
+	cache.registerMetrics()
+	t.Cleanup(cache.unregisterMetrics)
+
+	cache.priorities.pieces[3] = torrent.PiecePriorityNow
+	cache.priorities.pieces[7] = torrent.PiecePriorityReadahead
+	cache.setTrackedPriorityPieces(len(cache.priorities.pieces))
+
+	afterTrack := SnapshotCachePriorityStats()
+	if got, want := afterTrack.TrackedPieces-before.TrackedPieces, int64(2); got != want {
+		t.Fatalf("TrackedPieces delta after setup = %d, want %d", got, want)
+	}
+
+	if !cache.untrackPriorityPiece(3) {
+		t.Fatal("untrackPriorityPiece should report tracked piece removal")
+	}
+
+	if _, ok := cache.priorities.pieces[3]; ok {
+		t.Fatal("released piece should be removed from tracked priority state")
+	}
+
+	if got, want := cache.metrics.priorityTrackedPieces.Load(), int64(1); got != want {
+		t.Fatalf("cache tracked priority pieces = %d, want %d", got, want)
+	}
+
+	afterUntrack := SnapshotCachePriorityStats()
+	if got, want := afterUntrack.TrackedPieces-before.TrackedPieces, int64(1); got != want {
+		t.Fatalf("TrackedPieces delta after untrack = %d, want %d", got, want)
+	}
+
+	if cache.untrackPriorityPiece(3) {
+		t.Fatal("untrackPriorityPiece should not report removal twice")
 	}
 }
 

@@ -44,6 +44,7 @@ type streamFairnessRegistry struct {
 type streamFairnessFlow struct {
 	id uint64
 
+	torrentID        uint64
 	startedUnixNano  int64
 	lastDelayNano    atomic.Int64
 	bytesWritten     atomic.Int64
@@ -62,6 +63,7 @@ type streamFairnessSnapshot struct {
 }
 
 type activeStreamFairnessRecord struct {
+	TorrentID          uint64 `json:"torrent_id"`
 	ID                 uint64 `json:"id"`
 	ElapsedMS          int64  `json:"elapsed_ms"`
 	BytesWritten       int64  `json:"bytes_written"`
@@ -72,9 +74,10 @@ type activeStreamFairnessRecord struct {
 	MaxDelayMicros     int64  `json:"max_delay_us"`
 }
 
-func registerStreamFairness(started time.Time) (*streamFairnessFlow, func()) {
+func registerStreamFairness(started time.Time, torrentID uint64) (*streamFairnessFlow, func()) {
 	flow := &streamFairnessFlow{
 		id:              streamFairnessID.Add(1),
+		torrentID:       torrentID,
 		startedUnixNano: started.UnixNano(),
 	}
 
@@ -214,6 +217,7 @@ func (f *streamFairnessFlow) fairnessSnapshot(now time.Time) activeStreamFairnes
 	bytesWritten := f.bytesWritten.Load()
 
 	return activeStreamFairnessRecord{
+		TorrentID:          f.torrentID,
 		ID:                 f.id,
 		ElapsedMS:          elapsed.Milliseconds(),
 		BytesWritten:       bytesWritten,

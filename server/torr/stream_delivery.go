@@ -35,6 +35,7 @@ type streamDeliveryRegistry struct {
 type streamDelivery struct {
 	id uint64
 
+	torrentID          uint64
 	startedUnixNano    int64
 	firstWriteUnixNano atomic.Int64
 	lastWriteUnixNano  atomic.Int64
@@ -44,6 +45,11 @@ type streamDelivery struct {
 	writesOver3sTotal  atomic.Int64
 	writesOver10sTotal atomic.Int64
 	maxWriteMS         atomic.Int64
+	readWaitsTotal     atomic.Int64
+	readWaitTotalMS    atomic.Int64
+	readWaitsOver3s    atomic.Int64
+	readWaitsOver10s   atomic.Int64
+	maxReadWaitMS      atomic.Int64
 }
 
 type streamDeliverySnapshot struct {
@@ -58,6 +64,7 @@ type streamDeliverySnapshot struct {
 }
 
 type activeDeliverySnapshot struct {
+	TorrentID          uint64 `json:"torrent_id"`
 	ID                 uint64 `json:"id"`
 	ElapsedMS          int64  `json:"elapsed_ms"`
 	FirstByteMS        int64  `json:"first_byte_ms"`
@@ -69,11 +76,17 @@ type activeDeliverySnapshot struct {
 	WritesOver3sTotal  int64  `json:"writes_over_3s_total"`
 	WritesOver10sTotal int64  `json:"writes_over_10s_total"`
 	MaxWriteMS         int64  `json:"max_write_ms"`
+	ReadWaitsTotal     int64  `json:"read_waits_total"`
+	ReadWaitTotalMS    int64  `json:"read_wait_total_ms"`
+	ReadWaitsOver3s    int64  `json:"read_waits_over_3s_total"`
+	ReadWaitsOver10s   int64  `json:"read_waits_over_10s_total"`
+	MaxReadWaitMS      int64  `json:"max_read_wait_ms"`
 }
 
-func registerStreamDelivery(started time.Time) (*streamDelivery, func()) {
+func registerStreamDelivery(started time.Time, torrentID uint64) (*streamDelivery, func()) {
 	delivery := &streamDelivery{
 		id:              streamDeliveryID.Add(1),
+		torrentID:       torrentID,
 		startedUnixNano: started.UnixNano(),
 	}
 
@@ -121,6 +134,26 @@ func (d *streamDelivery) recordWrite(bytesWritten int, elapsed time.Duration) {
 	}
 }
 
+func (d *streamDelivery) recordReadWait(wait time.Duration) {
+	if d == nil || wait < streamReadWaitThreshold {
+		return
+	}
+
+	waitMS := wait.Milliseconds()
+
+	d.readWaitsTotal.Add(1)
+	d.readWaitTotalMS.Add(waitMS)
+	updateMaxAtomic(&d.maxReadWaitMS, waitMS)
+
+	if wait > 3*time.Second {
+		d.readWaitsOver3s.Add(1)
+	}
+
+	if wait > 10*time.Second {
+		d.readWaitsOver10s.Add(1)
+	}
+}
+
 func SnapshotStreamDelivery() streamDeliverySnapshot {
 	now := time.Now()
 	snapshot := streamDeliverySnapshot{
@@ -156,6 +189,7 @@ func (d *streamDelivery) snapshot(now time.Time) activeDeliverySnapshot {
 	bytesWritten := d.bytesWritten.Load()
 
 	return activeDeliverySnapshot{
+		TorrentID:          d.torrentID,
 		ID:                 d.id,
 		ElapsedMS:          elapsed.Milliseconds(),
 		FirstByteMS:        durationSinceStartMS(d.startedUnixNano, d.firstWriteUnixNano.Load()),
@@ -167,6 +201,11 @@ func (d *streamDelivery) snapshot(now time.Time) activeDeliverySnapshot {
 		WritesOver3sTotal:  d.writesOver3sTotal.Load(),
 		WritesOver10sTotal: d.writesOver10sTotal.Load(),
 		MaxWriteMS:         d.maxWriteMS.Load(),
+		ReadWaitsTotal:     d.readWaitsTotal.Load(),
+		ReadWaitTotalMS:    d.readWaitTotalMS.Load(),
+		ReadWaitsOver3s:    d.readWaitsOver3s.Load(),
+		ReadWaitsOver10s:   d.readWaitsOver10s.Load(),
+		MaxReadWaitMS:      d.maxReadWaitMS.Load(),
 	}
 }
 
