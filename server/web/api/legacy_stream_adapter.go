@@ -199,7 +199,7 @@ func (a legacyStreamAdapter) handleAction(c *gin.Context, req legacyStreamReques
 			return
 		}
 
-		c.JSON(http.StatusAccepted, gin.H{"status": "preload accepted", "hash": target.tor.HashHex()})
+		c.Status(http.StatusOK)
 	case legacyStreamActionStat:
 		c.JSON(http.StatusOK, target.tor.Status())
 	case legacyStreamActionM3U:

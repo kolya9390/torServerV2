@@ -22,8 +22,9 @@ type DefaultDeps struct {
 }
 
 type torrentService struct {
-	backend        torr.TorrentService
-	runtimeSignals torr.RuntimeSignals
+	backend          torr.TorrentService
+	settingsProvider sets.SettingsProvider
+	runtimeSignals   torr.RuntimeSignals
 }
 type settingsService struct {
 	provider          sets.SettingsProvider
@@ -63,8 +64,9 @@ func NewDefaultWithDeps(deps DefaultDeps) (*contracts.APIServices, error) {
 
 	return &contracts.APIServices{
 		Torrents: torrentService{
-			backend:        deps.TorrentBackend,
-			runtimeSignals: deps.RuntimeSignals,
+			backend:          deps.TorrentBackend,
+			settingsProvider: deps.SettingsProvider,
+			runtimeSignals:   deps.RuntimeSignals,
 		},
 		Settings: settingsService{
 			provider:          deps.SettingsProvider,

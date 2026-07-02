@@ -68,6 +68,8 @@ type NetworkConfig struct {
 	DownloadRateLimitKB int  `yaml:"download_rate_limit_kb"`
 	UploadRateLimitKB   int  `yaml:"upload_rate_limit_kb"`
 	PeersListenPort     int  `yaml:"peers_listen_port"`
+	EnableLPD           bool `yaml:"enable_lpd"`
+	LPDIPv6             bool `yaml:"lpd_ipv6"`
 }
 
 type SearchConfig struct {
@@ -90,14 +92,16 @@ type TMDBConfig struct {
 }
 
 type StreamConfig struct {
-	ResponsiveMode       bool   `yaml:"responsive_mode"`
-	CoreProfile          string `yaml:"core_profile"`
-	MaxConcurrentStreams int    `yaml:"max_concurrent_streams"`
-	StreamQueueSize      int    `yaml:"stream_queue_size"`
-	StreamQueueWaitSec   int    `yaml:"stream_queue_wait_sec"`
-	AdaptiveRAMinMB      int    `yaml:"adaptive_ra_min_mb"`
-	AdaptiveRAMaxMB      int    `yaml:"adaptive_ra_max_mb"`
-	ReadAheadPercent     int    `yaml:"read_ahead_percent"`
+	ResponsiveMode            bool   `yaml:"responsive_mode"`
+	CoreProfile               string `yaml:"core_profile"`
+	MaxConcurrentStreams      int    `yaml:"max_concurrent_streams"`
+	StreamQueueSize           int    `yaml:"stream_queue_size"`
+	StreamQueueWaitSec        int    `yaml:"stream_queue_wait_sec"`
+	MaxUniquePlaybackTorrents int    `yaml:"max_unique_playback_torrents"`
+	StartupPreloadPolicy      string `yaml:"startup_preload_policy"`
+	AdaptiveRAMinMB           int    `yaml:"adaptive_ra_min_mb"`
+	AdaptiveRAMaxMB           int    `yaml:"adaptive_ra_max_mb"`
+	ReadAheadPercent          int    `yaml:"read_ahead_percent"`
 }
 
 type DiskCacheConfig struct {
@@ -120,6 +124,9 @@ type DebugConfig struct {
 	ServiceOnly                bool  `yaml:"service_only"` // Only V2 code debug logs, no library logs
 	ShowFSActiveTorr           bool  `yaml:"show_fs_active_torr"`
 	EstablishedConnsPerTorrent int   `yaml:"established_conns_per_torrent_override"`
+	TotalHalfOpenConnsOverride int   `yaml:"total_half_open_conns_override"`
+	TrackerBudgetOverride      int   `yaml:"tracker_budget_override"`
+	StablePeerCap              int   `yaml:"stable_peer_cap"`
 	MaxUnverifiedBytesMB       int64 `yaml:"max_unverified_bytes_mb"`
 }
 
@@ -236,6 +243,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.Stream.CoreProfile == "" {
 		cfg.Stream.CoreProfile = "custom"
 	}
+	cfg.Stream.StartupPreloadPolicy = settings.NormalizeStartupPreloadPolicy(cfg.Stream.StartupPreloadPolicy)
 
 	if cfg.Stream.StreamQueueWaitSec == 0 {
 		cfg.Stream.StreamQueueWaitSec = 3
@@ -350,6 +358,8 @@ func applyNetworkSettings(c *Config, sets *settings.BTSets) {
 	sets.DownloadRateLimit = c.Network.DownloadRateLimitKB
 	sets.UploadRateLimit = c.Network.UploadRateLimitKB
 	sets.PeersListenPort = c.Network.PeersListenPort
+	sets.EnableLPD = c.Network.EnableLPD
+	sets.LPDIPv6 = c.Network.LPDIPv6
 }
 
 // applyDLNASettings maps DLNA config fields to BTSets.
@@ -394,6 +404,8 @@ func applyStreamSettings(c *Config, sets *settings.BTSets) {
 	sets.MaxConcurrentStreams = c.Stream.MaxConcurrentStreams
 	sets.StreamQueueSize = c.Stream.StreamQueueSize
 	sets.StreamQueueWaitSec = c.Stream.StreamQueueWaitSec
+	sets.MaxUniquePlaybackTorrents = c.Stream.MaxUniquePlaybackTorrents
+	sets.StartupPreloadPolicy = settings.NormalizeStartupPreloadPolicy(c.Stream.StartupPreloadPolicy)
 	sets.AdaptiveRAMinMB = c.Stream.AdaptiveRAMinMB
 	sets.AdaptiveRAMaxMB = c.Stream.AdaptiveRAMaxMB
 	sets.ReaderReadAHead = c.Stream.ReadAheadPercent
@@ -422,6 +434,9 @@ func applyDebugSettings(c *Config, sets *settings.BTSets) {
 	sets.ServiceOnlyDebug = c.Debug.ServiceOnly
 	sets.ShowFSActiveTorr = c.Debug.ShowFSActiveTorr
 	sets.DebugEstablishedConnsOverride = c.Debug.EstablishedConnsPerTorrent
+	sets.DebugTotalHalfOpenConnsOverride = c.Debug.TotalHalfOpenConnsOverride
+	sets.DebugTrackerBudgetOverride = c.Debug.TrackerBudgetOverride
+	sets.DebugStablePeerCap = c.Debug.StablePeerCap
 	sets.DebugMaxUnverifiedBytesMB = c.Debug.MaxUnverifiedBytesMB
 
 	// Always enable local V2 debug logs when either mode is enabled.

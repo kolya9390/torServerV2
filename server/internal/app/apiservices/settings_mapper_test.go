@@ -10,9 +10,15 @@ import (
 
 func TestMapSettingsFromBTSetsUsesApplicationDTO(t *testing.T) {
 	src := &sets.BTSets{
-		CacheSize:           1024,
-		EnableDLNA:          true,
-		EnableTorznabSearch: true,
+		CacheSize:                       1024,
+		EnableDLNA:                      true,
+		EnableTorznabSearch:             true,
+		EnableLPD:                       true,
+		LPDIPv6:                         true,
+		DebugEstablishedConnsOverride:   36,
+		DebugTotalHalfOpenConnsOverride: 500,
+		DebugTrackerBudgetOverride:      64,
+		DebugStablePeerCap:              22,
 		TorznabUrls: []sets.TorznabConfig{
 			{Host: "https://torznab.test", Key: "key", Name: "main"},
 		},
@@ -27,9 +33,15 @@ func TestMapSettingsFromBTSetsUsesApplicationDTO(t *testing.T) {
 
 	got := mapSettingsFromBTSets(src)
 	want := &contracts.Settings{
-		CacheSize:           1024,
-		EnableDLNA:          true,
-		EnableTorznabSearch: true,
+		CacheSize:                       1024,
+		EnableDLNA:                      true,
+		EnableTorznabSearch:             true,
+		EnableLPD:                       true,
+		LPDIPv6:                         true,
+		DebugEstablishedConnsOverride:   36,
+		DebugTotalHalfOpenConnsOverride: 500,
+		DebugTrackerBudgetOverride:      64,
+		DebugStablePeerCap:              22,
 		TorznabUrls: []contracts.TorznabConfig{
 			{Host: "https://torznab.test", Key: "key", Name: "main"},
 		},
@@ -49,9 +61,15 @@ func TestMapSettingsFromBTSetsUsesApplicationDTO(t *testing.T) {
 
 func TestMapSettingsToBTSetsKeepsLegacyShape(t *testing.T) {
 	src := &contracts.Settings{
-		CacheSize:           2048,
-		EnableDLNA:          true,
-		EnableTorznabSearch: true,
+		CacheSize:                       2048,
+		EnableDLNA:                      true,
+		EnableTorznabSearch:             true,
+		EnableLPD:                       true,
+		LPDIPv6:                         true,
+		DebugEstablishedConnsOverride:   36,
+		DebugTotalHalfOpenConnsOverride: 500,
+		DebugTrackerBudgetOverride:      64,
+		DebugStablePeerCap:              22,
 		TorznabUrls: []contracts.TorznabConfig{
 			{Host: "https://torznab.test", Key: "key", Name: "main"},
 		},
@@ -66,9 +84,15 @@ func TestMapSettingsToBTSetsKeepsLegacyShape(t *testing.T) {
 
 	got := mapSettingsToBTSets(src)
 	want := &sets.BTSets{
-		CacheSize:           2048,
-		EnableDLNA:          true,
-		EnableTorznabSearch: true,
+		CacheSize:                       2048,
+		EnableDLNA:                      true,
+		EnableTorznabSearch:             true,
+		EnableLPD:                       true,
+		LPDIPv6:                         true,
+		DebugEstablishedConnsOverride:   36,
+		DebugTotalHalfOpenConnsOverride: 500,
+		DebugTrackerBudgetOverride:      64,
+		DebugStablePeerCap:              22,
 		TorznabUrls: []sets.TorznabConfig{
 			{Host: "https://torznab.test", Key: "key", Name: "main"},
 		},

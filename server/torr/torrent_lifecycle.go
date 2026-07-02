@@ -93,6 +93,25 @@ func (t *Torrent) AddExpiredTime(duration time.Duration) {
 	}
 }
 
+func (t *Torrent) ShortenExpiredTime(duration time.Duration) {
+	if t == nil {
+		return
+	}
+
+	newExp := time.Now().Add(duration).UnixNano()
+
+	for {
+		cur := t.lifecycle.expiredUnixNano.Load()
+		if cur > 0 && cur <= newExp {
+			return
+		}
+
+		if t.lifecycle.expiredUnixNano.CompareAndSwap(cur, newExp) {
+			return
+		}
+	}
+}
+
 func (t *Torrent) watch() {
 	t.lifecycle.progressTicker = time.NewTicker(time.Second)
 	defer t.lifecycle.progressTicker.Stop()

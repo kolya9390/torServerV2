@@ -51,6 +51,7 @@ func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
 	config.NoDHT = networkCfg.DisableDHT
 	config.DisablePEX = networkCfg.DisablePEX
 	config.NoUpload = networkCfg.DisableUpload
+	config.LocalServiceDiscovery = localServiceDiscoveryConfig(networkCfg)
 	config.Bep20 = peerID
 	config.PeerID = utils.PeerIDRandom(peerID)
 	config.UpnpID = upnpID
@@ -59,7 +60,7 @@ func (bt *BTServer) buildClientConfig() *torrent.ClientConfig {
 	policy := connectionPolicyForSettings(sets, config.EstablishedConnsPerTorrent)
 	config.EstablishedConnsPerTorrent = policy.effectiveConns
 	config.HalfOpenConnsPerTorrent = maxInt(policy.effectiveConns, config.HalfOpenConnsPerTorrent)
-	config.TotalHalfOpenConns = maxInt(policy.effectiveConns*8, 200)
+	config.TotalHalfOpenConns = policy.totalHalfOpen
 	config.TorrentPeersLowWater = policy.peerLowWater
 	config.TorrentPeersHighWater = policy.peerHighWater
 
@@ -108,6 +109,16 @@ func configureTorrentLibraryLogging(config *torrent.ClientConfig, debugCfg setti
 	config.Slogger = slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
 		Level: slog.Level(100),
 	}))
+}
+
+func localServiceDiscoveryConfig(networkCfg settings.NetworkConfig) *torrent.LocalServiceDiscoveryConfig {
+	if !networkCfg.EnableLPD {
+		return nil
+	}
+
+	return &torrent.LocalServiceDiscoveryConfig{
+		Ip6: networkCfg.LPDIPv6 && networkCfg.EnableIPv6,
+	}
 }
 
 func debugMaxUnverifiedBytes(debugCfg settings.DebugConfig) int64 {

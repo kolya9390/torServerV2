@@ -24,11 +24,39 @@ const (
 	concurrentStreamReadaheadShareRatio = int64(4)
 )
 
+type streamReadAheadPolicyInput struct {
+	pieceLength   int64
+	cacheCapacity int64
+	activeReaders int
+}
+
+type streamReadAheadPolicy struct {
+	readerReadahead int64
+}
+
 type streamReaderContextSetter interface {
 	SetContext(context.Context)
 }
 
 func streamReaderReadahead(pieceLength, cacheCap int64, activeReaders int) int64 {
+	return streamReadAheadPolicyFor(streamReadAheadPolicyInput{
+		pieceLength:   pieceLength,
+		cacheCapacity: cacheCap,
+		activeReaders: activeReaders,
+	}).readerReadahead
+}
+
+func streamReadAheadPolicyFor(input streamReadAheadPolicyInput) streamReadAheadPolicy {
+	return streamReadAheadPolicy{
+		readerReadahead: boundedStreamReaderReadahead(input),
+	}
+}
+
+func boundedStreamReaderReadahead(input streamReadAheadPolicyInput) int64 {
+	pieceLength := input.pieceLength
+	cacheCap := input.cacheCapacity
+	activeReaders := input.activeReaders
+
 	if activeReaders < 1 {
 		activeReaders = 1
 	}

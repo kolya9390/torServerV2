@@ -603,7 +603,7 @@ func TestLegacyStreamUnauthenticatedM3UUsesReadOnlyActivation(t *testing.T) {
 	}
 }
 
-func TestLegacyStreamPreloadOnlyReturnsAccepted(t *testing.T) {
+func TestLegacyStreamPreloadOnlyReturnsOK(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tor := testTorrentHandle{
@@ -626,17 +626,14 @@ func TestLegacyStreamPreloadOnlyReturnsAccepted(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
 	}
 
 	if !torrentsSvc.preloadCalled || torrentsSvc.preloadIndex != 1 {
 		t.Fatalf("expected preload queue with index 1, called=%v index=%d", torrentsSvc.preloadCalled, torrentsSvc.preloadIndex)
 	}
 
-	if !strings.Contains(w.Body.String(), `"status":"preload accepted"`) {
-		t.Fatalf("expected accepted response, got %s", w.Body.String())
-	}
 }
 
 func TestLegacyStreamPreloadQueueFullReturnsServiceUnavailable(t *testing.T) {

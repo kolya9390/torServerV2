@@ -3,9 +3,11 @@ package torr
 import (
 	"sort"
 	"strconv"
+	"time"
 
 	"server/torr/state"
 	cacheSt "server/torr/storage/state"
+	"server/torr/storage/torrstor"
 	"server/torrshash"
 	utils2 "server/utils"
 
@@ -20,7 +22,16 @@ type TorrentRuntimeMetrics struct {
 	PendingPeers     int    `json:"pending_peers"`
 	HalfOpenPeers    int    `json:"half_open_peers"`
 	ConnectedSeeders int    `json:"connected_seeders"`
+	MaxEstablished   int    `json:"max_established_conns"`
 	ActiveReaders    int    `json:"active_readers"`
+	TotalReaders     int    `json:"total_readers"`
+	IdleReaders      int    `json:"idle_readers"`
+	OldestReaderMS   int64  `json:"oldest_reader_age_ms"`
+	NewestReaderMS   int64  `json:"newest_reader_age_ms"`
+	MaxReaderIdleMS  int64  `json:"max_reader_idle_ms"`
+	PreloadActive    bool   `json:"preload_active"`
+	PreloadedBytes   int64  `json:"preloaded_bytes"`
+	PreloadTarget    int64  `json:"preload_target_bytes"`
 	TrackerTiers     int    `json:"tracker_tiers"`
 	Trackers         int    `json:"trackers"`
 	DownloadSpeed    int64  `json:"download_speed"`
@@ -174,6 +185,10 @@ func (t *Torrent) RuntimeMetricsSnapshot() (TorrentRuntimeMetrics, bool) {
 
 	stats := t.Stats()
 	trackerTiers, trackers := countTrackerTiers(t.TorrentSpec)
+	readerActivity := torrstor.ReaderActivitySnapshot{}
+	if t.cache != nil {
+		readerActivity = t.cache.ReaderActivitySnapshot(time.Now())
+	}
 
 	return TorrentRuntimeMetrics{
 		RuntimeID:        t.RuntimeDiagnosticID(),
@@ -182,7 +197,16 @@ func (t *Torrent) RuntimeMetricsSnapshot() (TorrentRuntimeMetrics, bool) {
 		PendingPeers:     stats.PendingPeers,
 		HalfOpenPeers:    stats.HalfOpenPeers,
 		ConnectedSeeders: stats.ConnectedSeeders,
-		ActiveReaders:    t.ActiveReaders(),
+		MaxEstablished:   int(t.lifecycle.lastMaxEstablished.Load()),
+		ActiveReaders:    readerActivity.ActiveReaders,
+		TotalReaders:     readerActivity.TotalReaders,
+		IdleReaders:      readerActivity.IdleReaders,
+		OldestReaderMS:   readerActivity.OldestReaderAgeMS,
+		NewestReaderMS:   readerActivity.NewestReaderAgeMS,
+		MaxReaderIdleMS:  readerActivity.MaxReaderIdleMS,
+		PreloadActive:    t.Stat == state.TorrentPreload,
+		PreloadedBytes:   t.preload.loadedBytes,
+		PreloadTarget:    t.preload.targetBytes,
 		TrackerTiers:     trackerTiers,
 		Trackers:         trackers,
 		DownloadSpeed:    int64(t.transfer.downloadSpeed),

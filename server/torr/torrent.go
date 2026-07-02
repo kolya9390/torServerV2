@@ -35,10 +35,12 @@ type torrentMediaState struct {
 
 type torrentLifecycleState struct {
 	expiredUnixNano    atomic.Int64
+	playbackQuiesced   atomic.Bool
+	lastPeerBoostNano  atomic.Int64
 	closed             <-chan struct{}
 	progressTicker     *time.Ticker
 	lastPriorityUpdate time.Time
-	lastMaxEstablished int32
+	lastMaxEstablished atomic.Int32
 }
 
 type torrentStatusCacheState struct {
@@ -161,16 +163,68 @@ func adaptiveReadahead(cacheCap int64, playbackTorrents int) int64 {
 }
 
 func adaptivePriorityInterval(playbackTorrents int) time.Duration {
-	_ = playbackTorrents
+	if playbackTorrents > 1 {
+		return 2 * time.Second
+	}
 
 	return time.Second
 }
 
 func adaptiveMaxEstablishedConns(sets *settings.BTSets, playbackTorrents, localReaders int) int {
-	_ = playbackTorrents
-	_ = localReaders
+	return adaptiveMaxEstablishedConnsForReaderAge(sets, playbackTorrents, localReaders, 0)
+}
 
-	return connectionPolicyForSettings(sets, defaultEstablishedConns).effectiveConns
+func adaptiveMaxEstablishedConnsForReaderAge(
+	sets *settings.BTSets,
+	playbackTorrents int,
+	localReaders int,
+	oldestReaderAge time.Duration,
+) int {
+	policy := connectionPolicyForSettings(sets, defaultEstablishedConns)
+	target := policy.effectiveConns
+	debugCfg := settings.DebugConfig{}
+	if sets != nil {
+		debugCfg = sets.DebugConfig()
+	}
+
+	stableCap := stablePeerCapForDebug(debugCfg, target)
+
+	if !shouldApplyStablePeerRelief(sets, policy, stableCap, playbackTorrents, localReaders, oldestReaderAge) {
+		return target
+	}
+
+	return stableCap
+}
+
+func shouldApplyStablePeerRelief(
+	sets *settings.BTSets,
+	policy connectionPolicy,
+	stableCap int,
+	playbackTorrents int,
+	localReaders int,
+	oldestReaderAge time.Duration,
+) bool {
+	if sets == nil || !isTCPOnlyBalancedCoreProfile(sets.CoreProfile) {
+		return false
+	}
+
+	if policy.debugOverride > 0 || stableCap <= 0 || policy.effectiveConns <= stableCap {
+		return false
+	}
+
+	if playbackTorrents < 2 || localReaders <= 0 {
+		return false
+	}
+
+	return oldestReaderAge >= tcpOnlyBalancedPeerReliefMinAge
+}
+
+func stablePeerCapForDebug(debugCfg settings.DebugConfig, effectiveConns int) int {
+	if !debugCfg.EnableDebug || debugCfg.StablePeerCap <= 0 || effectiveConns <= 0 {
+		return 0
+	}
+
+	return min(debugCfg.StablePeerCap, effectiveConns)
 }
 
 func NewTorrent(spec *torrent.TorrentSpec, bt *BTServer) (*Torrent, error) {

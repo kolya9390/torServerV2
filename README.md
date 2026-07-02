@@ -1,15 +1,19 @@
-# TorrServer — Ядро Потоковой Передачи Торрентов
+# TorrServerV2 — Self-hosted Torrent Streaming Backend
 
 [![Build Status](https://github.com/kolya9390/torServerV2/actions/workflows/ci.yml/badge.svg)](https://github.com/kolya9390/torServerV2/actions)
 [![License](https://img.shields.io/github/license/YouROK/TorrServer)](LICENSE)
 
-> **Поставил и забыл** — лёгкий, быстрый, без лишнего
+> Надежный домашний torrent streaming backend для 1-2 heavy 4K streams, низкой нагрузки в release-режиме и удобного CLI-управления.
 
 ---
 
 ## ℹ️ О проекте
 
-Этот проект основан на [YouROK/TorrServer](https://github.com/YouROK/TorrServer) — оригинальной реализации сервера для стриминга торрентов.
+TorrServerV2 основан на [YouROK/TorrServer](https://github.com/YouROK/TorrServer) и развивается как
+предсказуемый self-hosted сервер для домашнего просмотра торрентов через HTTP/DLNA.
+
+Главная цель проекта - стабильный streaming engine для домашней сети: запустили сервер на Mac, mini-PC,
+NAS или домашнем Linux-сервере, подключили ТВ/плеер/клиент и смотрите фильмы без ручной возни с файлами.
 
 **Рекомендуемые клиенты для просмотра:**
 
@@ -26,12 +30,14 @@
 
 ## 📖 Что это?
 
-**TorrServer** — минималистичное ядро для стриминга торрентов через HTTP/DLNA. Один бинарник содержит и сервер, и CLI для управления.
+**TorrServerV2** — один бинарник, который содержит сервер и CLI для управления. Сервер скачивает torrent
+on-demand, кэширует нужные части и отдает медиапоток клиентам через HTTP/DLNA.
 
 **Философия:**
-- ✅ **Лёгкость** — RAM ~30-50MB idle
-- ✅ **Скорость** — запуск ~1-2 сек
-- ✅ **Удобство** — настройка "из коробки"
+- ✅ **Стабильность** — основной target: 1 heavy 4K stream; recommended target: 2 heavy 4K streams при подходящих ресурсах.
+- ✅ **Низкий release overhead** — debug endpoints, pprof и тяжелые diagnostics выключены по умолчанию.
+- ✅ **Предсказуемость** — streaming profiles, безопасный shutdown/drop и понятная диагностика проблем.
+- ✅ **Управляемость** — встроенный CLI для локального и удаленного управления сервером.
 
 **Что умеет:**
 - Стриминг торрентов через HTTP
@@ -40,6 +46,21 @@
 - HTTP API для автоматизации
 - CLI для управления сервером
 - Управление пользователями (авторизация)
+
+---
+
+## 🎯 Целевые сценарии
+
+| Сценарий | Ожидание |
+|----------|----------|
+| **Idle** | Почти нулевая CPU-нагрузка, без тяжелого фонового мониторинга |
+| **1 heavy 4K stream** | Основной стабильный сценарий |
+| **2 heavy 4K streams** | Целевой recommended сценарий при нормальной машине, сети и swarm |
+| **3-4 heavy 4K streams** | Best effort, без продуктовой гарантии стабильности |
+
+Важно: сервер может контролировать свой lifecycle, cache, HTTP streaming, release/debug policy и resource overhead.
+Но torrent streaming зависит от swarm, seeders, trackers, WAN/LAN, клиента, Wi-Fi и bitrate файла. Поэтому
+стабильность конкретного фильма всегда зависит не только от сервера.
 
 ---
 
@@ -337,21 +358,101 @@ docker build -t torrserver .  # Docker
 | `TS_PASSWORD` | `` | Пароль для авторизации |
 | `TS_SHUTDOWN_TOKEN` | `` | Токен для shutdown (public mode) |
 
+### Streaming profiles
+
+Основной release default остается compatibility-first:
+
+```yaml
+streaming:
+  core_profile: "custom"
+```
+
+Для тяжелого домашнего просмотра можно использовать профиль:
+
+```yaml
+streaming:
+  core_profile: "tcp-only-balanced"
+```
+
+`tcp-only-balanced` снижает часть сетевого overhead и является recommended Home 4K profile для 1-2 heavy streams
+на подходящей домашней машине, но не включен по умолчанию, чтобы сохранить broad compatibility. Если конкретному swarm
+нужен более широкий transport reach, вернитесь к `custom`.
+
+`low-cpu` предназначен для CPU-constrained устройств и не является общей рекомендацией для тяжелых 4K streams.
+
+### Network peer discovery
+
+BEP-14 Local Peer Discovery добавлен как opt-in режим для измеряемых home/LAN экспериментов:
+
+```yaml
+network:
+  enable_lpd: false
+  lpd_ipv6: false
+```
+
+LPD может быстрее находить локальных BitTorrent-пиров в домашней сети и приближает peer discovery к TorrServer.
+Runtime A/B показал рост discovered/queued peers, но не доказал улучшение playback health для heavy Home 4K сценария.
+Поэтому LPD выключен по умолчанию, чтобы не добавлять multicast/noise и privacy surface без доказанной пользы.
+IPv6 LPD включайте только если IPv6 в локальной сети реально используется и `enable_ipv6: true`.
+
 ### Production / public deployment
 
-- Keep `debug.enabled: false` in release and internet-exposed deployments. Full debug mode exposes `/debug/pprof/*`, `/debug/vars`, heap, and goroutine diagnostics and should be used only for trusted local profiling.
-- For local diagnostics, temporarily set `debug.enabled: true`, collect the profile, then switch it back to `false`. Use `debug.service_only: true` only when you need TorrServerV2 debug logs without HTTP debug endpoints or torrent library debug noise.
-- CORS allow-all is the compatibility mode for home media clients and Smart TV apps. For VPS, reverse proxy, or internet-exposed deployments, set `TS_CORS_ALLOW_ORIGINS` to a comma-separated allowlist, for example `https://example.com,https://app.example.com`.
-- `TS_CORS_ALLOW_PRIVATE_NETWORK=1` should be enabled only when browsers on trusted local networks need Private Network Access preflight support.
+- Держите `debug.enabled: false` в release и internet-exposed deployments. Полный debug mode публикует
+  `/debug/pprof/*`, `/debug/vars`, heap и goroutine diagnostics, поэтому он предназначен только для доверенного
+  локального profiling.
+- Для локальной диагностики временно включите `debug.enabled: true`, соберите profile/snapshot и верните значение
+  обратно в `false`. Используйте `debug.service_only: true`, когда нужны debug logs TorrServerV2 без HTTP debug
+  endpoints и torrent library debug noise.
+- CORS allow-all остается compatibility mode для домашних media clients и Smart TV apps. Для VPS, reverse proxy или
+  internet-exposed deployments задайте `TS_CORS_ALLOW_ORIGINS` как comma-separated allowlist, например
+  `https://example.com,https://app.example.com`.
+- `TS_CORS_ALLOW_PRIVATE_NETWORK=1` стоит включать только когда браузерам в доверенной локальной сети нужна поддержка
+  Private Network Access preflight.
 
 ---
 
 ## 📊 Ресурсы
 
-| Режим | RAM | CPU |
-|-------|-----|-----|
-| **Idle** | ~30-50 MB | ~0.1% |
-| **Стриминг** | ~100-200 MB | ~5-10% |
+Ресурсы зависят от bitrate, количества активных streams, качества swarm, cache mode, Wi-Fi/LAN и клиента.
+Ниже - практический target для домашнего использования, а не синтетический максимум.
+
+| Профиль машины | Ресурсы | Ожидание |
+|----------------|---------|----------|
+| **Minimum supported** | 4 GB RAM total, желательно 2 GB свободно до запуска, 4-core CPU | 1 heavy stream как основная цель; 2 heavy streams best effort |
+| **Recommended** | 8 GB RAM total, 3-4 GB свободно, Apple Silicon M1+ или x86_64 4+ cores, SSD | Целевой режим для стабильных 2 heavy 4K streams |
+| **Comfort / headroom** | 16 GB RAM total, 6 GB свободно, современный CPU, SSD | 2 heavy streams стабильно; 3-4 streams возможны, но остаются best effort |
+
+Ориентиры для recommended режима:
+
+- TorrServer memory budget: обычно 300-800 MB, с пиками до 1-1.5 GB в тяжелых сценариях.
+- WAN: стабильные фактические 250 Mbps+ download для двух heavy 4K streams.
+- LAN: стабильные 300-500 Mbps, желательно Ethernet или хороший Wi-Fi 6/6E.
+- Storage: SSD предпочтителен, особенно если используется disk cache.
+
+Для нескольких heavy 4K streams сеть может стать главным bottleneck раньше, чем CPU. Один 4K файл может потреблять
+20-100+ Mbps, а два тяжелых remux-потока требуют заметного запаса на пики, retransmits и поведение клиента.
+
+---
+
+## 🔎 Диагностика и debug mode
+
+TorrServerV2 не должен постоянно собирать тяжелые runtime diagnostics в release-режиме.
+
+По умолчанию:
+
+- `debug.enabled=false`;
+- `/debug/pprof/*`, `/debug/vars`, heap и goroutine diagnostics не публикуются;
+- тяжелые stream diagnostics и runtime metric updater не работают;
+- debug-only torrent knobs игнорируются.
+
+Для локального анализа проблемы временно включите:
+
+```yaml
+debug:
+  enabled: true
+```
+
+После сбора профилей и snapshot верните `debug.enabled: false`.
 
 ---
 

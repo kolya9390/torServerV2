@@ -88,10 +88,10 @@ func TestAdaptivePriorityInterval(t *testing.T) {
 		want             time.Duration
 	}{
 		{name: "single", playbackTorrents: 1, want: time.Second},
-		{name: "dual", playbackTorrents: 2, want: time.Second},
-		{name: "three", playbackTorrents: 3, want: time.Second},
-		{name: "six", playbackTorrents: 6, want: time.Second},
-		{name: "twelve", playbackTorrents: 12, want: time.Second},
+		{name: "dual", playbackTorrents: 2, want: 2 * time.Second},
+		{name: "three", playbackTorrents: 3, want: 2 * time.Second},
+		{name: "six", playbackTorrents: 6, want: 2 * time.Second},
+		{name: "twelve", playbackTorrents: 12, want: 2 * time.Second},
 	}
 
 	for _, tt := range tests {
@@ -118,6 +118,7 @@ func TestAdaptiveMaxEstablishedConns(t *testing.T) {
 		{name: "many playback keeps configured peer budget", sets: &settings.BTSets{ConnectionsLimit: 25}, playbackTorrents: 4, localReaders: 1, want: 25},
 		{name: "higher configured limit preserved", sets: &settings.BTSets{ConnectionsLimit: 96}, playbackTorrents: 1, localReaders: 1, want: 96},
 		{name: "high configured limit preserved", sets: &settings.BTSets{ConnectionsLimit: 120}, playbackTorrents: 1, localReaders: 1, want: 120},
+		{name: "tcp only balanced two playback keeps configured peer reach", sets: &settings.BTSets{CoreProfile: "tcp-only-balanced", ConnectionsLimit: 25, DisableUTP: true}, playbackTorrents: 2, localReaders: 1, want: 25},
 		{name: "low cpu profile honors measured low limit", sets: &settings.BTSets{CoreProfile: "low-cpu", ConnectionsLimit: 12}, playbackTorrents: 2, localReaders: 1, want: 12},
 		{name: "low cpu profile default stays bounded", sets: &settings.BTSets{CoreProfile: "low-cpu"}, playbackTorrents: 1, localReaders: 1, want: 24},
 		{name: "debug override bounds active policy", sets: &settings.BTSets{EnableDebug: true, DebugEstablishedConnsOverride: 36}, playbackTorrents: 2, localReaders: 1, want: 36},
@@ -130,6 +131,76 @@ func TestAdaptiveMaxEstablishedConns(t *testing.T) {
 			if got != tt.want {
 				t.Fatalf("adaptiveMaxEstablishedConns(%+v, %d, %d) = %d, want %d",
 					tt.sets, tt.playbackTorrents, tt.localReaders, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAdaptiveMaxEstablishedConnsForReaderAge(t *testing.T) {
+	tests := []struct {
+		name             string
+		sets             *settings.BTSets
+		playbackTorrents int
+		localReaders     int
+		oldestReaderAge  time.Duration
+		want             int
+	}{
+		{name: "custom profile does not apply stable relief", sets: &settings.BTSets{
+			CoreProfile:      "custom",
+			ConnectionsLimit: 25,
+		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 25},
+		{name: "tcp only balanced startup keeps full peer reach", sets: &settings.BTSets{
+			CoreProfile:      "tcp-only-balanced",
+			ConnectionsLimit: 25,
+		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 30 * time.Second, want: 25},
+		{name: "tcp only balanced single playback keeps full peer reach", sets: &settings.BTSets{
+			CoreProfile:      "tcp-only-balanced",
+			ConnectionsLimit: 25,
+		}, playbackTorrents: 1, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 25},
+		{name: "tcp only balanced same torrent readers keep full peer reach", sets: &settings.BTSets{
+			CoreProfile:      "tcp-only-balanced",
+			ConnectionsLimit: 25,
+		}, playbackTorrents: 1, localReaders: 2, oldestReaderAge: 2 * time.Minute, want: 25},
+		{name: "tcp only balanced stable two playback keeps full peer reach without debug cap", sets: &settings.BTSets{
+			CoreProfile:      "tcp-only-balanced",
+			ConnectionsLimit: 25,
+		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 25},
+		{name: "tcp only balanced stable two playback applies debug bounded relief", sets: &settings.BTSets{
+			CoreProfile:        "tcp-only-balanced",
+			ConnectionsLimit:   25,
+			EnableDebug:        true,
+			DebugStablePeerCap: 22,
+		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 22},
+		{name: "debug stable cap ignored outside debug", sets: &settings.BTSets{
+			CoreProfile:        "tcp-only-balanced",
+			ConnectionsLimit:   25,
+			DebugStablePeerCap: 22,
+		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 25},
+		{name: "tcp only balanced lower configured cap is preserved", sets: &settings.BTSets{
+			CoreProfile:        "tcp-only-balanced",
+			ConnectionsLimit:   16,
+			EnableDebug:        true,
+			DebugStablePeerCap: 22,
+		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 16},
+		{name: "debug override disables stable relief for experiments", sets: &settings.BTSets{
+			CoreProfile:                   "tcp-only-balanced",
+			ConnectionsLimit:              25,
+			EnableDebug:                   true,
+			DebugEstablishedConnsOverride: 30,
+		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 30},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := adaptiveMaxEstablishedConnsForReaderAge(
+				tt.sets,
+				tt.playbackTorrents,
+				tt.localReaders,
+				tt.oldestReaderAge,
+			)
+			if got != tt.want {
+				t.Fatalf("adaptiveMaxEstablishedConnsForReaderAge(%+v, %d, %d, %s) = %d, want %d",
+					tt.sets, tt.playbackTorrents, tt.localReaders, tt.oldestReaderAge, got, tt.want)
 			}
 		})
 	}
@@ -165,6 +236,204 @@ func TestShouldExpireTorrent(t *testing.T) {
 	}
 }
 
+func TestShortenExpiredTime(t *testing.T) {
+	torr := &Torrent{}
+
+	torr.AddExpiredTime(time.Minute)
+	initial := torr.lifecycle.expiredUnixNano.Load()
+	torr.ShortenExpiredTime(5 * time.Second)
+	shortened := torr.lifecycle.expiredUnixNano.Load()
+
+	if shortened <= 0 {
+		t.Fatal("ShortenExpiredTime() did not set expiration")
+	}
+
+	if shortened >= initial {
+		t.Fatalf("ShortenExpiredTime() = %d, want earlier than %d", shortened, initial)
+	}
+
+	torr.ShortenExpiredTime(time.Minute)
+	if got := torr.lifecycle.expiredUnixNano.Load(); got != shortened {
+		t.Fatalf("ShortenExpiredTime() moved expiration later: got %d, want %d", got, shortened)
+	}
+}
+
+func TestPostPlaybackDisconnectDelay(t *testing.T) {
+	tests := []struct {
+		name string
+		sets *settings.BTSets
+		want time.Duration
+	}{
+		{name: "nil settings uses default timeout", want: 30 * time.Second},
+		{name: "custom profile preserves configured timeout", sets: &settings.BTSets{
+			CoreProfile:              "custom",
+			TorrentDisconnectTimeout: 30,
+		}, want: 30 * time.Second},
+		{name: "tcp only balanced caps post playback idle", sets: &settings.BTSets{
+			CoreProfile:              "tcp-only-balanced",
+			TorrentDisconnectTimeout: 30,
+		}, want: 5 * time.Second},
+		{name: "tcp only balanced preserves shorter user timeout", sets: &settings.BTSets{
+			CoreProfile:              "tcp-only-balanced",
+			TorrentDisconnectTimeout: 3,
+		}, want: 3 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := postPlaybackDisconnectDelay(tt.sets); got != tt.want {
+				t.Fatalf("postPlaybackDisconnectDelay() = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestShouldBoostPeerAcquisition(t *testing.T) {
+	tests := []struct {
+		name                   string
+		sets                   *settings.BTSets
+		activePlaybackTorrents int
+		activeReaders          int
+		activePeers            int
+		connectedSeeders       int
+		want                   bool
+		wantNotWeak            bool
+	}{
+		{name: "nil settings disabled", activePlaybackTorrents: 2, activeReaders: 1, want: false},
+		{name: "custom profile disabled", sets: &settings.BTSets{
+			CoreProfile: "custom",
+		}, activePlaybackTorrents: 2, activeReaders: 1, want: false},
+		{name: "single active torrent disabled", sets: &settings.BTSets{
+			CoreProfile: "tcp-only-balanced",
+		}, activePlaybackTorrents: 1, activeReaders: 1, want: false},
+		{name: "dht disabled", sets: &settings.BTSets{
+			CoreProfile: "tcp-only-balanced",
+			DisableDHT:  true,
+		}, activePlaybackTorrents: 2, activeReaders: 1, want: false},
+		{name: "inactive reader disabled", sets: &settings.BTSets{
+			CoreProfile: "tcp-only-balanced",
+		}, activePlaybackTorrents: 2, activeReaders: 0, activePeers: 2, connectedSeeders: 2, want: false},
+		{name: "saturated torrent skipped", sets: &settings.BTSets{
+			CoreProfile: "tcp-only-balanced",
+		}, activePlaybackTorrents: 2, activeReaders: 1, activePeers: 12, connectedSeeders: 10, want: false, wantNotWeak: true},
+		{name: "weak active peers enabled", sets: &settings.BTSets{
+			CoreProfile: "tcp-only-balanced",
+		}, activePlaybackTorrents: 2, activeReaders: 1, activePeers: 6, connectedSeeders: 9, want: true},
+		{name: "weak seeders enabled", sets: &settings.BTSets{
+			CoreProfile: "tcp-only-balanced",
+		}, activePlaybackTorrents: 2, activeReaders: 1, activePeers: 9, connectedSeeders: 6, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldBoostPeerAcquisition(tt.sets, peerAcquisitionBoostInput{
+				activePlaybackTorrents: tt.activePlaybackTorrents,
+				activeReaders:          tt.activeReaders,
+				activePeers:            tt.activePeers,
+				connectedSeeders:       tt.connectedSeeders,
+			})
+
+			if got.enabled != tt.want {
+				t.Fatalf("shouldBoostPeerAcquisition().enabled = %v, want %v", got.enabled, tt.want)
+			}
+
+			if got.notWeak != tt.wantNotWeak {
+				t.Fatalf("shouldBoostPeerAcquisition().notWeak = %v, want %v", got.notWeak, tt.wantNotWeak)
+			}
+		})
+	}
+}
+
+func TestIsWeakPeerAcquisitionTorrent(t *testing.T) {
+	tests := []struct {
+		name string
+		in   peerAcquisitionBoostInput
+		want bool
+	}{
+		{name: "below peer floor", in: peerAcquisitionBoostInput{activePeers: 7, connectedSeeders: 9}, want: true},
+		{name: "below seeder floor", in: peerAcquisitionBoostInput{activePeers: 9, connectedSeeders: 7}, want: true},
+		{name: "at floors", in: peerAcquisitionBoostInput{
+			activePeers:      peerAcquisitionWeakActivePeersFloor,
+			connectedSeeders: peerAcquisitionWeakSeedersFloor,
+		}, want: false},
+		{name: "above floors", in: peerAcquisitionBoostInput{activePeers: 12, connectedSeeders: 10}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isWeakPeerAcquisitionTorrent(tt.in); got != tt.want {
+				t.Fatalf("isWeakPeerAcquisitionTorrent() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClaimPeerAcquisitionBoost(t *testing.T) {
+	torr := &Torrent{}
+	now := time.Unix(100, 0)
+
+	if !torr.claimPeerAcquisitionBoost(now, peerAcquisitionBoostCooldown) {
+		t.Fatal("first claim should be accepted")
+	}
+
+	if torr.claimPeerAcquisitionBoost(now.Add(peerAcquisitionBoostCooldown/2), peerAcquisitionBoostCooldown) {
+		t.Fatal("claim inside cooldown should be rejected")
+	}
+
+	if !torr.claimPeerAcquisitionBoost(now.Add(peerAcquisitionBoostCooldown), peerAcquisitionBoostCooldown) {
+		t.Fatal("claim after cooldown should be accepted")
+	}
+}
+
+func TestPeerAcquisitionBoostCountersAreDebugOnly(t *testing.T) {
+	resetPeerAcquisitionBoostForTest()
+	t.Cleanup(resetPeerAcquisitionBoostForTest)
+
+	recordPeerBoostEligible(false)
+	recordPeerBoostStarted(false)
+	recordPeerBoostCooldownSkipped(false)
+	recordPeerBoostNoDHTServers(false)
+	recordPeerBoostAnnounceError(false)
+	recordPeerBoostNotWeakSkipped(false)
+	recordPeerBoostStopped(false)
+	recordPeerBoostCompleted(false)
+
+	snapshot := SnapshotPeerAcquisitionBoost()
+	if snapshot.EligibleTotal != 0 ||
+		snapshot.StartedTotal != 0 ||
+		snapshot.CooldownSkippedTotal != 0 ||
+		snapshot.NoDHTServersTotal != 0 ||
+		snapshot.AnnounceErrorsTotal != 0 ||
+		snapshot.NotWeakSkippedTotal != 0 ||
+		snapshot.StoppedTotal != 0 ||
+		snapshot.CompletedTotal != 0 ||
+		snapshot.ActiveBoosts != 0 {
+		t.Fatalf("debug-disabled counters changed: %+v", snapshot)
+	}
+
+	recordPeerBoostEligible(true)
+	recordPeerBoostStarted(true)
+	recordPeerBoostCooldownSkipped(true)
+	recordPeerBoostNoDHTServers(true)
+	recordPeerBoostAnnounceError(true)
+	recordPeerBoostNotWeakSkipped(true)
+	recordPeerBoostStopped(true)
+	recordPeerBoostCompleted(true)
+
+	snapshot = SnapshotPeerAcquisitionBoost()
+	if snapshot.EligibleTotal != 1 ||
+		snapshot.StartedTotal != 1 ||
+		snapshot.CooldownSkippedTotal != 1 ||
+		snapshot.NoDHTServersTotal != 1 ||
+		snapshot.AnnounceErrorsTotal != 1 ||
+		snapshot.NotWeakSkippedTotal != 1 ||
+		snapshot.StoppedTotal != 1 ||
+		snapshot.CompletedTotal != 1 ||
+		snapshot.ActiveBoosts != 0 {
+		t.Fatalf("debug-enabled counters = %+v, want one completed boost", snapshot)
+	}
+}
+
 func TestTrackerBudget(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -175,6 +444,14 @@ func TestTrackerBudget(t *testing.T) {
 		{name: "strict network", sets: &settings.BTSets{DisableDHT: true, DisablePEX: true}, wantBudget: 24},
 		{name: "low connections", sets: &settings.BTSets{ConnectionsLimit: 12}, wantBudget: 8},
 		{name: "high connections", sets: &settings.BTSets{ConnectionsLimit: 100}, wantBudget: 24},
+		{name: "tcp only balanced keeps bounded tracker fanout", sets: &settings.BTSets{
+			CoreProfile: "tcp-only-balanced", ConnectionsLimit: 25,
+		}, wantBudget: 16},
+		{name: "tcp only balanced low connections", sets: &settings.BTSets{
+			CoreProfile: "tcp-only-balanced", ConnectionsLimit: 12,
+		}, wantBudget: 8},
+		{name: "debug override", sets: &settings.BTSets{EnableDebug: true, DebugTrackerBudgetOverride: 64}, wantBudget: 64},
+		{name: "debug override ignored outside debug", sets: &settings.BTSets{DebugTrackerBudgetOverride: 64}, wantBudget: 16},
 	}
 
 	for _, tt := range tests {

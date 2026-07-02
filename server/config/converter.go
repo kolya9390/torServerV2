@@ -39,9 +39,12 @@ func (c *Config) ToStaticConfig() settings.StaticConfig {
 		DownloadRateLimit: c.Network.DownloadRateLimitKB,
 		UploadRateLimit:   c.Network.UploadRateLimitKB,
 		PeersListenPort:   c.Network.PeersListenPort,
+		EnableLPD:         c.Network.EnableLPD,
+		LPDIPv6:           c.Network.LPDIPv6,
 
 		// Stream
-		CoreProfile: c.Stream.CoreProfile,
+		CoreProfile:          c.Stream.CoreProfile,
+		StartupPreloadPolicy: settings.NormalizeStartupPreloadPolicy(c.Stream.StartupPreloadPolicy),
 
 		// Search
 		EnableRutorSearch:   c.Search.EnableRutor,
@@ -51,9 +54,12 @@ func (c *Config) ToStaticConfig() settings.StaticConfig {
 		TMDBAPIKey: c.TMDB.APIKey,
 
 		// Debug
-		EnableDebug:                   c.Debug.Enabled,
-		ServiceOnlyDebug:              c.Debug.ServiceOnly,
-		DebugEstablishedConnsOverride: c.Debug.EstablishedConnsPerTorrent,
-		DebugMaxUnverifiedBytesMB:     c.Debug.MaxUnverifiedBytesMB,
+		EnableDebug:                     c.Debug.Enabled,
+		ServiceOnlyDebug:                c.Debug.ServiceOnly,
+		DebugEstablishedConnsOverride:   c.Debug.EstablishedConnsPerTorrent,
+		DebugTotalHalfOpenConnsOverride: c.Debug.TotalHalfOpenConnsOverride,
+		DebugTrackerBudgetOverride:      c.Debug.TrackerBudgetOverride,
+		DebugStablePeerCap:              c.Debug.StablePeerCap,
+		DebugMaxUnverifiedBytesMB:       c.Debug.MaxUnverifiedBytesMB,
 	}
 }

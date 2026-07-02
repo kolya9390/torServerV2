@@ -41,6 +41,8 @@ network:
   download_rate_limit_kb: 0  # 0 = unlimited
   upload_rate_limit_kb: 0
   peers_listen_port: 0  # 0 = random port
+  enable_lpd: false  # BEP-14 Local Peer Discovery; enable only for measured home/LAN experiments
+  lpd_ipv6: false  # IPv6 LPD is opt-in; requires enable_ipv6=true
 
 search:
   enable_rutor: false
@@ -57,6 +59,8 @@ streaming:
   max_concurrent_streams: 0  # 0 = auto
   stream_queue_size: 0  # 0 = auto
   stream_queue_wait_sec: 3
+  max_unique_playback_torrents: 0  # 0 = compatibility default; tcp-only-balanced profile uses 2
+  startup_preload_policy: "skip-active"  # skip-active avoids preload competing with active playback; legacy restores old multi-only skip
   adaptive_ra_min_mb: 4
   adaptive_ra_max_mb: 64
   read_ahead_percent: 95  # 5-100%
@@ -79,6 +83,9 @@ debug:
   service_only: false  # Set true locally for V2 debug logs without library spam or HTTP debug endpoints
   show_fs_active_torr: false
   established_conns_per_torrent_override: 0  # Local profiling only. Ignored unless debug.enabled=true.
+  total_half_open_conns_override: 0  # Local profiling only. Try 500 for TorrServer-like peer acquisition.
+  tracker_budget_override: 0  # Local profiling only. 0 keeps profile policy; ignored unless debug.enabled=true.
+  stable_peer_cap: 0  # Local A/B only. 0 disables stable multi-stream peer relief.
   max_unverified_bytes_mb: 0  # Local profiling only. 0 keeps anacrolix default; ignored unless debug.enabled=true.
 
 proxy:

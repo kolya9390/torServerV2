@@ -36,10 +36,12 @@ func (s *BTSets) validateAndNormalize() {
 
 	s.ensureNonNegative("MaxConcurrentStreams", &s.MaxConcurrentStreams)
 	s.ensureNonNegative("StreamQueueSize", &s.StreamQueueSize)
+	s.ensureNonNegative("MaxUniquePlaybackTorrents", &s.MaxUniquePlaybackTorrents)
 	s.ensureNonNegative("MetadataWorkers", &s.MetadataWorkers)
 	s.ensureNonNegative("MetadataQueueSize", &s.MetadataQueueSize)
 	s.ensureNonNegative("PreloadWorkers", &s.PreloadWorkers)
 	s.ensureNonNegative("PreloadQueueSize", &s.PreloadQueueSize)
+	s.StartupPreloadPolicy = NormalizeStartupPreloadPolicy(s.StartupPreloadPolicy)
 
 	s.ensureAdaptiveRAMDefaults()
 
@@ -96,10 +98,14 @@ func SetDefaultConfig() {
 	sets.TorrentDisconnectTimeout = 30
 	sets.ReaderReadAHead = 95 // 95%
 	sets.ResponsiveMode = true
+	sets.EnableLPD = false
+	sets.LPDIPv6 = false
 	sets.CoreProfile = "custom"
 	sets.MaxConcurrentStreams = 0
 	sets.StreamQueueSize = 0
 	sets.StreamQueueWaitSec = 3
+	sets.MaxUniquePlaybackTorrents = 0
+	sets.StartupPreloadPolicy = StartupPreloadPolicySkipActive
 	sets.AdaptiveRAMinMB = 4
 	sets.AdaptiveRAMaxMB = 64
 	sets.WarmDiskCacheSizeMB = 0
@@ -185,10 +191,12 @@ func (s *BTSets) ensureDefaults() {
 
 	s.ensureNonNegative("MaxConcurrentStreams", &s.MaxConcurrentStreams)
 	s.ensureNonNegative("StreamQueueSize", &s.StreamQueueSize)
+	s.ensureNonNegative("MaxUniquePlaybackTorrents", &s.MaxUniquePlaybackTorrents)
 	s.ensureNonNegative("MetadataWorkers", &s.MetadataWorkers)
 	s.ensureNonNegative("MetadataQueueSize", &s.MetadataQueueSize)
 	s.ensureNonNegative("PreloadWorkers", &s.PreloadWorkers)
 	s.ensureNonNegative("PreloadQueueSize", &s.PreloadQueueSize)
+	s.StartupPreloadPolicy = NormalizeStartupPreloadPolicy(s.StartupPreloadPolicy)
 
 	if s.WarmDiskCacheSizeMB < 0 {
 		s.WarmDiskCacheSizeMB = 0

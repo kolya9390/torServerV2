@@ -5,8 +5,17 @@ import (
 
 	"server/internal/app/contracts"
 	"server/log"
+	sets "server/settings"
 	"server/torr"
 )
+
+const (
+	preloadAllowed preloadDecision = iota
+	preloadSkippedActivePlayback
+	preloadSkippedActiveStream
+)
+
+type preloadDecision int
 
 func (d torrentService) Add(spec contracts.TorrentSpec, title, poster, data, category string) (contracts.TorrentHandle, error) {
 	rawSpec, ok := unwrapTorrentSpec(spec)
@@ -163,32 +172,74 @@ func (d torrentService) EnqueuePreload(tor contracts.TorrentHandle, index int) b
 		return false
 	}
 
-	if signals := d.runtimeSignals; signals != nil {
-		if signals.ActivePlaybackTorrents() > 1 {
-			log.DebugSampled(
-				"preload.skip.multi-playback",
-				20,
-				"skip preload under multi-playback load",
-			)
+	switch decideStartupPreload(d.startupPreloadPolicy(), d.runtimeSignals) {
+	case preloadSkippedActivePlayback:
+		log.DebugSampled(
+			"preload.skip.active-playback",
+			20,
+			"skip preload while playback is already active",
+		)
 
-			return false
+		return true
+	case preloadSkippedActiveStream:
+		activeStreams := int32(0)
+		if d.runtimeSignals != nil {
+			activeStreams = d.runtimeSignals.ActiveStreams()
 		}
 
-		if !signals.HasRuntimeBackend() && signals.ActiveStreams() > 1 {
-			log.DebugSampled(
-				"preload.skip.multi-stream",
-				20,
-				"skip preload under multi-stream load",
-				"active_streams", signals.ActiveStreams(),
-			)
+		log.DebugSampled(
+			"preload.skip.active-stream",
+			20,
+			"skip preload while stream is already active",
+			"active_streams", activeStreams,
+		)
 
-			return false
-		}
+		return true
+	case preloadAllowed:
+		go raw.PreloadWithSettings(index, nil)
+
+		return true
+	default:
+		return false
+	}
+}
+
+func (d torrentService) startupPreloadPolicy() string {
+	if d.settingsProvider == nil {
+		return sets.StartupPreloadPolicySkipActive
 	}
 
-	go raw.PreloadWithSettings(index, nil)
+	current := d.settingsProvider.Get()
+	if current == nil {
+		return sets.StartupPreloadPolicySkipActive
+	}
 
-	return true
+	return current.StreamConfig().StartupPreloadPolicy
+}
+
+func decideStartupPreload(policy string, signals torr.RuntimeSignals) preloadDecision {
+	if signals == nil {
+		return preloadAllowed
+	}
+
+	activeThreshold := 0
+	if sets.NormalizeStartupPreloadPolicy(policy) == sets.StartupPreloadPolicyLegacy {
+		activeThreshold = 1
+	}
+
+	if signals.HasRuntimeBackend() {
+		if signals.ActivePlaybackTorrents() > activeThreshold {
+			return preloadSkippedActivePlayback
+		}
+
+		return preloadAllowed
+	}
+
+	if signals.ActiveStreams() > int32(activeThreshold) {
+		return preloadSkippedActiveStream
+	}
+
+	return preloadAllowed
 }
 
 func (d torrentService) EnqueueMetadataFinalize(tor contracts.TorrentHandle, spec *contracts.TorrentSpec, saveToDB bool) bool {

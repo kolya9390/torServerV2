@@ -1,9 +1,12 @@
 package metrics
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"server/settings"
+	"server/torr"
 	"server/torr/storage/torrstor"
 )
 
@@ -51,8 +54,12 @@ func TestTorrentConnectionPolicySnapshot(t *testing.T) {
 	assertIntMetric(t, got, "effective_conns", 25)
 	assertIntMetric(t, got, "peer_low_water", 50)
 	assertIntMetric(t, got, "peer_high_water", 500)
+	assertIntMetric(t, got, "total_half_open_conns", 200)
 	assertIntMetric(t, got, "tracker_budget", 16)
 	assertIntMetric(t, got, "debug_established_conns_override", 0)
+	assertIntMetric(t, got, "debug_total_half_open_conns_override", 0)
+	assertIntMetric(t, got, "debug_tracker_budget_override", 0)
+	assertIntMetric(t, got, "debug_stable_peer_cap", 0)
 	assertInt64Metric(t, got, "debug_max_unverified_bytes", 0)
 	assertBoolMetric(t, got, "low_cpu_profile", false)
 	assertBoolMetric(t, got, "dht_enabled", false)
@@ -71,8 +78,12 @@ func TestTorrentConnectionPolicySnapshotNilSettings(t *testing.T) {
 	assertIntMetric(t, got, "effective_conns", 50)
 	assertIntMetric(t, got, "peer_low_water", 100)
 	assertIntMetric(t, got, "peer_high_water", 500)
+	assertIntMetric(t, got, "total_half_open_conns", 400)
 	assertIntMetric(t, got, "tracker_budget", 16)
 	assertIntMetric(t, got, "debug_established_conns_override", 0)
+	assertIntMetric(t, got, "debug_total_half_open_conns_override", 0)
+	assertIntMetric(t, got, "debug_tracker_budget_override", 0)
+	assertIntMetric(t, got, "debug_stable_peer_cap", 0)
 	assertInt64Metric(t, got, "debug_max_unverified_bytes", 0)
 	assertBoolMetric(t, got, "low_cpu_profile", false)
 	assertBoolMetric(t, got, "dht_enabled", true)
@@ -95,8 +106,12 @@ func TestTorrentConnectionPolicySnapshotLowCPUProfile(t *testing.T) {
 	assertIntMetric(t, got, "effective_conns", 12)
 	assertIntMetric(t, got, "peer_low_water", 24)
 	assertIntMetric(t, got, "peer_high_water", 72)
+	assertIntMetric(t, got, "total_half_open_conns", 200)
 	assertIntMetric(t, got, "tracker_budget", 8)
 	assertIntMetric(t, got, "debug_established_conns_override", 0)
+	assertIntMetric(t, got, "debug_total_half_open_conns_override", 0)
+	assertIntMetric(t, got, "debug_tracker_budget_override", 0)
+	assertIntMetric(t, got, "debug_stable_peer_cap", 0)
 	assertInt64Metric(t, got, "debug_max_unverified_bytes", 0)
 	assertBoolMetric(t, got, "low_cpu_profile", true)
 	assertBoolMetric(t, got, "utp_enabled", false)
@@ -115,10 +130,32 @@ func TestTorrentConnectionPolicySnapshotDebugEstablishedConnsOverride(t *testing
 	assertIntMetric(t, got, "effective_conns", 36)
 	assertIntMetric(t, got, "peer_low_water", 72)
 	assertIntMetric(t, got, "peer_high_water", 500)
+	assertIntMetric(t, got, "total_half_open_conns", 288)
 	assertIntMetric(t, got, "tracker_budget", 16)
 	assertIntMetric(t, got, "debug_established_conns_override", 36)
+	assertIntMetric(t, got, "debug_total_half_open_conns_override", 0)
+	assertIntMetric(t, got, "debug_tracker_budget_override", 0)
+	assertIntMetric(t, got, "debug_stable_peer_cap", 0)
 	assertInt64Metric(t, got, "debug_max_unverified_bytes", 0)
 	assertBoolMetric(t, got, "utp_enabled", true)
+}
+
+func TestTorrentConnectionPolicySnapshotDebugPeerAcquisitionOverrides(t *testing.T) {
+	sets := &settings.BTSets{
+		EnableDebug:                     true,
+		ConnectionsLimit:                25,
+		DebugTotalHalfOpenConnsOverride: 500,
+		DebugTrackerBudgetOverride:      64,
+		DebugStablePeerCap:              22,
+	}
+
+	got := torrentConnectionPolicySnapshot(sets)
+
+	assertIntMetric(t, got, "total_half_open_conns", 500)
+	assertIntMetric(t, got, "tracker_budget", 64)
+	assertIntMetric(t, got, "debug_total_half_open_conns_override", 500)
+	assertIntMetric(t, got, "debug_tracker_budget_override", 64)
+	assertIntMetric(t, got, "debug_stable_peer_cap", 22)
 }
 
 func TestTorrentConnectionPolicySnapshotDebugMaxUnverifiedBytes(t *testing.T) {
@@ -160,6 +197,30 @@ func TestTorrentRuntimeSnapshotNilBackend(t *testing.T) {
 	if len(torrents) != 0 {
 		t.Fatalf("torrents len = %d, want 0", len(torrents))
 	}
+}
+
+func TestTorrentRuntimeItemIncludesPeerCapDiagnostics(t *testing.T) {
+	got := torrentRuntimeItem(3, torr.TorrentRuntimeMetrics{
+		RuntimeID:        17,
+		ActivePeers:      22,
+		TotalPeers:       30,
+		PendingPeers:     2,
+		HalfOpenPeers:    1,
+		ConnectedSeeders: 21,
+		MaxEstablished:   22,
+		ActiveReaders:    1,
+		TotalReaders:     1,
+		OldestReaderMS:   61_000,
+		DownloadSpeed:    8 << 20,
+	})
+
+	assertIntMetric(t, got, "index", 3)
+	assertUint64Metric(t, got, "torrent_id", 17)
+	assertIntMetric(t, got, "active_peers", 22)
+	assertIntMetric(t, got, "max_established_conns", 22)
+	assertIntMetric(t, got, "active_readers", 1)
+	assertInt64Metric(t, got, "oldest_reader_age_ms", 61_000)
+	assertInt64Metric(t, got, "download_speed", 8<<20)
 }
 
 func TestShouldStartRuntimeUpdater(t *testing.T) {
@@ -262,6 +323,141 @@ func TestRequestStrategyPressureSnapshotHigh(t *testing.T) {
 	assertInt64Metric(t, got, "cache_overhead_percent", 25)
 }
 
+func TestStreamSessionSnapshotClassifiesExtraCacheReaders(t *testing.T) {
+	runtime := map[string]any{
+		"torrents": []map[string]any{
+			{
+				"torrent_id":           uint64(1),
+				"active_readers":       2,
+				"total_readers":        2,
+				"idle_readers":         0,
+				"oldest_reader_age_ms": int64(12_000),
+				"newest_reader_age_ms": int64(2_000),
+				"max_reader_idle_ms":   int64(1_000),
+				"preload_active":       false,
+				"preloaded_bytes":      int64(0),
+				"preload_target_bytes": int64(0),
+			},
+			{
+				"torrent_id":           uint64(2),
+				"active_readers":       1,
+				"total_readers":        1,
+				"idle_readers":         0,
+				"oldest_reader_age_ms": int64(5_000),
+				"newest_reader_age_ms": int64(5_000),
+				"max_reader_idle_ms":   int64(500),
+				"preload_active":       true,
+				"preloaded_bytes":      int64(8 << 20),
+				"preload_target_bytes": int64(32 << 20),
+			},
+		},
+	}
+
+	got := streamSessionSnapshotFromSources(
+		runtime,
+		map[uint64]int{1: 1, 2: 1},
+		map[uint64]int{1: 1, 2: 1},
+		2,
+		2,
+	)
+
+	assertIntMetric(t, got, "active_playback_sessions", 2)
+	assertIntMetric(t, got, "active_unique_playback_torrents", 2)
+	assertIntMetric(t, got, "active_delivery_streams", 2)
+	assertIntMetric(t, got, "active_cache_readers", 3)
+	assertIntMetric(t, got, "helper_readers_estimate", 1)
+	assertIntMetric(t, got, "preload_active_torrents", 1)
+	assertInt64Metric(t, got, "oldest_reader_age_ms", 12_000)
+	assertInt64Metric(t, got, "max_reader_idle_ms", 1_000)
+	assertStringMetric(
+		t,
+		got,
+		"interpretation",
+		"cache reader pressure is higher than playback session demand; inspect range/reconnect helper readers",
+	)
+
+	first := streamSessionTorrentByID(t, got, 1)
+	assertIntMetric(t, first, "playback_sessions", 1)
+	assertIntMetric(t, first, "cache_readers", 2)
+	assertIntMetric(t, first, "helper_readers_estimate", 1)
+	assertStringMetric(t, first, "classification", "extra_cache_readers")
+
+	second := streamSessionTorrentByID(t, got, 2)
+	assertIntMetric(t, second, "playback_sessions", 1)
+	assertIntMetric(t, second, "cache_readers", 1)
+	assertIntMetric(t, second, "helper_readers_estimate", 0)
+	assertBoolMetric(t, second, "preload_active", true)
+	assertStringMetric(t, second, "classification", "playback_aligned")
+}
+
+func TestStreamSessionSnapshotPrivacySafeShape(t *testing.T) {
+	runtime := map[string]any{
+		"torrents": []map[string]any{
+			{
+				"torrent_id":     uint64(7),
+				"active_readers": 1,
+				"total_readers":  1,
+			},
+		},
+	}
+
+	got := streamSessionSnapshotFromSources(runtime, map[uint64]int{7: 1}, map[uint64]int{7: 1}, 1, 1)
+	payload, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal stream session snapshot: %v", err)
+	}
+
+	for _, forbidden := range []string{"hash", "title", "path", "ip", "query"} {
+		if strings.Contains(string(payload), forbidden) {
+			t.Fatalf("stream session snapshot leaks forbidden key %q: %s", forbidden, payload)
+		}
+	}
+}
+
+func TestStreamSessionSnapshotEmptySources(t *testing.T) {
+	got := streamSessionSnapshotFromSources(nil, nil, nil, 0, 0)
+
+	assertIntMetric(t, got, "active_playback_sessions", 0)
+	assertIntMetric(t, got, "active_unique_playback_torrents", 0)
+	assertIntMetric(t, got, "active_delivery_streams", 0)
+	assertIntMetric(t, got, "active_cache_readers", 0)
+	assertIntMetric(t, got, "helper_readers_estimate", 0)
+	assertStringMetric(
+		t,
+		got,
+		"interpretation",
+		"playback session demand and cache reader pressure are aligned",
+	)
+
+	torrents, ok := got["torrents"].([]map[string]any)
+	if !ok {
+		t.Fatalf("torrents type = %T, want []map[string]any", got["torrents"])
+	}
+
+	if len(torrents) != 0 {
+		t.Fatalf("torrents len = %d, want 0", len(torrents))
+	}
+}
+
+func streamSessionTorrentByID(t *testing.T, snapshot map[string]any, torrentID uint64) map[string]any {
+	t.Helper()
+
+	torrents, ok := snapshot["torrents"].([]map[string]any)
+	if !ok {
+		t.Fatalf("torrents type = %T, want []map[string]any", snapshot["torrents"])
+	}
+
+	for _, torrent := range torrents {
+		if uint64Metric(torrent, "torrent_id") == torrentID {
+			return torrent
+		}
+	}
+
+	t.Fatalf("torrent_id %d not found in %v", torrentID, torrents)
+
+	return nil
+}
+
 func assertIntMetric(t *testing.T, metrics map[string]any, key string, want int) {
 	t.Helper()
 
@@ -281,6 +477,19 @@ func assertInt64Metric(t *testing.T, metrics map[string]any, key string, want in
 	got, ok := metrics[key].(int64)
 	if !ok {
 		t.Fatalf("%s type = %T, want int64", key, metrics[key])
+	}
+
+	if got != want {
+		t.Fatalf("%s = %d, want %d", key, got, want)
+	}
+}
+
+func assertUint64Metric(t *testing.T, metrics map[string]any, key string, want uint64) {
+	t.Helper()
+
+	got, ok := metrics[key].(uint64)
+	if !ok {
+		t.Fatalf("%s type = %T, want uint64", key, metrics[key])
 	}
 
 	if got != want {

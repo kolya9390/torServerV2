@@ -307,11 +307,15 @@ type Settings struct {
 	TorrentsSavePath  string
 	RemoveCacheOnDrop bool
 
-	ForceEncrypt             bool
-	RetrackersMode           int
-	TorrentDisconnectTimeout int
-	EnableDebug              bool
-	ServiceOnlyDebug         bool
+	ForceEncrypt                    bool
+	RetrackersMode                  int
+	TorrentDisconnectTimeout        int
+	EnableDebug                     bool
+	ServiceOnlyDebug                bool
+	DebugEstablishedConnsOverride   int
+	DebugTotalHalfOpenConnsOverride int
+	DebugTrackerBudgetOverride      int
+	DebugStablePeerCap              int
 
 	EnableDLNA   bool
 	FriendlyName string
@@ -334,27 +338,30 @@ type Settings struct {
 	UploadRateLimit   int
 	ConnectionsLimit  int
 	PeersListenPort   int
+	EnableLPD         bool
+	LPDIPv6           bool
 
 	SslPort int
 	SslCert string
 	SslKey  string
 
-	ResponsiveMode       bool
-	CoreProfile          string
-	MaxConcurrentStreams int
-	StreamQueueSize      int
-	StreamQueueWaitSec   int
-	AdaptiveRAMinMB      int
-	AdaptiveRAMaxMB      int
-	WarmDiskCacheSizeMB  int64
-	WarmDiskCacheTTLMin  int
-	DiskSyncPolicy       string
-	DiskSyncIntervalMS   int
-	DiskWriteBatchSize   int
-	MetadataWorkers      int
-	MetadataQueueSize    int
-	PreloadWorkers       int
-	PreloadQueueSize     int
+	ResponsiveMode            bool
+	CoreProfile               string
+	MaxConcurrentStreams      int
+	StreamQueueSize           int
+	StreamQueueWaitSec        int
+	MaxUniquePlaybackTorrents int
+	AdaptiveRAMinMB           int
+	AdaptiveRAMaxMB           int
+	WarmDiskCacheSizeMB       int64
+	WarmDiskCacheTTLMin       int
+	DiskSyncPolicy            string
+	DiskSyncIntervalMS        int
+	DiskWriteBatchSize        int
+	MetadataWorkers           int
+	MetadataQueueSize         int
+	PreloadWorkers            int
+	PreloadQueueSize          int
 
 	ShowFSActiveTorr bool
 

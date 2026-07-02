@@ -87,8 +87,24 @@ func TestApplyDefaults(t *testing.T) {
 		t.Errorf("Stream.CoreProfile = %q, want %q", cfg.Stream.CoreProfile, "custom")
 	}
 
+	if cfg.Stream.StartupPreloadPolicy != settings.StartupPreloadPolicySkipActive {
+		t.Errorf(
+			"Stream.StartupPreloadPolicy = %q, want %q",
+			cfg.Stream.StartupPreloadPolicy,
+			settings.StartupPreloadPolicySkipActive,
+		)
+	}
+
 	if cfg.Network.DisableUTP {
 		t.Error("Network.DisableUTP = true, want false for compatibility defaults")
+	}
+
+	if cfg.Network.EnableLPD {
+		t.Error("Network.EnableLPD = true, want false until LPD is validated by runtime A/B profiles")
+	}
+
+	if cfg.Network.LPDIPv6 {
+		t.Error("Network.LPDIPv6 = true, want false by default")
 	}
 
 	if cfg.DiskCache.SyncPolicy != "periodic" {
@@ -97,6 +113,80 @@ func TestApplyDefaults(t *testing.T) {
 
 	if cfg.Debug.Enabled {
 		t.Error("Debug.Enabled = true, want false by default")
+	}
+}
+
+func TestLoadConfigPreservesExplicitLPDEnable(t *testing.T) {
+	yamlContent := `
+network:
+  enable_lpd: true
+  lpd_ipv6: true
+`
+
+	tmpFile, err := os.CreateTemp("", "config-lpd-*.yml")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
+
+	if _, err := tmpFile.WriteString(yamlContent); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	_ = tmpFile.Close()
+
+	cfg, err := Load(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if !cfg.Network.EnableLPD {
+		t.Fatal("network.enable_lpd=true must enable LPD")
+	}
+
+	if !cfg.Network.LPDIPv6 {
+		t.Fatal("network.lpd_ipv6=true must be preserved")
+	}
+}
+
+func TestApplyNetworkSettingsMapsLPD(t *testing.T) {
+	cfg := &Config{
+		Network: NetworkConfig{
+			EnableIPv6: true,
+			EnableLPD:  true,
+			LPDIPv6:    true,
+		},
+	}
+	sets := &settings.BTSets{}
+
+	cfg.ApplyToBTSets(sets)
+
+	if !sets.EnableLPD {
+		t.Fatal("network.enable_lpd=true must set BTSets.EnableLPD")
+	}
+
+	if !sets.LPDIPv6 {
+		t.Fatal("network.lpd_ipv6=true must set BTSets.LPDIPv6")
+	}
+}
+
+func TestApplyStreamSettingsMapsStartupPreloadPolicy(t *testing.T) {
+	cfg := &Config{
+		Stream: StreamConfig{
+			StartupPreloadPolicy: settings.StartupPreloadPolicyLegacy,
+		},
+	}
+	sets := &settings.BTSets{}
+
+	cfg.ApplyToBTSets(sets)
+
+	if sets.StartupPreloadPolicy != settings.StartupPreloadPolicyLegacy {
+		t.Fatalf(
+			"StartupPreloadPolicy = %q, want %q",
+			sets.StartupPreloadPolicy,
+			settings.StartupPreloadPolicyLegacy,
+		)
 	}
 }
 
@@ -158,6 +248,18 @@ func TestShippedConfigDisablesFullDebugByDefault(t *testing.T) {
 		t.Fatal("release config template must keep debug established connections override disabled")
 	}
 
+	if cfg.Debug.TotalHalfOpenConnsOverride != 0 {
+		t.Fatal("release config template must keep debug total half-open override disabled")
+	}
+
+	if cfg.Debug.TrackerBudgetOverride != 0 {
+		t.Fatal("release config template must keep debug tracker budget override disabled")
+	}
+
+	if cfg.Debug.StablePeerCap != 0 {
+		t.Fatal("release config template must keep debug stable peer cap disabled")
+	}
+
 	if cfg.Debug.MaxUnverifiedBytesMB != 0 {
 		t.Fatal("release config template must keep debug max unverified bytes disabled")
 	}
@@ -166,8 +268,24 @@ func TestShippedConfigDisablesFullDebugByDefault(t *testing.T) {
 		t.Fatalf("release config template must keep core_profile=custom, got %q", cfg.Stream.CoreProfile)
 	}
 
+	if cfg.Stream.StartupPreloadPolicy != settings.StartupPreloadPolicySkipActive {
+		t.Fatalf(
+			"release config template must keep startup_preload_policy=%q, got %q",
+			settings.StartupPreloadPolicySkipActive,
+			cfg.Stream.StartupPreloadPolicy,
+		)
+	}
+
 	if cfg.Network.DisableUTP {
 		t.Fatal("release config template must keep uTP enabled unless low-cpu is explicitly selected")
+	}
+
+	if cfg.Network.EnableLPD {
+		t.Fatal("release config template must keep network.enable_lpd=false until A/B validation")
+	}
+
+	if cfg.Network.LPDIPv6 {
+		t.Fatal("release config template must keep network.lpd_ipv6=false by default")
 	}
 }
 
@@ -180,6 +298,9 @@ func TestApplyDebugSettingsMapsFullDebugMode(t *testing.T) {
 			ServiceOnly:                false,
 			ShowFSActiveTorr:           true,
 			EstablishedConnsPerTorrent: 36,
+			TotalHalfOpenConnsOverride: 500,
+			TrackerBudgetOverride:      64,
+			StablePeerCap:              22,
 			MaxUnverifiedBytesMB:       32,
 		},
 	}
@@ -201,6 +322,18 @@ func TestApplyDebugSettingsMapsFullDebugMode(t *testing.T) {
 
 	if sets.DebugEstablishedConnsOverride != 36 {
 		t.Fatalf("debug established connections override = %d, want 36", sets.DebugEstablishedConnsOverride)
+	}
+
+	if sets.DebugTotalHalfOpenConnsOverride != 500 {
+		t.Fatalf("debug total half-open override = %d, want 500", sets.DebugTotalHalfOpenConnsOverride)
+	}
+
+	if sets.DebugTrackerBudgetOverride != 64 {
+		t.Fatalf("debug tracker budget override = %d, want 64", sets.DebugTrackerBudgetOverride)
+	}
+
+	if sets.DebugStablePeerCap != 22 {
+		t.Fatalf("debug stable peer cap = %d, want 22", sets.DebugStablePeerCap)
 	}
 
 	if sets.DebugMaxUnverifiedBytesMB != 32 {
@@ -236,6 +369,9 @@ func TestToStaticConfigPreservesDebugServiceOnly(t *testing.T) {
 			Enabled:                    true,
 			ServiceOnly:                true,
 			EstablishedConnsPerTorrent: 36,
+			TotalHalfOpenConnsOverride: 500,
+			TrackerBudgetOverride:      64,
+			StablePeerCap:              22,
 			MaxUnverifiedBytesMB:       32,
 		},
 	}
@@ -253,8 +389,37 @@ func TestToStaticConfigPreservesDebugServiceOnly(t *testing.T) {
 		t.Fatalf("debug established connections override = %d, want 36", staticCfg.DebugEstablishedConnsOverride)
 	}
 
+	if staticCfg.DebugTotalHalfOpenConnsOverride != 500 {
+		t.Fatalf("debug total half-open override = %d, want 500", staticCfg.DebugTotalHalfOpenConnsOverride)
+	}
+
+	if staticCfg.DebugTrackerBudgetOverride != 64 {
+		t.Fatalf("debug tracker budget override = %d, want 64", staticCfg.DebugTrackerBudgetOverride)
+	}
+
+	if staticCfg.DebugStablePeerCap != 22 {
+		t.Fatalf("debug stable peer cap = %d, want 22", staticCfg.DebugStablePeerCap)
+	}
+
 	if staticCfg.DebugMaxUnverifiedBytesMB != 32 {
 		t.Fatalf("debug max unverified bytes MB = %d, want 32", staticCfg.DebugMaxUnverifiedBytesMB)
+	}
+}
+
+func TestToStaticConfigPreservesStartupPreloadPolicy(t *testing.T) {
+	cfg := &Config{
+		Stream: StreamConfig{
+			StartupPreloadPolicy: settings.StartupPreloadPolicyLegacy,
+		},
+	}
+
+	staticCfg := cfg.ToStaticConfig()
+	if staticCfg.StartupPreloadPolicy != settings.StartupPreloadPolicyLegacy {
+		t.Fatalf(
+			"StartupPreloadPolicy = %q, want %q",
+			staticCfg.StartupPreloadPolicy,
+			settings.StartupPreloadPolicyLegacy,
+		)
 	}
 }
 

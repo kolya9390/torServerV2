@@ -41,9 +41,12 @@ type StaticConfig struct {
 	DownloadRateLimit int
 	UploadRateLimit   int
 	PeersListenPort   int
+	EnableLPD         bool
+	LPDIPv6           bool
 
 	// Stream
-	CoreProfile string
+	CoreProfile          string
+	StartupPreloadPolicy string
 
 	// Search
 	EnableRutorSearch   bool
@@ -53,10 +56,13 @@ type StaticConfig struct {
 	TMDBAPIKey string
 
 	// Debug
-	EnableDebug                   bool
-	ServiceOnlyDebug              bool
-	DebugEstablishedConnsOverride int
-	DebugMaxUnverifiedBytesMB     int64
+	EnableDebug                     bool
+	ServiceOnlyDebug                bool
+	DebugEstablishedConnsOverride   int
+	DebugTotalHalfOpenConnsOverride int
+	DebugTrackerBudgetOverride      int
+	DebugStablePeerCap              int
+	DebugMaxUnverifiedBytesMB       int64
 }
 
 // staticConfig is the global static configuration loaded from config.yaml.

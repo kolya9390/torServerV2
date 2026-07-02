@@ -1019,6 +1019,32 @@ func TestCachePrioritySelectionStats(t *testing.T) {
 	}
 }
 
+func TestActiveReaderRanges(t *testing.T) {
+	t.Parallel()
+
+	if ranges := activeReaderRanges(nil); ranges != nil {
+		t.Fatalf("activeReaderRanges(nil) = %v, want nil", ranges)
+	}
+
+	ranges := activeReaderRanges([]activeReaderSnapshot{
+		{piecesRange: Range{Start: 10, End: 20}},
+		{piecesRange: Range{Start: 18, End: 30}},
+		{piecesRange: Range{Start: 40, End: 45}},
+	})
+
+	if got, want := len(ranges), 2; got != want {
+		t.Fatalf("len(activeReaderRanges()) = %d, want %d", got, want)
+	}
+
+	if got, want := ranges[0], (Range{Start: 10, End: 30}); got != want {
+		t.Fatalf("ranges[0] = %+v, want %+v", got, want)
+	}
+
+	if got, want := ranges[1], (Range{Start: 40, End: 45}); got != want {
+		t.Fatalf("ranges[1] = %+v, want %+v", got, want)
+	}
+}
+
 func TestCachePriorityChurnStats(t *testing.T) {
 	before := SnapshotCachePriorityStats()
 	cache := NewCache(64<<20, nil)

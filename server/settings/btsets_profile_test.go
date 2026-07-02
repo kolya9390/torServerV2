@@ -40,6 +40,10 @@ func TestLowCPUProfileDefaults(t *testing.T) {
 	if sets.MaxConcurrentStreams != 2 {
 		t.Fatalf("low-cpu MaxConcurrentStreams = %d, want 2", sets.MaxConcurrentStreams)
 	}
+
+	if sets.MaxUniquePlaybackTorrents != 2 {
+		t.Fatalf("low-cpu MaxUniquePlaybackTorrents = %d, want 2", sets.MaxUniquePlaybackTorrents)
+	}
 }
 
 func TestApplyCoreProfilePresetAndOverride(t *testing.T) {
@@ -98,6 +102,10 @@ func TestApplyCoreProfileMaterializesPreset(t *testing.T) {
 	if sets.CacheSize != 64*1024*1024 {
 		t.Fatalf("CacheSize = %d, want 64MiB from profile", sets.CacheSize)
 	}
+
+	if sets.MaxUniquePlaybackTorrents != 2 {
+		t.Fatalf("MaxUniquePlaybackTorrents = %d, want 2", sets.MaxUniquePlaybackTorrents)
+	}
 }
 
 func TestBalancedProfileDefaults(t *testing.T) {
@@ -110,6 +118,10 @@ func TestBalancedProfileDefaults(t *testing.T) {
 
 	if sets.StreamQueueWaitSec != 3 {
 		t.Fatalf("unexpected balanced StreamQueueWaitSec: %d", sets.StreamQueueWaitSec)
+	}
+
+	if sets.MaxUniquePlaybackTorrents != 0 {
+		t.Fatalf("balanced MaxUniquePlaybackTorrents = %d, want compatibility default 0", sets.MaxUniquePlaybackTorrents)
 	}
 
 	if sets.DiskSyncPolicy != "periodic" {
@@ -147,5 +159,9 @@ func TestTCPOnlyBalancedProfileDefaults(t *testing.T) {
 
 	if sets.StreamQueueWaitSec != 3 {
 		t.Fatalf("tcp-only-balanced StreamQueueWaitSec = %d, want 3", sets.StreamQueueWaitSec)
+	}
+
+	if sets.MaxUniquePlaybackTorrents != 2 {
+		t.Fatalf("tcp-only-balanced MaxUniquePlaybackTorrents = %d, want 2", sets.MaxUniquePlaybackTorrents)
 	}
 }

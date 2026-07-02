@@ -23,15 +23,19 @@ type NetworkConfig struct {
 	UploadRateLimitKB   int
 	ConnectionsLimit    int
 	PeersListenPort     int
+	EnableLPD           bool
+	LPDIPv6             bool
 }
 
 type StreamConfig struct {
-	ResponsiveMode       bool
-	MaxConcurrentStreams int
-	StreamQueueSize      int
-	StreamQueueWaitSec   int
-	AdaptiveRAMinMB      int
-	AdaptiveRAMaxMB      int
+	ResponsiveMode            bool
+	MaxConcurrentStreams      int
+	StreamQueueSize           int
+	StreamQueueWaitSec        int
+	MaxUniquePlaybackTorrents int
+	StartupPreloadPolicy      string
+	AdaptiveRAMinMB           int
+	AdaptiveRAMaxMB           int
 }
 
 type PlaybackConfig struct {
@@ -41,10 +45,13 @@ type PlaybackConfig struct {
 }
 
 type DebugConfig struct {
-	EnableDebug              bool
-	ServiceOnlyDebug         bool
-	EstablishedConnsOverride int
-	MaxUnverifiedBytesMB     int64
+	EnableDebug                bool
+	ServiceOnlyDebug           bool
+	EstablishedConnsOverride   int
+	TotalHalfOpenConnsOverride int
+	TrackerBudgetOverride      int
+	StablePeerCap              int
+	MaxUnverifiedBytesMB       int64
 }
 
 type TLSConfig struct {
@@ -124,6 +131,8 @@ func (s *BTSets) NetworkConfig() NetworkConfig {
 		UploadRateLimitKB:   s.UploadRateLimit,
 		ConnectionsLimit:    s.ConnectionsLimit,
 		PeersListenPort:     s.PeersListenPort,
+		EnableLPD:           s.EnableLPD,
+		LPDIPv6:             s.LPDIPv6,
 	}
 }
 
@@ -133,12 +142,14 @@ func (s *BTSets) StreamConfig() StreamConfig {
 	}
 
 	return StreamConfig{
-		ResponsiveMode:       s.ResponsiveMode,
-		MaxConcurrentStreams: s.MaxConcurrentStreams,
-		StreamQueueSize:      s.StreamQueueSize,
-		StreamQueueWaitSec:   s.StreamQueueWaitSec,
-		AdaptiveRAMinMB:      s.AdaptiveRAMinMB,
-		AdaptiveRAMaxMB:      s.AdaptiveRAMaxMB,
+		ResponsiveMode:            s.ResponsiveMode,
+		MaxConcurrentStreams:      s.MaxConcurrentStreams,
+		StreamQueueSize:           s.StreamQueueSize,
+		StreamQueueWaitSec:        s.StreamQueueWaitSec,
+		MaxUniquePlaybackTorrents: s.MaxUniquePlaybackTorrents,
+		StartupPreloadPolicy:      NormalizeStartupPreloadPolicy(s.StartupPreloadPolicy),
+		AdaptiveRAMinMB:           s.AdaptiveRAMinMB,
+		AdaptiveRAMaxMB:           s.AdaptiveRAMaxMB,
 	}
 }
 
@@ -160,10 +171,13 @@ func (s *BTSets) DebugConfig() DebugConfig {
 	}
 
 	return DebugConfig{
-		EnableDebug:              s.EnableDebug,
-		ServiceOnlyDebug:         s.ServiceOnlyDebug,
-		EstablishedConnsOverride: s.DebugEstablishedConnsOverride,
-		MaxUnverifiedBytesMB:     s.DebugMaxUnverifiedBytesMB,
+		EnableDebug:                s.EnableDebug,
+		ServiceOnlyDebug:           s.ServiceOnlyDebug,
+		EstablishedConnsOverride:   s.DebugEstablishedConnsOverride,
+		TotalHalfOpenConnsOverride: s.DebugTotalHalfOpenConnsOverride,
+		TrackerBudgetOverride:      s.DebugTrackerBudgetOverride,
+		StablePeerCap:              s.DebugStablePeerCap,
+		MaxUnverifiedBytesMB:       s.DebugMaxUnverifiedBytesMB,
 	}
 }
 

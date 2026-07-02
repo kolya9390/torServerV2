@@ -249,6 +249,57 @@ func TestBuildClientConfigDebugEstablishedConnsOverride(t *testing.T) {
 	}
 }
 
+func TestBuildClientConfigDebugPeerAcquisitionOverrides(t *testing.T) {
+	tests := []struct {
+		name              string
+		sets              *settings.BTSets
+		wantTotalHalfOpen int
+	}{
+		{
+			name: "enabled in debug",
+			sets: &settings.BTSets{
+				EnableDebug:                     true,
+				ConnectionsLimit:                25,
+				DebugTotalHalfOpenConnsOverride: 500,
+			},
+			wantTotalHalfOpen: 500,
+		},
+		{
+			name: "ignored outside debug",
+			sets: &settings.BTSets{
+				ConnectionsLimit:                25,
+				DebugTotalHalfOpenConnsOverride: 500,
+			},
+			wantTotalHalfOpen: 200,
+		},
+		{
+			name: "clamped when too large",
+			sets: &settings.BTSets{
+				EnableDebug:                     true,
+				ConnectionsLimit:                25,
+				DebugTotalHalfOpenConnsOverride: 5000,
+			},
+			wantTotalHalfOpen: maxDebugTotalHalfOpenConnsOverride,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bt := NewBTSWithProvidersRuntimeAndDB(
+				btTestSettingsProvider{sets: tt.sets},
+				settings.NewNoopArgsProvider(),
+				func() settings.RuntimeState { return settings.RuntimeState{} },
+				NewNoopTorrentDBStore(),
+			)
+
+			cfg := bt.buildClientConfig()
+			if cfg.TotalHalfOpenConns != tt.wantTotalHalfOpen {
+				t.Fatalf("TotalHalfOpenConns = %d, want %d", cfg.TotalHalfOpenConns, tt.wantTotalHalfOpen)
+			}
+		})
+	}
+}
+
 func TestBuildClientConfigDebugMaxUnverifiedBytes(t *testing.T) {
 	tests := []struct {
 		name string
@@ -299,6 +350,63 @@ func TestBuildClientConfigDebugMaxUnverifiedBytes(t *testing.T) {
 			cfg := bt.buildClientConfig()
 			if cfg.MaxUnverifiedBytes != tt.want {
 				t.Fatalf("MaxUnverifiedBytes = %d, want %d", cfg.MaxUnverifiedBytes, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildClientConfigLocalServiceDiscovery(t *testing.T) {
+	tests := []struct {
+		name    string
+		sets    *settings.BTSets
+		wantNil bool
+		wantIP6 bool
+	}{
+		{
+			name:    "disabled",
+			sets:    &settings.BTSets{EnableLPD: false, EnableIPv6: true, LPDIPv6: true},
+			wantNil: true,
+		},
+		{
+			name:    "enabled ipv4 only by default",
+			sets:    &settings.BTSets{EnableLPD: true, EnableIPv6: true},
+			wantNil: false,
+			wantIP6: false,
+		},
+		{
+			name:    "ipv6 lpd requires ipv6",
+			sets:    &settings.BTSets{EnableLPD: true, EnableIPv6: false, LPDIPv6: true},
+			wantNil: false,
+			wantIP6: false,
+		},
+		{
+			name:    "ipv6 lpd enabled when both flags are enabled",
+			sets:    &settings.BTSets{EnableLPD: true, EnableIPv6: true, LPDIPv6: true},
+			wantNil: false,
+			wantIP6: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bt := NewBTSWithProvidersRuntimeAndDB(
+				btTestSettingsProvider{sets: tt.sets},
+				settings.NewNoopArgsProvider(),
+				func() settings.RuntimeState { return settings.RuntimeState{} },
+				NewNoopTorrentDBStore(),
+			)
+
+			cfg := bt.buildClientConfig()
+			if gotNil := cfg.LocalServiceDiscovery == nil; gotNil != tt.wantNil {
+				t.Fatalf("LocalServiceDiscovery nil = %v, want %v", gotNil, tt.wantNil)
+			}
+
+			if cfg.LocalServiceDiscovery == nil {
+				return
+			}
+
+			if cfg.LocalServiceDiscovery.Ip6 != tt.wantIP6 {
+				t.Fatalf("LocalServiceDiscovery.Ip6 = %v, want %v", cfg.LocalServiceDiscovery.Ip6, tt.wantIP6)
 			}
 		})
 	}
@@ -473,6 +581,9 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 		wantTrackers       int
 		wantLowCPU         bool
 		wantDebugOverride  int
+		wantHalfOpen       int
+		wantHalfOpenDebug  int
+		wantTrackerDebug   int
 	}{
 		{
 			name:               "custom profile honors configured low limit",
@@ -481,6 +592,7 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 			wantLowWater:       50,
 			wantHighWater:      500,
 			wantTrackers:       8,
+			wantHalfOpen:       200,
 		},
 		{
 			name:               "compatibility high limit preserved",
@@ -489,6 +601,7 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 			wantLowWater:       192,
 			wantHighWater:      960,
 			wantTrackers:       24,
+			wantHalfOpen:       768,
 		},
 		{
 			name:               "low cpu profile honors measured low budget",
@@ -498,6 +611,7 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 			wantHighWater:      72,
 			wantTrackers:       8,
 			wantLowCPU:         true,
+			wantHalfOpen:       200,
 		},
 		{
 			name:               "low cpu profile unset limit uses conservative budget",
@@ -507,6 +621,7 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 			wantHighWater:      144,
 			wantTrackers:       8,
 			wantLowCPU:         true,
+			wantHalfOpen:       200,
 		},
 		{
 			name: "debug override isolates established connections",
@@ -520,6 +635,7 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 			wantHighWater:      500,
 			wantTrackers:       16,
 			wantDebugOverride:  36,
+			wantHalfOpen:       288,
 		},
 		{
 			name: "debug override ignored without debug mode",
@@ -531,6 +647,75 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 			wantLowWater:       50,
 			wantHighWater:      500,
 			wantTrackers:       16,
+			wantHalfOpen:       200,
+		},
+		{
+			name: "debug peer acquisition overrides are isolated",
+			sets: &settings.BTSets{
+				EnableDebug:                     true,
+				ConnectionsLimit:                25,
+				DebugTotalHalfOpenConnsOverride: 500,
+				DebugTrackerBudgetOverride:      64,
+			},
+			wantEffectiveConns: 25,
+			wantLowWater:       50,
+			wantHighWater:      500,
+			wantTrackers:       64,
+			wantHalfOpen:       500,
+			wantHalfOpenDebug:  500,
+			wantTrackerDebug:   64,
+		},
+		{
+			name: "debug peer acquisition overrides ignored outside debug",
+			sets: &settings.BTSets{
+				ConnectionsLimit:                25,
+				DebugTotalHalfOpenConnsOverride: 500,
+				DebugTrackerBudgetOverride:      64,
+			},
+			wantEffectiveConns: 25,
+			wantLowWater:       50,
+			wantHighWater:      500,
+			wantTrackers:       16,
+			wantHalfOpen:       200,
+		},
+		{
+			name: "tcp only balanced keeps peer reach for two heavy torrents",
+			sets: &settings.BTSets{
+				CoreProfile:      "tcp-only-balanced",
+				DisableUTP:       true,
+				ConnectionsLimit: 25,
+			},
+			wantEffectiveConns: 25,
+			wantLowWater:       50,
+			wantHighWater:      500,
+			wantTrackers:       16,
+			wantHalfOpen:       200,
+		},
+		{
+			name: "tcp only balanced honors explicitly low connection budget",
+			sets: &settings.BTSets{
+				CoreProfile:      "tcp-only-balanced",
+				DisableUTP:       true,
+				ConnectionsLimit: 12,
+			},
+			wantEffectiveConns: 12,
+			wantLowWater:       50,
+			wantHighWater:      500,
+			wantTrackers:       8,
+			wantHalfOpen:       200,
+		},
+		{
+			name: "tcp only balanced high user limit increases tracker budget",
+			sets: &settings.BTSets{
+				CoreProfile:      "tcp-only-balanced",
+				DisableUTP:       true,
+				ConnectionsLimit: 96,
+			},
+			wantEffectiveConns: 96,
+			wantLowWater:       192,
+			wantHighWater:      960,
+			wantTrackers:       24,
+			wantHalfOpen:       768,
 		},
 	}
 
@@ -550,12 +735,24 @@ func TestConnectionPolicyForSettings(t *testing.T) {
 				t.Fatalf("trackerBudget = %d, want %d", got.trackerBudget, tt.wantTrackers)
 			}
 
+			if got.totalHalfOpen != tt.wantHalfOpen {
+				t.Fatalf("totalHalfOpen = %d, want %d", got.totalHalfOpen, tt.wantHalfOpen)
+			}
+
 			if got.lowCPU != tt.wantLowCPU {
 				t.Fatalf("lowCPU = %v, want %v", got.lowCPU, tt.wantLowCPU)
 			}
 
 			if got.debugOverride != tt.wantDebugOverride {
 				t.Fatalf("debugOverride = %d, want %d", got.debugOverride, tt.wantDebugOverride)
+			}
+
+			if got.debugHalfOpenOverride != tt.wantHalfOpenDebug {
+				t.Fatalf("debugHalfOpenOverride = %d, want %d", got.debugHalfOpenOverride, tt.wantHalfOpenDebug)
+			}
+
+			if got.debugTrackerOverride != tt.wantTrackerDebug {
+				t.Fatalf("debugTrackerOverride = %d, want %d", got.debugTrackerOverride, tt.wantTrackerDebug)
 			}
 		})
 	}

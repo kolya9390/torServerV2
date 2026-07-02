@@ -12,8 +12,26 @@ type activeReaderSnapshot struct {
 	piecesRange  Range
 }
 
+// ReaderActivitySnapshot is a low-cardinality cache reader view for debug diagnostics.
+type ReaderActivitySnapshot struct {
+	TotalReaders      int   `json:"total_readers"`
+	ActiveReaders     int   `json:"active_readers"`
+	IdleReaders       int   `json:"idle_readers"`
+	OldestReaderAgeMS int64 `json:"oldest_reader_age_ms"`
+	NewestReaderAgeMS int64 `json:"newest_reader_age_ms"`
+	MaxReaderIdleMS   int64 `json:"max_reader_idle_ms"`
+}
+
 func (c *Cache) getActiveReaderRanges() []Range {
 	readers := c.snapshotActiveReaders(true)
+	if len(readers) == 0 {
+		return nil
+	}
+
+	return activeReaderRanges(readers)
+}
+
+func activeReaderRanges(readers []activeReaderSnapshot) []Range {
 	if len(readers) == 0 {
 		return nil
 	}
@@ -100,13 +118,14 @@ func (c *Cache) UpdatePriorities() {
 	}
 	defer c.priorities.updateRunning.Store(false)
 
-	ranges := c.getActiveReaderRanges()
-	if ranges == nil {
+	readers := c.snapshotActiveReaders(true)
+	if len(readers) == 0 {
 		return
 	}
 
+	ranges := activeReaderRanges(readers)
 	clearedPieces := c.clearPrioritiesOutsideRanges(ranges)
-	setPieces, noopPieces, trackedPieces := c.applyDesiredPriorities(c.desiredPriorities(ranges))
+	setPieces, noopPieces, trackedPieces := c.applyDesiredPriorities(c.desiredPrioritiesForReaders(ranges, readers))
 
 	c.recordPriorityChurn(clearedPieces, setPieces, noopPieces, trackedPieces)
 }
@@ -238,6 +257,17 @@ func (c *Cache) desiredPriorities(ranges []Range) map[int]torrent.PiecePriority 
 		return nil
 	}
 
+	return c.desiredPrioritiesForReaders(ranges, readers)
+}
+
+func (c *Cache) desiredPrioritiesForReaders(
+	ranges []Range,
+	readers []activeReaderSnapshot,
+) map[int]torrent.PiecePriority {
+	if len(readers) == 0 {
+		return nil
+	}
+
 	activeReaders := len(readers)
 	count := priorityPieceBudget(c.currentNetworkConfig().ConnectionsLimit, activeReaders, c.pieceLength)
 	desired := make(map[int]torrent.PiecePriority, activeReaders*count)
@@ -359,6 +389,71 @@ func (c *Cache) Readers() int {
 	}
 
 	return len(c.readers.items)
+}
+
+func (c *Cache) ReaderActivitySnapshot(now time.Time) ReaderActivitySnapshot {
+	readers := c.copyReaders()
+	if len(readers) == 0 {
+		return ReaderActivitySnapshot{}
+	}
+
+	snapshot := ReaderActivitySnapshot{
+		TotalReaders: len(readers),
+	}
+
+	for _, reader := range readers {
+		if reader == nil || reader.isClosed.Load() {
+			continue
+		}
+
+		if reader.isActive() {
+			snapshot.ActiveReaders++
+		} else {
+			snapshot.IdleReaders++
+		}
+
+		ageMS := readerAgeMS(now, reader.created.Load())
+		if ageMS > snapshot.OldestReaderAgeMS {
+			snapshot.OldestReaderAgeMS = ageMS
+		}
+
+		if snapshot.NewestReaderAgeMS == 0 || ageMS < snapshot.NewestReaderAgeMS {
+			snapshot.NewestReaderAgeMS = ageMS
+		}
+
+		idleMS := readerIdleMS(now, reader.lastAccess.Load())
+		if idleMS > snapshot.MaxReaderIdleMS {
+			snapshot.MaxReaderIdleMS = idleMS
+		}
+	}
+
+	return snapshot
+}
+
+func readerAgeMS(now time.Time, createdUnixNano int64) int64 {
+	if createdUnixNano <= 0 {
+		return 0
+	}
+
+	age := now.Sub(time.Unix(0, createdUnixNano))
+	if age <= 0 {
+		return 0
+	}
+
+	return age.Milliseconds()
+}
+
+func readerIdleMS(now time.Time, lastAccessUnix int64) int64 {
+	if lastAccessUnix <= 0 {
+		return 0
+	}
+
+	idle := now.Sub(time.Unix(lastAccessUnix, 0))
+	if idle <= 0 {
+		return 0
+	}
+
+	return idle.Milliseconds()
 }
 
 func (c *Cache) CloseReader(r *Reader) {

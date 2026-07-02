@@ -24,8 +24,16 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 
 	curSets := t.currentSettings()
 	admission := currentAdmission(curSets)
+	debugCfg := curSets.DebugConfig()
+	debugEnabled := debugCfg.EnableDebug
 
-	release, err := tryAcquireStream(req.Context(), curSets)
+	release, err := tryAcquireStream(
+		req.Context(),
+		curSets,
+		t.Hash().HexString(),
+		streamTorrentDiagnosticID(t, debugEnabled),
+		debugEnabled,
+	)
 	if err != nil {
 		retrySec := int(admission.waitDuration.Seconds())
 		resp.Header().Set("Retry-After", strconv.Itoa(retrySec))
@@ -39,7 +47,6 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 
 	serverCfg := t.currentRuntimeState().ServerConfig()
 	streamTimeout := curSets.TorrentDisconnectTimeout
-	debugCfg := curSets.DebugConfig()
 
 	if !t.GotInfo() {
 		http.NotFound(resp, req)
@@ -73,10 +80,20 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 
 	setStreamHeaders(resp, file, t, streamTimeout, req)
 
-	instrumentation := startStreamInstrumentation(t, req, resp, debugCfg.EnableDebug)
+	instrumentation := startStreamInstrumentation(
+		t,
+		req,
+		resp,
+		debugEnabled,
+		streamDeliveryMetadata{
+			initialOffset:  reader.Offset(),
+			fileSize:       file.Length(),
+			requestedRange: req.Header.Get("Range") != "",
+		},
+	)
 	defer instrumentation.release()
 
-	content := newServeContentReadSeeker(reader, file.Length())
+	content := newServeContentReadSeeker(reader, file.Length(), instrumentation.writer.delivery)
 	http.ServeContent(instrumentation.writer, req, file.Path(), time.Unix(t.Timestamp, 0), content)
 	markStreamActivity()
 	finishStreamInstrumentation(instrumentation, req.RemoteAddr)
@@ -98,6 +115,7 @@ func startStreamInstrumentation(
 	req *http.Request,
 	resp http.ResponseWriter,
 	debugEnabled bool,
+	deliveryMetadata streamDeliveryMetadata,
 ) streamInstrumentation {
 	started := time.Now()
 	streamID := atomic.LoadInt32(&activeStreams)
@@ -112,8 +130,9 @@ func startStreamInstrumentation(
 	release := releaseFairness
 
 	if debugEnabled {
-		delivery, releaseDelivery := registerStreamDelivery(started, torrentID)
+		delivery, releaseDelivery := registerStreamDeliveryWithMetadata(started, torrentID, deliveryMetadata)
 		writer.delivery = delivery
+		fairness.setDelivery(delivery)
 		release = func() {
 			releaseDelivery()
 			releaseFairness()

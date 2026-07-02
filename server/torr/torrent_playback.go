@@ -5,6 +5,7 @@ import (
 
 	"github.com/anacrolix/torrent"
 
+	"server/settings"
 	"server/torr/state"
 	"server/torr/storage/torrstor"
 )
@@ -21,7 +22,8 @@ func (t *Torrent) updateRA() {
 		baseCap = t.cache.GetCapacity()
 	}
 
-	localReaders := t.ActiveReaders()
+	readerActivity := t.cache.ReaderActivitySnapshot(time.Now())
+	localReaders := readerActivity.ActiveReaders
 
 	playbackTorrents := estimatePlaybackTorrents(GetActiveStreams(), localReaders)
 	if t.bt != nil {
@@ -29,16 +31,23 @@ func (t *Torrent) updateRA() {
 	}
 
 	if t.Torrent != nil {
-		targetConns := adaptiveMaxEstablishedConns(sets, playbackTorrents, localReaders)
-		if current := int(t.lifecycle.lastMaxEstablished); current != targetConns {
+		targetConns := adaptiveMaxEstablishedConnsForReaderAge(
+			sets,
+			playbackTorrents,
+			localReaders,
+			time.Duration(readerActivity.OldestReaderAgeMS)*time.Millisecond,
+		)
+		if current := int(t.lifecycle.lastMaxEstablished.Load()); current != targetConns {
 			t.SetMaxEstablishedConns(targetConns)
-			t.lifecycle.lastMaxEstablished = int32(targetConns)
+			t.lifecycle.lastMaxEstablished.Store(int32(targetConns))
 		}
 	}
 
 	if localReaders == 0 {
 		return
 	}
+
+	t.maybeBoostPeerAcquisition(playbackTorrents)
 
 	adj := adaptiveReadahead(baseCap, playbackTorrents)
 	t.cache.AdjustRA(adj)
@@ -59,7 +68,12 @@ func (t *Torrent) NewReader(file *torrent.File) *torrstor.Reader {
 		return nil
 	}
 
-	return cache.NewReader(file)
+	reader := cache.NewReader(file)
+	if reader != nil {
+		t.resumePlaybackPeerAcquisition()
+	}
+
+	return reader
 }
 
 func (t *Torrent) CloseReader(reader *torrstor.Reader) {
@@ -68,7 +82,14 @@ func (t *Torrent) CloseReader(reader *torrstor.Reader) {
 	}
 
 	t.cache.CloseReader(reader)
-	t.AddExpiredTime(time.Second * time.Duration(t.currentSettings().TorrentDisconnectTimeout))
+	if t.ActiveReaders() == 0 {
+		t.quiescePlaybackPeerAcquisition()
+		t.ShortenExpiredTime(postPlaybackDisconnectDelay(t.currentSettings()))
+
+		return
+	}
+
+	t.AddExpiredTime(disconnectTimeout(t.currentSettings()))
 }
 
 func (t *Torrent) GetCache() *torrstor.Cache {
@@ -82,4 +103,58 @@ func (t *Torrent) ActiveReaders() int {
 	}
 
 	return t.cache.GetUseReaders()
+}
+
+func (t *Torrent) resumePlaybackPeerAcquisition() {
+	if t == nil || t.Torrent == nil {
+		return
+	}
+
+	if t.lifecycle.playbackQuiesced.Swap(false) {
+		t.AllowDataDownload()
+	}
+
+	sets := t.currentSettings()
+	playbackTorrents := estimatePlaybackTorrents(GetActiveStreams(), t.ActiveReaders())
+	if t.bt != nil {
+		playbackTorrents = t.bt.ActivePlaybackTorrents()
+	}
+
+	targetConns := adaptiveMaxEstablishedConns(sets, playbackTorrents, t.ActiveReaders())
+	t.SetMaxEstablishedConns(targetConns)
+	t.lifecycle.lastMaxEstablished.Store(int32(targetConns))
+	t.maybeBoostPeerAcquisition(playbackTorrents)
+}
+
+func (t *Torrent) quiescePlaybackPeerAcquisition() {
+	if t == nil || t.Torrent == nil {
+		return
+	}
+
+	t.DisallowDataDownload()
+	t.SetMaxEstablishedConns(0)
+	t.lifecycle.lastMaxEstablished.Store(0)
+	t.lifecycle.playbackQuiesced.Store(true)
+}
+
+func disconnectTimeout(sets *settings.BTSets) time.Duration {
+	if sets == nil || sets.TorrentDisconnectTimeout <= 0 {
+		return 30 * time.Second
+	}
+
+	return time.Duration(sets.TorrentDisconnectTimeout) * time.Second
+}
+
+func postPlaybackDisconnectDelay(sets *settings.BTSets) time.Duration {
+	timeout := disconnectTimeout(sets)
+	if sets == nil || !isTCPOnlyBalancedCoreProfile(sets.CoreProfile) {
+		return timeout
+	}
+
+	const tcpOnlyBalancedPostPlaybackIdleTimeout = 5 * time.Second
+	if timeout < tcpOnlyBalancedPostPlaybackIdleTimeout {
+		return timeout
+	}
+
+	return tcpOnlyBalancedPostPlaybackIdleTimeout
 }

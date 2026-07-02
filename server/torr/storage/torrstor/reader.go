@@ -17,6 +17,7 @@ type Reader struct {
 
 	offset    atomic.Int64
 	readahead atomic.Int64
+	created   atomic.Int64
 	file      *torrent.File
 
 	cache    *Cache
@@ -29,11 +30,14 @@ type Reader struct {
 }
 
 func newReader(file *torrent.File, cache *Cache) *Reader {
+	now := time.Now()
 	r := &Reader{
 		file:  file,
 		cache: cache,
 	}
 	r.Reader = file.NewReader()
+	r.created.Store(now.UnixNano())
+	r.lastAccess.Store(now.Unix())
 	r.isUse.Store(true)
 	cache.addActiveReaders(1)
 

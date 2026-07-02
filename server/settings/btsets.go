@@ -29,13 +29,16 @@ type BTSets struct {
 	RemoveCacheOnDrop bool
 
 	// Torrent
-	ForceEncrypt                  bool
-	RetrackersMode                int  // 0 - don`t add, 1 - add retrackers (def), 2 - remove retrackers 3 - replace retrackers
-	TorrentDisconnectTimeout      int  // in seconds
-	EnableDebug                   bool // debug logs (includes library debug when enabled)
-	ServiceOnlyDebug              bool // only V2 code debug logs, no library debug
-	DebugEstablishedConnsOverride int  // local profiling only; ignored unless EnableDebug is true
-	DebugMaxUnverifiedBytesMB     int64
+	ForceEncrypt                    bool
+	RetrackersMode                  int  // 0 - don`t add, 1 - add retrackers (def), 2 - remove retrackers 3 - replace retrackers
+	TorrentDisconnectTimeout        int  // in seconds
+	EnableDebug                     bool // debug logs (includes library debug when enabled)
+	ServiceOnlyDebug                bool // only V2 code debug logs, no library debug
+	DebugEstablishedConnsOverride   int  // local profiling only; ignored unless EnableDebug is true
+	DebugTotalHalfOpenConnsOverride int
+	DebugTrackerBudgetOverride      int
+	DebugStablePeerCap              int
+	DebugMaxUnverifiedBytesMB       int64
 
 	// DLNA
 	EnableDLNA   bool
@@ -63,6 +66,8 @@ type BTSets struct {
 	UploadRateLimit   int // in kb, 0 - inf
 	ConnectionsLimit  int
 	PeersListenPort   int
+	EnableLPD         bool
+	LPDIPv6           bool
 
 	// HTTPS
 	SslPort int
@@ -81,6 +86,11 @@ type BTSets struct {
 	StreamQueueSize int
 	// StreamQueueWaitSec: max wait time for queue slot acquisition
 	StreamQueueWaitSec int
+	// MaxUniquePlaybackTorrents: 0 -> no unique torrent cap, >0 -> fixed unique playback torrent limit
+	MaxUniquePlaybackTorrents int
+	// StartupPreloadPolicy controls explicit ?preload behavior when playback is already active.
+	// Allowed: skip-active, legacy.
+	StartupPreloadPolicy string
 	// Adaptive read-ahead bounds for streaming readers, in MB.
 	// 0 values fallback to safe defaults.
 	AdaptiveRAMinMB int

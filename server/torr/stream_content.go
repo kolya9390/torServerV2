@@ -143,10 +143,17 @@ type firstByteTrackingReader struct {
 	seen          bool
 }
 
+type streamOffsetReader interface {
+	Offset() int64
+}
+
 func (r *firstByteTrackingReader) Read(p []byte) (int, error) {
 	var started time.Time
+	offset := int64(-1)
+
 	if r.trackReadWait {
 		started = time.Now()
+		offset = streamReadOffset(r.reader)
 	}
 
 	n, err := r.reader.Read(p)
@@ -154,7 +161,7 @@ func (r *firstByteTrackingReader) Read(p []byte) (int, error) {
 	if r.trackReadWait {
 		wait := time.Since(started)
 		recordStreamReadWait(wait)
-		r.delivery.recordReadWait(wait)
+		r.delivery.recordReadWait(wait, offset, len(p))
 	}
 
 	if n > 0 && !r.seen {
@@ -169,25 +176,36 @@ func (r *firstByteTrackingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+func streamReadOffset(reader io.Reader) int64 {
+	offsetReader, ok := reader.(streamOffsetReader)
+	if !ok {
+		return -1
+	}
+
+	return offsetReader.Offset()
+}
+
 // serveContentReadSeeker shields the underlying torrent reader from
 // ServeContent's size probe (SeekEnd/SeekStart).
 type serveContentReadSeeker struct {
-	reader  streamContentSource
-	size    int64
-	pos     int64
-	virtual bool
+	reader       streamContentSource
+	size         int64
+	pos          int64
+	virtual      bool
+	readObserver *streamDelivery
 }
 
-func newServeContentReadSeeker(reader streamContentSource, size int64) *serveContentReadSeeker {
+func newServeContentReadSeeker(reader streamContentSource, size int64, readObserver *streamDelivery) *serveContentReadSeeker {
 	pos := int64(0)
 	if reader != nil {
 		pos = reader.Offset()
 	}
 
 	return &serveContentReadSeeker{
-		reader: reader,
-		size:   size,
-		pos:    pos,
+		reader:       reader,
+		size:         size,
+		pos:          pos,
+		readObserver: readObserver,
 	}
 }
 
@@ -202,10 +220,29 @@ func (s *serveContentReadSeeker) Read(p []byte) (int, error) {
 		}
 	}
 
+	started := time.Now()
+	offset := s.pos
 	n, err := s.reader.Read(p)
+	s.recordReadWaitLocation(time.Since(started), offset, len(p))
 	s.pos += int64(n)
 
 	return n, err
+}
+
+func (s *serveContentReadSeeker) recordReadWaitLocation(wait time.Duration, offset int64, requestedBytes int) {
+	if s.readObserver == nil {
+		return
+	}
+
+	s.readObserver.recordReadWaitLocation(wait, offset, requestedBytes)
+}
+
+func (s *serveContentReadSeeker) Offset() int64 {
+	if s == nil {
+		return -1
+	}
+
+	return s.pos
 }
 
 func (s *serveContentReadSeeker) Seek(offset int64, whence int) (int64, error) {

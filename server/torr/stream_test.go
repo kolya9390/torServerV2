@@ -30,6 +30,13 @@ type slowOnceReader struct {
 	done  bool
 }
 
+type slowOffsetReader struct {
+	delay  time.Duration
+	data   []byte
+	offset int64
+	done   bool
+}
+
 type fakeContextReader struct {
 	ctx context.Context
 }
@@ -47,6 +54,23 @@ func (r *slowOnceReader) Read(p []byte) (int, error) {
 	r.done = true
 
 	return copy(p, r.data), nil
+}
+
+func (r *slowOffsetReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, io.EOF
+	}
+
+	time.Sleep(r.delay)
+	r.done = true
+	n := copy(p, r.data)
+	r.offset += int64(n)
+
+	return n, nil
+}
+
+func (r *slowOffsetReader) Offset() int64 {
+	return r.offset
 }
 
 func (f *fakeStreamContentSource) Read(p []byte) (int, error) {
@@ -91,7 +115,7 @@ func (f *fakeStreamContentSource) Offset() int64 {
 
 func TestServeContentReadSeeker_SkipsUnderlyingSizeProbe(t *testing.T) {
 	src := &fakeStreamContentSource{data: []byte("0123456789")}
-	wrapped := newServeContentReadSeeker(src, int64(len(src.data)))
+	wrapped := newServeContentReadSeeker(src, int64(len(src.data)), nil)
 
 	if pos, err := wrapped.Seek(0, io.SeekEnd); err != nil || pos != int64(len(src.data)) {
 		t.Fatalf("SeekEnd() = (%d, %v), want (%d, nil)", pos, err, len(src.data))
@@ -122,7 +146,7 @@ func TestServeContentReadSeeker_SkipsUnderlyingSizeProbe(t *testing.T) {
 
 func TestServeContentReadSeeker_DefersRangeSeekUntilRead(t *testing.T) {
 	src := &fakeStreamContentSource{data: []byte("abcdefghijklmnopqrstuvwxyz")}
-	wrapped := newServeContentReadSeeker(src, int64(len(src.data)))
+	wrapped := newServeContentReadSeeker(src, int64(len(src.data)), nil)
 
 	if _, err := wrapped.Seek(0, io.SeekEnd); err != nil {
 		t.Fatalf("SeekEnd() err = %v", err)
@@ -151,6 +175,31 @@ func TestServeContentReadSeeker_DefersRangeSeekUntilRead(t *testing.T) {
 	}
 }
 
+func TestServeContentReadSeekerRecordsReadWaitLocation(t *testing.T) {
+	resetStreamDeliveryForTest()
+
+	src := &fakeStreamContentSource{data: []byte("abcdef"), pos: 2}
+	delivery, release := registerStreamDelivery(time.Now(), 77)
+	defer release()
+
+	wrapped := newServeContentReadSeeker(src, int64(len(src.data)), delivery)
+	wrapped.recordReadWaitLocation(streamReadWaitThreshold+time.Millisecond, wrapped.Offset(), 32768)
+
+	snapshot := SnapshotStreamDelivery()
+	if got, want := len(snapshot.Streams), 1; got != want {
+		t.Fatalf("len(Streams) = %d, want %d", got, want)
+	}
+
+	stream := snapshot.Streams[0]
+	if got, want := stream.LastReadOffset, int64(2); got != want {
+		t.Fatalf("LastReadOffset = %d, want %d", got, want)
+	}
+
+	if got, want := stream.LastReadSize, int64(32768); got != want {
+		t.Fatalf("LastReadSize = %d, want %d", got, want)
+	}
+}
+
 func TestStreamReaderReadahead(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -159,11 +208,17 @@ func TestStreamReaderReadahead(t *testing.T) {
 		readers   int
 		wantBytes int64
 	}{
-		{name: "fixed reader window", pieceLen: 2 << 20, cacheCap: 64 << 20, readers: 1, wantBytes: 16 << 20},
-		{name: "fixed oversized cache", pieceLen: 2 << 20, cacheCap: 256 << 20, readers: 1, wantBytes: 16 << 20},
+		{name: "64mb cache one reader keeps fixed horizon", pieceLen: 2 << 20, cacheCap: 64 << 20, readers: 1, wantBytes: 16 << 20},
+		{name: "64mb cache two readers narrows cache share", pieceLen: 2 << 20, cacheCap: 64 << 20, readers: 2, wantBytes: 8 << 20},
+		{name: "64mb cache three readers divides cache share", pieceLen: 2 << 20, cacheCap: 64 << 20, readers: 3, wantBytes: ((64 << 20) / 3) / 4},
+		{name: "128mb cache one reader keeps fixed horizon", pieceLen: 2 << 20, cacheCap: 128 << 20, readers: 1, wantBytes: 16 << 20},
+		{name: "128mb cache two readers keep fixed horizon", pieceLen: 2 << 20, cacheCap: 128 << 20, readers: 2, wantBytes: 16 << 20},
+		{name: "128mb cache three readers divides cache share", pieceLen: 2 << 20, cacheCap: 128 << 20, readers: 3, wantBytes: ((128 << 20) / 3) / 4},
+		{name: "256mb cache one reader keeps fixed horizon", pieceLen: 2 << 20, cacheCap: 256 << 20, readers: 1, wantBytes: 16 << 20},
+		{name: "256mb cache two readers keep fixed horizon", pieceLen: 2 << 20, cacheCap: 256 << 20, readers: 2, wantBytes: 16 << 20},
+		{name: "256mb cache three readers keep fixed horizon", pieceLen: 2 << 20, cacheCap: 256 << 20, readers: 3, wantBytes: 16 << 20},
 		{name: "falls back to fixed baseline", pieceLen: 4 << 20, cacheCap: 0, readers: 1, wantBytes: 16 << 20},
 		{name: "respects tiny cache", pieceLen: 1 << 20, cacheCap: 6 << 20, readers: 1, wantBytes: 6 << 20},
-		{name: "narrows two reader cache share", pieceLen: 2 << 20, cacheCap: 64 << 20, readers: 2, wantBytes: 8 << 20},
 		{name: "keeps at least two large pieces", pieceLen: 4 << 20, cacheCap: 64 << 20, readers: 3, wantBytes: 8 << 20},
 		{name: "does not exceed per reader capacity", pieceLen: 1 << 20, cacheCap: 8 << 20, readers: 4, wantBytes: 2 << 20},
 	}
@@ -498,6 +553,73 @@ func TestStreamMetricsWriterReadFromRecordsSlowReadWait(t *testing.T) {
 	}
 }
 
+func TestStreamMetricsWriterReadFromRecordsReadWaitDiagnostics(t *testing.T) {
+	resetStreamHealthForTest()
+	resetStreamDeliveryForTest()
+
+	rec := &readerFromRecorder{}
+	delivery, release := registerStreamDelivery(time.Now(), 77)
+	defer release()
+
+	w := &streamMetricsWriter{
+		ResponseWriter: rec,
+		trackReadWait:  true,
+		delivery:       delivery,
+	}
+	reader := &slowOffsetReader{
+		delay:  streamReadWaitThreshold + 50*time.Millisecond,
+		data:   []byte("stream-data"),
+		offset: 12345,
+	}
+
+	if _, err := w.ReadFrom(reader); err != nil {
+		t.Fatalf("ReadFrom() err = %v", err)
+	}
+
+	deliverySnapshot := SnapshotStreamDelivery()
+	if got, want := len(deliverySnapshot.Streams), 1; got != want {
+		t.Fatalf("len(delivery streams) = %d, want %d", got, want)
+	}
+
+	stream := deliverySnapshot.Streams[0]
+	if got, want := stream.LastReadOffset, int64(12345); got != want {
+		t.Fatalf("LastReadOffset = %d, want %d", got, want)
+	}
+
+	if stream.LastReadSize <= 0 {
+		t.Fatalf("LastReadSize = %d, want positive", stream.LastReadSize)
+	}
+
+	if stream.LastReadWaitMS < streamReadWaitThreshold.Milliseconds() {
+		t.Fatalf("LastReadWaitMS = %d, want >= %d", stream.LastReadWaitMS, streamReadWaitThreshold.Milliseconds())
+	}
+
+	if got, want := stream.ReadWaitMSBuckets["le_1000"], int64(1); got != want {
+		t.Fatalf("stream read wait le_1000 bucket = %d, want %d", got, want)
+	}
+}
+
+func TestStreamDeliveryReadWaitDiagnosticsSnapshotIsPrivacySafe(t *testing.T) {
+	resetStreamDeliveryForTest()
+
+	delivery, release := registerStreamDelivery(time.Now(), 77)
+	defer release()
+
+	delivery.recordReadWait(streamReadWaitThreshold+time.Millisecond, 12345, 32768)
+
+	data, err := json.Marshal(SnapshotStreamDelivery())
+	if err != nil {
+		t.Fatalf("marshal delivery snapshot: %v", err)
+	}
+
+	payload := strings.ToLower(string(data))
+	for _, forbidden := range []string{"hash", "title", "path", "url", "query", "ip"} {
+		if strings.Contains(payload, forbidden) {
+			t.Fatalf("delivery snapshot leaks %q: %s", forbidden, payload)
+		}
+	}
+}
+
 func TestStreamMetricsWriterReadFromRecordsReadWaitWithoutDelivery(t *testing.T) {
 	resetStreamHealthForTest()
 	resetStreamDeliveryForTest()
@@ -573,7 +695,11 @@ func TestStreamDeliveryRegistryTracksAndRemovesActiveStream(t *testing.T) {
 	resetStreamDeliveryForTest()
 
 	started := time.Now().Add(-time.Second)
-	delivery, release := registerStreamDelivery(started, 42)
+	delivery, release := registerStreamDeliveryWithMetadata(started, 42, streamDeliveryMetadata{
+		initialOffset:  4096,
+		fileSize:       8192,
+		requestedRange: true,
+	})
 	delivery.recordWrite(1024, 10*time.Millisecond)
 
 	snapshot := SnapshotStreamDelivery()
@@ -598,6 +724,26 @@ func TestStreamDeliveryRegistryTracksAndRemovesActiveStream(t *testing.T) {
 		t.Fatalf("BytesWritten = %d, want %d", got, want)
 	}
 
+	if !stream.RequestedRange {
+		t.Fatal("RequestedRange = false, want true")
+	}
+
+	if got, want := stream.InitialOffset, int64(4096); got != want {
+		t.Fatalf("InitialOffset = %d, want %d", got, want)
+	}
+
+	if got, want := stream.CurrentOffset, int64(5120); got != want {
+		t.Fatalf("CurrentOffset = %d, want %d", got, want)
+	}
+
+	if got, want := stream.FileSize, int64(8192); got != want {
+		t.Fatalf("FileSize = %d, want %d", got, want)
+	}
+
+	if got, want := stream.RemainingBytes, int64(3072); got != want {
+		t.Fatalf("RemainingBytes = %d, want %d", got, want)
+	}
+
 	if stream.FirstByteMS < 0 {
 		t.Fatalf("FirstByteMS = %d, want non-negative", stream.FirstByteMS)
 	}
@@ -611,6 +757,33 @@ func TestStreamDeliveryRegistryTracksAndRemovesActiveStream(t *testing.T) {
 
 	if got, want := afterRelease.BytesWrittenTotal, int64(1024); got != want {
 		t.Fatalf("BytesWrittenTotal after release = %d, want %d", got, want)
+	}
+}
+
+func TestStreamDeliverySnapshotClampsCurrentOffsetToFileSize(t *testing.T) {
+	resetStreamDeliveryForTest()
+
+	delivery, release := registerStreamDeliveryWithMetadata(time.Now(), 42, streamDeliveryMetadata{
+		initialOffset:  7000,
+		fileSize:       8192,
+		requestedRange: true,
+	})
+	defer release()
+
+	delivery.recordWrite(4096, time.Millisecond)
+
+	snapshot := SnapshotStreamDelivery()
+	if got, want := len(snapshot.Streams), 1; got != want {
+		t.Fatalf("len(Streams) = %d, want %d", got, want)
+	}
+
+	stream := snapshot.Streams[0]
+	if got, want := stream.CurrentOffset, int64(8192); got != want {
+		t.Fatalf("CurrentOffset = %d, want %d", got, want)
+	}
+
+	if got := stream.RemainingBytes; got != 0 {
+		t.Fatalf("RemainingBytes = %d, want 0", got)
 	}
 }
 
@@ -767,8 +940,8 @@ func TestStreamFairnessSkipsBalancedStreams(t *testing.T) {
 	streamFairness.mu.Unlock()
 
 	started := time.Now().Add(-streamFairnessMinAge - time.Second)
-	left, releaseLeft := registerStreamFairness(started, 0)
-	right, releaseRight := registerStreamFairness(started, 0)
+	left, releaseLeft := registerStreamFairness(started, 11)
+	right, releaseRight := registerStreamFairness(started, 12)
 
 	defer releaseLeft()
 	defer releaseRight()
@@ -778,6 +951,261 @@ func TestStreamFairnessSkipsBalancedStreams(t *testing.T) {
 
 	if len(delays) != 0 {
 		t.Fatalf("balanced stream delays = %v, want none", delays)
+	}
+}
+
+func TestStreamFairnessSkipsSameTorrentReaders(t *testing.T) {
+	resetStreamFairnessForTest()
+	defer resetStreamFairnessForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	started := time.Now().Add(-streamFairnessMinAge - time.Second)
+	slow, releaseSlow := registerStreamFairness(started, 11)
+	fast, releaseFast := registerStreamFairness(started, 11)
+
+	defer releaseSlow()
+	defer releaseFast()
+
+	slow.recordWriteAndMaybeDelay(int(streamFairnessMinBytes + 1))
+	fast.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 6))
+
+	if len(delays) != 0 {
+		t.Fatalf("same torrent delays = %v, want none", delays)
+	}
+}
+
+func TestStreamFairnessProtectsSecondUniqueStartup(t *testing.T) {
+	resetStreamFairnessForTest()
+	resetStreamDeliveryForTest()
+	defer resetStreamFairnessForTest()
+	defer resetStreamDeliveryForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	matureStarted := time.Now().Add(-streamFairnessMinAge - time.Second)
+	startupStarted := time.Now().Add(-2 * time.Second)
+	fast, releaseFast := registerStreamFairness(matureStarted, 11)
+	startup, releaseStartup := registerStreamFairness(startupStarted, 22)
+	startupDelivery, releaseDelivery := registerStreamDelivery(startupStarted, 22)
+	startup.setDelivery(startupDelivery)
+	fast.bytesWritten.Store(streamFairnessMinBytes * 4)
+
+	defer releaseFast()
+	defer releaseStartup()
+	defer releaseDelivery()
+
+	snapshotBefore := SnapshotStreamFairness()
+	if got, want := snapshotBefore.StartupProtectionActive, 1; got != want {
+		t.Fatalf("StartupProtectionActive = %d, want %d", got, want)
+	}
+
+	fast.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 4))
+
+	if len(delays) != 1 {
+		t.Fatalf("startup protection delays = %v, want one delay", delays)
+	}
+
+	if delays[0] != streamStartupProtectionDelay {
+		t.Fatalf("startup protection delay = %s, want %s", delays[0], streamStartupProtectionDelay)
+	}
+
+	snapshot := SnapshotStreamFairness()
+	if got, want := snapshot.StartupProtectedWrites, int64(1); got != want {
+		t.Fatalf("StartupProtectedWrites = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.StartupProtectionDelay, streamStartupProtectionDelay.Microseconds(); got != want {
+		t.Fatalf("StartupProtectionDelay = %d, want %d", got, want)
+	}
+}
+
+func TestStreamFairnessStartupProtectionExitsAfterFirstByte(t *testing.T) {
+	resetStreamFairnessForTest()
+	resetStreamDeliveryForTest()
+	defer resetStreamFairnessForTest()
+	defer resetStreamDeliveryForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	matureStarted := time.Now().Add(-streamFairnessMinAge - time.Second)
+	startupStarted := time.Now().Add(-2 * time.Second)
+	fast, releaseFast := registerStreamFairness(matureStarted, 11)
+	startup, releaseStartup := registerStreamFairness(startupStarted, 22)
+	startupDelivery, releaseDelivery := registerStreamDelivery(startupStarted, 22)
+	startup.setDelivery(startupDelivery)
+	startupDelivery.recordWrite(1, time.Millisecond)
+
+	defer releaseFast()
+	defer releaseStartup()
+	defer releaseDelivery()
+
+	fast.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 4))
+
+	if len(delays) != 0 {
+		t.Fatalf("startup protection after first byte delays = %v, want none", delays)
+	}
+}
+
+func TestStreamFairnessStartupProtectionSkipsSameTorrentStartup(t *testing.T) {
+	resetStreamFairnessForTest()
+	resetStreamDeliveryForTest()
+	defer resetStreamFairnessForTest()
+	defer resetStreamDeliveryForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	matureStarted := time.Now().Add(-streamFairnessMinAge - time.Second)
+	startupStarted := time.Now().Add(-2 * time.Second)
+	fast, releaseFast := registerStreamFairness(matureStarted, 11)
+	startup, releaseStartup := registerStreamFairness(startupStarted, 11)
+	startupDelivery, releaseDelivery := registerStreamDelivery(startupStarted, 11)
+	startup.setDelivery(startupDelivery)
+
+	defer releaseFast()
+	defer releaseStartup()
+	defer releaseDelivery()
+
+	fast.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 4))
+
+	if len(delays) != 0 {
+		t.Fatalf("same-torrent startup delays = %v, want none", delays)
+	}
+}
+
+func TestStreamFairnessStartupProtectionExpiresAndCleansUp(t *testing.T) {
+	resetStreamFairnessForTest()
+	resetStreamDeliveryForTest()
+	defer resetStreamFairnessForTest()
+	defer resetStreamDeliveryForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	matureStarted := time.Now().Add(-streamFairnessMinAge - time.Second)
+	expiredStarted := time.Now().Add(-streamStartupProtectionWindow - time.Second)
+	fast, releaseFast := registerStreamFairness(matureStarted, 11)
+	startup, releaseStartup := registerStreamFairness(expiredStarted, 22)
+	startupDelivery, releaseDelivery := registerStreamDelivery(expiredStarted, 22)
+	startup.setDelivery(startupDelivery)
+
+	defer releaseFast()
+	defer releaseDelivery()
+
+	fast.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 4))
+
+	if len(delays) != 0 {
+		t.Fatalf("expired startup protection delays = %v, want none", delays)
+	}
+
+	releaseStartup()
+	fast.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 4))
+
+	if got := SnapshotStreamFairness().StartupProtectionActive; got != 0 {
+		t.Fatalf("StartupProtectionActive after release = %d, want 0", got)
+	}
+}
+
+func TestStreamFairnessStartupProtectionDisabledWithoutDiagnosticTorrentID(t *testing.T) {
+	resetStreamFairnessForTest()
+	defer resetStreamFairnessForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	matureStarted := time.Now().Add(-streamFairnessMinAge - time.Second)
+	startupStarted := time.Now().Add(-2 * time.Second)
+	fast, releaseFast := registerStreamFairness(matureStarted, 0)
+	_, releaseStartup := registerStreamFairness(startupStarted, 0)
+
+	defer releaseFast()
+	defer releaseStartup()
+
+	fast.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 4))
+
+	if len(delays) != 0 {
+		t.Fatalf("debug-off startup protection delays = %v, want none", delays)
+	}
+}
+
+func TestStreamFairnessAggregatesSameTorrentRangeChurn(t *testing.T) {
+	resetStreamFairnessForTest()
+	defer resetStreamFairnessForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	started := time.Now().Add(-streamFairnessMinAge - time.Second)
+	weak, releaseWeak := registerStreamFairness(started, 11)
+	fastProbeA, releaseFastProbeA := registerStreamFairness(started, 12)
+	fastProbeB, releaseFastProbeB := registerStreamFairness(started, 12)
+
+	defer releaseWeak()
+	defer releaseFastProbeA()
+	defer releaseFastProbeB()
+
+	weak.recordWriteAndMaybeDelay(int(streamFairnessMinBytes + 1))
+	fastProbeA.recordWriteAndMaybeDelay(int(14 << 20))
+	fastProbeB.recordWriteAndMaybeDelay(int(14 << 20))
+
+	if len(delays) != 1 {
+		t.Fatalf("same-torrent range churn delays = %v, want one delay", delays)
+	}
+
+	if delays[0] != streamFairnessBaseDelay {
+		t.Fatalf("same-torrent range churn delay = %s, want %s", delays[0], streamFairnessBaseDelay)
+	}
+
+	snapshot := SnapshotStreamFairness()
+	if got, want := snapshot.ActiveStreams, 3; got != want {
+		t.Fatalf("ActiveStreams = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.ActiveUniqueTorrents, 2; got != want {
+		t.Fatalf("ActiveUniqueTorrents = %d, want %d", got, want)
+	}
+
+	if got, want := snapshot.ExtraSameTorrentStreams, 1; got != want {
+		t.Fatalf("ExtraSameTorrentStreams = %d, want %d", got, want)
 	}
 }
 
@@ -831,6 +1259,142 @@ func TestStreamFairnessDelaysDominantStream(t *testing.T) {
 
 	if got, want := snapshot.MaxDelayMicros, streamFairnessMaxDelay.Microseconds(); got != want {
 		t.Fatalf("MaxDelayMicros = %d, want %d", got, want)
+	}
+}
+
+func TestStreamFairnessDelaysDominantStreamWhenWeakStreamHasReadWaits(t *testing.T) {
+	resetStreamFairnessForTest()
+	resetStreamDeliveryForTest()
+	defer resetStreamFairnessForTest()
+	defer resetStreamDeliveryForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	started := time.Now().Add(-streamFairnessMinAge - time.Second)
+	weak, releaseWeak := registerStreamFairness(started, 11)
+	fast, releaseFast := registerStreamFairness(started, 12)
+	weakDelivery, releaseDelivery := registerStreamDelivery(started, 11)
+	weak.setDelivery(weakDelivery)
+	weakDelivery.recordReadWait(streamReadWaitThreshold+time.Millisecond, 0, 32768)
+
+	defer releaseWeak()
+	defer releaseFast()
+	defer releaseDelivery()
+
+	weak.recordWriteAndMaybeDelay(int(streamFairnessMinBytes + 1))
+	fast.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 6))
+
+	if len(delays) != 1 {
+		t.Fatalf("read-wait limited weak stream delays = %v, want one delay", delays)
+	}
+
+	if delays[0] != streamFairnessMaxDelay {
+		t.Fatalf("read-wait limited weak stream delay = %s, want %s", delays[0], streamFairnessMaxDelay)
+	}
+}
+
+func TestStreamFairnessDelaysDominantStreamWithMinorReadWaits(t *testing.T) {
+	resetStreamFairnessForTest()
+	resetStreamDeliveryForTest()
+	defer resetStreamFairnessForTest()
+	defer resetStreamDeliveryForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	started := time.Now().Add(-streamFairnessMinAge - time.Second)
+	weak, releaseWeak := registerStreamFairness(started, 11)
+	fast, releaseFast := registerStreamFairness(started, 12)
+	fastDelivery, releaseDelivery := registerStreamDelivery(started, 12)
+	fast.setDelivery(fastDelivery)
+	fastDelivery.recordReadWait(streamReadWaitThreshold+time.Millisecond, 0, 32768)
+
+	defer releaseWeak()
+	defer releaseFast()
+	defer releaseDelivery()
+
+	weak.recordWriteAndMaybeDelay(int(streamFairnessMinBytes + 1))
+	fast.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 6))
+
+	if len(delays) != 1 {
+		t.Fatalf("minor-read-wait dominant stream delays = %v, want one delay", delays)
+	}
+}
+
+func TestStreamFairnessSkipsWhenDominantStreamHasRecentSevereReadWait(t *testing.T) {
+	resetStreamFairnessForTest()
+	resetStreamDeliveryForTest()
+	defer resetStreamFairnessForTest()
+	defer resetStreamDeliveryForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	started := time.Now().Add(-streamFairnessMinAge - time.Second)
+	weak, releaseWeak := registerStreamFairness(started, 11)
+	fast, releaseFast := registerStreamFairness(started, 12)
+	fastDelivery, releaseDelivery := registerStreamDelivery(started, 12)
+	fast.setDelivery(fastDelivery)
+	fastDelivery.recordReadWait(4*time.Second, 0, 32768)
+
+	defer releaseWeak()
+	defer releaseFast()
+	defer releaseDelivery()
+
+	weak.recordWriteAndMaybeDelay(int(streamFairnessMinBytes + 1))
+	fast.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 6))
+
+	if len(delays) != 0 {
+		t.Fatalf("recent severe-read-wait dominant stream delays = %v, want none", delays)
+	}
+}
+
+func TestStreamFairnessSkipsWhenWeakStreamHasSlowWrites(t *testing.T) {
+	resetStreamFairnessForTest()
+	resetStreamDeliveryForTest()
+	defer resetStreamFairnessForTest()
+	defer resetStreamDeliveryForTest()
+
+	delays := make([]time.Duration, 0)
+
+	streamFairness.mu.Lock()
+	streamFairness.sleep = func(delay time.Duration) {
+		delays = append(delays, delay)
+	}
+	streamFairness.mu.Unlock()
+
+	started := time.Now().Add(-streamFairnessMinAge - time.Second)
+	weak, releaseWeak := registerStreamFairness(started, 11)
+	fast, releaseFast := registerStreamFairness(started, 12)
+	weakDelivery, releaseDelivery := registerStreamDelivery(started, 11)
+	weak.setDelivery(weakDelivery)
+	weakDelivery.recordWrite(1, streamSlowWriteThreshold+time.Millisecond)
+
+	defer releaseWeak()
+	defer releaseFast()
+	defer releaseDelivery()
+
+	weak.recordWriteAndMaybeDelay(int(streamFairnessMinBytes + 1))
+	fast.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 6))
+
+	if len(delays) != 0 {
+		t.Fatalf("client-backpressure limited weak stream delays = %v, want none", delays)
 	}
 }
 

@@ -37,6 +37,9 @@ type streamDelivery struct {
 
 	torrentID          uint64
 	startedUnixNano    int64
+	initialOffset      int64
+	fileSize           int64
+	requestedRange     bool
 	firstWriteUnixNano atomic.Int64
 	lastWriteUnixNano  atomic.Int64
 	bytesWritten       atomic.Int64
@@ -50,6 +53,11 @@ type streamDelivery struct {
 	readWaitsOver3s    atomic.Int64
 	readWaitsOver10s   atomic.Int64
 	maxReadWaitMS      atomic.Int64
+	lastReadWaitMS     atomic.Int64
+	lastReadWaitNano   atomic.Int64
+	lastReadOffset     atomic.Int64
+	lastReadSize       atomic.Int64
+	readWaitBuckets    [6]atomic.Int64
 }
 
 type streamDeliverySnapshot struct {
@@ -64,30 +72,57 @@ type streamDeliverySnapshot struct {
 }
 
 type activeDeliverySnapshot struct {
-	TorrentID          uint64 `json:"torrent_id"`
-	ID                 uint64 `json:"id"`
-	ElapsedMS          int64  `json:"elapsed_ms"`
-	FirstByteMS        int64  `json:"first_byte_ms"`
-	SinceLastWriteMS   int64  `json:"since_last_write_ms"`
-	BytesWritten       int64  `json:"bytes_written"`
-	BytesPerSecond     int64  `json:"bytes_per_second"`
-	WriteCalls         int64  `json:"write_calls"`
-	SlowWritesTotal    int64  `json:"slow_writes_total"`
-	WritesOver3sTotal  int64  `json:"writes_over_3s_total"`
-	WritesOver10sTotal int64  `json:"writes_over_10s_total"`
-	MaxWriteMS         int64  `json:"max_write_ms"`
-	ReadWaitsTotal     int64  `json:"read_waits_total"`
-	ReadWaitTotalMS    int64  `json:"read_wait_total_ms"`
-	ReadWaitsOver3s    int64  `json:"read_waits_over_3s_total"`
-	ReadWaitsOver10s   int64  `json:"read_waits_over_10s_total"`
-	MaxReadWaitMS      int64  `json:"max_read_wait_ms"`
+	TorrentID          uint64           `json:"torrent_id"`
+	ID                 uint64           `json:"id"`
+	ElapsedMS          int64            `json:"elapsed_ms"`
+	RequestedRange     bool             `json:"requested_range"`
+	InitialOffset      int64            `json:"initial_offset"`
+	CurrentOffset      int64            `json:"current_offset"`
+	FileSize           int64            `json:"file_size"`
+	RemainingBytes     int64            `json:"remaining_bytes"`
+	FirstByteMS        int64            `json:"first_byte_ms"`
+	SinceLastWriteMS   int64            `json:"since_last_write_ms"`
+	BytesWritten       int64            `json:"bytes_written"`
+	BytesPerSecond     int64            `json:"bytes_per_second"`
+	WriteCalls         int64            `json:"write_calls"`
+	SlowWritesTotal    int64            `json:"slow_writes_total"`
+	WritesOver3sTotal  int64            `json:"writes_over_3s_total"`
+	WritesOver10sTotal int64            `json:"writes_over_10s_total"`
+	MaxWriteMS         int64            `json:"max_write_ms"`
+	ReadWaitsTotal     int64            `json:"read_waits_total"`
+	ReadWaitTotalMS    int64            `json:"read_wait_total_ms"`
+	ReadWaitsOver3s    int64            `json:"read_waits_over_3s_total"`
+	ReadWaitsOver10s   int64            `json:"read_waits_over_10s_total"`
+	MaxReadWaitMS      int64            `json:"max_read_wait_ms"`
+	LastReadWaitMS     int64            `json:"last_read_wait_ms"`
+	LastReadWaitAgeMS  int64            `json:"last_read_wait_age_ms"`
+	LastReadOffset     int64            `json:"last_read_offset"`
+	LastReadSize       int64            `json:"last_read_size"`
+	ReadWaitMSBuckets  map[string]int64 `json:"read_wait_ms_buckets"`
+}
+
+type streamDeliveryMetadata struct {
+	initialOffset  int64
+	fileSize       int64
+	requestedRange bool
 }
 
 func registerStreamDelivery(started time.Time, torrentID uint64) (*streamDelivery, func()) {
+	return registerStreamDeliveryWithMetadata(started, torrentID, streamDeliveryMetadata{})
+}
+
+func registerStreamDeliveryWithMetadata(
+	started time.Time,
+	torrentID uint64,
+	metadata streamDeliveryMetadata,
+) (*streamDelivery, func()) {
 	delivery := &streamDelivery{
 		id:              streamDeliveryID.Add(1),
 		torrentID:       torrentID,
 		startedUnixNano: started.UnixNano(),
+		initialOffset:   maxInt64(metadata.initialOffset, 0),
+		fileSize:        maxInt64(metadata.fileSize, 0),
+		requestedRange:  metadata.requestedRange,
 	}
 
 	streamDeliveries.mu.Lock()
@@ -134,7 +169,7 @@ func (d *streamDelivery) recordWrite(bytesWritten int, elapsed time.Duration) {
 	}
 }
 
-func (d *streamDelivery) recordReadWait(wait time.Duration) {
+func (d *streamDelivery) recordReadWait(wait time.Duration, offset int64, requestedBytes int) {
 	if d == nil || wait < streamReadWaitThreshold {
 		return
 	}
@@ -144,6 +179,10 @@ func (d *streamDelivery) recordReadWait(wait time.Duration) {
 	d.readWaitsTotal.Add(1)
 	d.readWaitTotalMS.Add(waitMS)
 	updateMaxAtomic(&d.maxReadWaitMS, waitMS)
+	d.lastReadWaitMS.Store(waitMS)
+	d.lastReadWaitNano.Store(time.Now().UnixNano())
+	d.lastReadOffset.Store(offset)
+	d.lastReadSize.Store(int64(requestedBytes))
 
 	if wait > 3*time.Second {
 		d.readWaitsOver3s.Add(1)
@@ -152,6 +191,19 @@ func (d *streamDelivery) recordReadWait(wait time.Duration) {
 	if wait > 10*time.Second {
 		d.readWaitsOver10s.Add(1)
 	}
+
+	recordDurationBucket(&d.readWaitBuckets, wait)
+}
+
+func (d *streamDelivery) recordReadWaitLocation(wait time.Duration, offset int64, requestedBytes int) {
+	if d == nil || wait < streamReadWaitThreshold {
+		return
+	}
+
+	d.lastReadWaitMS.Store(wait.Milliseconds())
+	d.lastReadWaitNano.Store(time.Now().UnixNano())
+	d.lastReadOffset.Store(offset)
+	d.lastReadSize.Store(int64(requestedBytes))
 }
 
 func SnapshotStreamDelivery() streamDeliverySnapshot {
@@ -187,11 +239,17 @@ func SnapshotStreamDelivery() streamDeliverySnapshot {
 func (d *streamDelivery) snapshot(now time.Time) activeDeliverySnapshot {
 	elapsed := now.Sub(time.Unix(0, d.startedUnixNano))
 	bytesWritten := d.bytesWritten.Load()
+	currentOffset := d.currentOffset(bytesWritten)
 
 	return activeDeliverySnapshot{
 		TorrentID:          d.torrentID,
 		ID:                 d.id,
 		ElapsedMS:          elapsed.Milliseconds(),
+		RequestedRange:     d.requestedRange,
+		InitialOffset:      d.initialOffset,
+		CurrentOffset:      currentOffset,
+		FileSize:           d.fileSize,
+		RemainingBytes:     remainingBytes(d.fileSize, currentOffset),
 		FirstByteMS:        durationSinceStartMS(d.startedUnixNano, d.firstWriteUnixNano.Load()),
 		SinceLastWriteMS:   durationSinceEventMS(now, d.lastWriteUnixNano.Load()),
 		BytesWritten:       bytesWritten,
@@ -206,7 +264,41 @@ func (d *streamDelivery) snapshot(now time.Time) activeDeliverySnapshot {
 		ReadWaitsOver3s:    d.readWaitsOver3s.Load(),
 		ReadWaitsOver10s:   d.readWaitsOver10s.Load(),
 		MaxReadWaitMS:      d.maxReadWaitMS.Load(),
+		LastReadWaitMS:     d.lastReadWaitMS.Load(),
+		LastReadWaitAgeMS:  durationSinceEventMS(now, d.lastReadWaitNano.Load()),
+		LastReadOffset:     d.lastReadOffset.Load(),
+		LastReadSize:       d.lastReadSize.Load(),
+		ReadWaitMSBuckets:  snapshotBuckets(&d.readWaitBuckets),
 	}
+}
+
+func (d *streamDelivery) currentOffset(bytesWritten int64) int64 {
+	if d == nil {
+		return 0
+	}
+
+	current := d.initialOffset + maxInt64(bytesWritten, 0)
+	if d.fileSize > 0 && current > d.fileSize {
+		return d.fileSize
+	}
+
+	return current
+}
+
+func remainingBytes(fileSize, currentOffset int64) int64 {
+	if fileSize <= 0 || currentOffset >= fileSize {
+		return 0
+	}
+
+	return fileSize - currentOffset
+}
+
+func maxInt64(left, right int64) int64 {
+	if left > right {
+		return left
+	}
+
+	return right
 }
 
 func durationSinceStartMS(startedUnixNano, eventUnixNano int64) int64 {
