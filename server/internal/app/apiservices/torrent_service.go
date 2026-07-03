@@ -157,6 +157,25 @@ func (d torrentService) DropReadiness(hash string) contracts.DropReadiness {
 	return readiness
 }
 
+func (d torrentService) CheckPlaybackAdmission(hash string) contracts.PlaybackAdmissionDecision {
+	if hash == "" {
+		return contracts.PlaybackAdmissionDecision{Allowed: true}
+	}
+
+	current := d.currentSettings()
+	decision := torr.CheckStreamAdmission(current, hash, current.DebugConfig().EnableDebug)
+	retryAfterSec := int(decision.RetryAfter.Seconds())
+	if retryAfterSec <= 0 {
+		retryAfterSec = 1
+	}
+
+	return contracts.PlaybackAdmissionDecision{
+		Allowed:       decision.Allowed,
+		RetryAfterSec: retryAfterSec,
+		Reason:        decision.Reason,
+	}
+}
+
 func (d torrentService) CacheStateByHash(hash string) (any, bool) {
 	tor := d.backend.GetTorrent(hash)
 	if tor == nil {
@@ -215,6 +234,19 @@ func (d torrentService) startupPreloadPolicy() string {
 	}
 
 	return current.StreamConfig().StartupPreloadPolicy
+}
+
+func (d torrentService) currentSettings() *sets.BTSets {
+	if d.settingsProvider == nil {
+		return &sets.BTSets{}
+	}
+
+	current := d.settingsProvider.Get()
+	if current == nil {
+		return &sets.BTSets{}
+	}
+
+	return current
 }
 
 func decideStartupPreload(policy string, signals torr.RuntimeSignals) preloadDecision {

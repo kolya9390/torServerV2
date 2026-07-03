@@ -390,6 +390,104 @@ func TestTorrentsAddExistingActiveFastPathEnqueuesSaveFinalize(t *testing.T) {
 	}
 }
 
+func TestTorrentsAddTransientRejectsAdmissionBeforeAdd(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	torrentsSvc := &testTorrentService{
+		admissionConfigured: true,
+		admissionDecision: contracts.PlaybackAdmissionDecision{
+			Allowed:       false,
+			RetryAfterSec: 3,
+			Reason:        "max_unique_playback_torrents",
+		},
+	}
+	streamSvc := &testStreamService{}
+
+	r := gin.New()
+	withServices(t, r, &contracts.APIServices{
+		Torrents: torrentsSvc,
+		Settings: &contractSettingsService{},
+		Viewed:   &contractViewedService{},
+		System:   &contractSystemService{},
+		Search:   &contractSearchService{},
+		Media:    &contractMediaService{},
+		Modules:  &contractModulesService{},
+		Streams:  streamSvc,
+	})
+	r.POST("/torrents", torrents)
+
+	req := httptest.NewRequest(http.MethodPost, "/torrents", strings.NewReader(`{"action":"add","link":"magnet:?xt=urn:btih:0102030405060708090a0b0c0d0e0f1011121314","save_to_db":false}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if got := w.Header().Get("Retry-After"); got != "3" {
+		t.Fatalf("Retry-After = %q, want 3", got)
+	}
+
+	if !torrentsSvc.admissionCalled || torrentsSvc.admissionHash == "" {
+		t.Fatalf("expected admission check with hash, called=%v hash=%q", torrentsSvc.admissionCalled, torrentsSvc.admissionHash)
+	}
+
+	if torrentsSvc.addCalls != 0 {
+		t.Fatalf("transient add must not call Add after admission rejection, got %d calls", torrentsSvc.addCalls)
+	}
+
+	if torrentsSvc.finalizeCalled {
+		t.Fatal("transient add must not enqueue finalization after admission rejection")
+	}
+}
+
+func TestTorrentsAddPersistentBypassesPlaybackAdmission(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	torrentsSvc := &testTorrentService{
+		admissionConfigured: true,
+		admissionDecision: contracts.PlaybackAdmissionDecision{
+			Allowed:       false,
+			RetryAfterSec: 3,
+			Reason:        "max_unique_playback_torrents",
+		},
+	}
+	streamSvc := &testStreamService{}
+
+	r := gin.New()
+	withServices(t, r, &contracts.APIServices{
+		Torrents: torrentsSvc,
+		Settings: &contractSettingsService{},
+		Viewed:   &contractViewedService{},
+		System:   &contractSystemService{},
+		Search:   &contractSearchService{},
+		Media:    &contractMediaService{},
+		Modules:  &contractModulesService{},
+		Streams:  streamSvc,
+	})
+	r.POST("/torrents", torrents)
+
+	req := httptest.NewRequest(http.MethodPost, "/torrents", strings.NewReader(`{"action":"add","link":"magnet:?xt=urn:btih:0102030405060708090a0b0c0d0e0f1011121314","save_to_db":true}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if torrentsSvc.admissionCalled {
+		t.Fatal("persistent add should not run playback admission")
+	}
+
+	if torrentsSvc.addCalls != 1 {
+		t.Fatalf("expected Add to be called once, got %d", torrentsSvc.addCalls)
+	}
+}
+
 func TestTorrentsAddMapsStreamParseError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

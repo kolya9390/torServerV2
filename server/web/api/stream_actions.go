@@ -3,8 +3,9 @@ package api
 import (
 	"errors"
 	"net/http"
-	"server/internal/app/contracts"
+	"strconv"
 
+	"server/internal/app/contracts"
 	"server/log"
 	utils2 "server/utils"
 
@@ -25,6 +26,34 @@ func (meta streamMeta) toContract() contracts.StreamMeta {
 		Category: meta.category,
 		Data:     meta.data,
 	}
+}
+
+type playbackAdmissionChecker interface {
+	CheckPlaybackAdmission(hash string) contracts.PlaybackAdmissionDecision
+}
+
+func ensurePlaybackAdmission(c *gin.Context, service any, hash string) bool {
+	checker, ok := service.(playbackAdmissionChecker)
+	if !ok || hash == "" {
+		return true
+	}
+
+	decision := checker.CheckPlaybackAdmission(hash)
+	if decision.Allowed {
+		return true
+	}
+
+	if decision.RetryAfterSec > 0 {
+		c.Header("Retry-After", strconv.Itoa(decision.RetryAfterSec))
+	}
+
+	abortAPIError(c, http.StatusServiceUnavailable, APIError{
+		Type:    "stream_admission_rejected",
+		Message: "too many active playback streams",
+		Status:  http.StatusServiceUnavailable,
+	})
+
+	return false
 }
 
 // streamStat godoc
@@ -152,6 +181,10 @@ func streamPlay(c *gin.Context) {
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
 
+		return
+	}
+
+	if !ensurePlaybackAdmission(c, deps.Torrents, req.Spec.HashHex()) {
 		return
 	}
 

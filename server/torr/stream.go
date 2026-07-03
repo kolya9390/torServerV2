@@ -26,12 +26,13 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 	admission := currentAdmission(curSets)
 	debugCfg := curSets.DebugConfig()
 	debugEnabled := debugCfg.EnableDebug
+	torrentID := streamTorrentRuntimeID(t)
 
 	release, err := tryAcquireStream(
 		req.Context(),
 		curSets,
 		t.Hash().HexString(),
-		streamTorrentDiagnosticID(t, debugEnabled),
+		torrentID,
 		debugEnabled,
 	)
 	if err != nil {
@@ -85,6 +86,7 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 		req,
 		resp,
 		debugEnabled,
+		torrentID,
 		streamDeliveryMetadata{
 			initialOffset:  reader.Offset(),
 			fileSize:       file.Length(),
@@ -115,12 +117,12 @@ func startStreamInstrumentation(
 	req *http.Request,
 	resp http.ResponseWriter,
 	debugEnabled bool,
+	torrentID uint64,
 	deliveryMetadata streamDeliveryMetadata,
 ) streamInstrumentation {
 	started := time.Now()
 	streamID := atomic.LoadInt32(&activeStreams)
 	logLifecycle := debugEnabled && !strings.HasPrefix(req.Header.Get("Range"), "bytes=")
-	torrentID := streamTorrentDiagnosticID(t, debugEnabled)
 	fairness, releaseFairness := registerStreamFairness(started, torrentID)
 	writer := &streamMetricsWriter{
 		ResponseWriter: resp,
@@ -151,11 +153,9 @@ func startStreamInstrumentation(
 	}
 }
 
-func streamTorrentDiagnosticID(t *Torrent, debugEnabled bool) uint64 {
-	if !debugEnabled {
-		return 0
-	}
-
+// streamTorrentRuntimeID is privacy-safe and process-local. It is used by runtime
+// policies even when debug metrics are disabled; debug mode only controls exposure.
+func streamTorrentRuntimeID(t *Torrent) uint64 {
 	return t.RuntimeDiagnosticID()
 }
 

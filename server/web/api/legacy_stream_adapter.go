@@ -114,7 +114,7 @@ func (a legacyStreamAdapter) handleCompatibility(c *gin.Context, req legacyStrea
 		return
 	}
 
-	target, ok := a.prepareTarget(c, true, req.play || req.preload)
+	target, ok := a.prepareTarget(c, true, req.play || req.preload, req.play)
 	if !ok {
 		return
 	}
@@ -154,7 +154,12 @@ func (a legacyStreamAdapter) handleAuth(c *gin.Context, req legacyStreamRequest)
 	return true
 }
 
-func (a legacyStreamAdapter) prepareTarget(c *gin.Context, allowCreate, requireValidIndex bool) (legacyStreamTarget, bool) {
+func (a legacyStreamAdapter) prepareTarget(
+	c *gin.Context,
+	allowCreate bool,
+	requireValidIndex bool,
+	requirePlaybackAdmission bool,
+) (legacyStreamTarget, bool) {
 	if c.Query("link") == "" {
 		abortAPIError(c, http.StatusBadRequest, newValidationError("link", "should not be empty"))
 
@@ -165,6 +170,10 @@ func (a legacyStreamAdapter) prepareTarget(c *gin.Context, allowCreate, requireV
 	if err != nil {
 		abortAPIError(c, http.StatusBadRequest, err)
 
+		return legacyStreamTarget{}, false
+	}
+
+	if requirePlaybackAdmission && !ensurePlaybackAdmission(c, a.deps.Torrents, streamReq.Spec.HashHex()) {
 		return legacyStreamTarget{}, false
 	}
 
@@ -247,7 +256,7 @@ func (a legacyStreamAdapter) sendM3U(c *gin.Context, tor contracts.TorrentHandle
 }
 
 func (a legacyStreamAdapter) handleNoAuth(c *gin.Context, req legacyStreamRequest) {
-	target, ok := a.prepareTarget(c, false, req.play)
+	target, ok := a.prepareTarget(c, false, req.play, req.play)
 	if !ok {
 		return
 	}

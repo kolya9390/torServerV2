@@ -142,6 +142,13 @@ type DropReadiness struct {
 	RecentStreamElapsed time.Duration
 }
 
+// PlaybackAdmissionDecision reports whether a playback request should start torrent work.
+type PlaybackAdmissionDecision struct {
+	Allowed       bool
+	RetryAfterSec int
+	Reason        string
+}
+
 // SettingsService defines settings use-cases for API handlers.
 type SettingsService interface {
 	Current() *Settings

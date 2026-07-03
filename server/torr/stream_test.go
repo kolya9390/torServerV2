@@ -1135,7 +1135,7 @@ func TestStreamFairnessStartupProtectionExpiresAndCleansUp(t *testing.T) {
 	}
 }
 
-func TestStreamFairnessStartupProtectionDisabledWithoutDiagnosticTorrentID(t *testing.T) {
+func TestStreamFairnessStartupProtectionWorksWithoutDeliveryDiagnostics(t *testing.T) {
 	resetStreamFairnessForTest()
 	defer resetStreamFairnessForTest()
 
@@ -1149,16 +1149,20 @@ func TestStreamFairnessStartupProtectionDisabledWithoutDiagnosticTorrentID(t *te
 
 	matureStarted := time.Now().Add(-streamFairnessMinAge - time.Second)
 	startupStarted := time.Now().Add(-2 * time.Second)
-	fast, releaseFast := registerStreamFairness(matureStarted, 0)
-	_, releaseStartup := registerStreamFairness(startupStarted, 0)
+	fast, releaseFast := registerStreamFairness(matureStarted, 11)
+	_, releaseStartup := registerStreamFairness(startupStarted, 22)
 
 	defer releaseFast()
 	defer releaseStartup()
 
 	fast.recordWriteAndMaybeDelay(int(streamFairnessMinBytes * 4))
 
-	if len(delays) != 0 {
-		t.Fatalf("debug-off startup protection delays = %v, want none", delays)
+	if len(delays) != 1 {
+		t.Fatalf("startup protection without diagnostics delays = %v, want one delay", delays)
+	}
+
+	if delays[0] != streamStartupProtectionDelay {
+		t.Fatalf("startup protection without diagnostics delay = %s, want %s", delays[0], streamStartupProtectionDelay)
 	}
 }
 

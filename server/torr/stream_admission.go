@@ -18,12 +18,24 @@ var streamAdmissionState = newStreamAdmissionState()
 
 const streamAdmissionSnapshotLimit = 64
 
+const (
+	streamAdmissionReasonAllowed                   = ""
+	streamAdmissionReasonMaxStreams                = "max_streams"
+	streamAdmissionReasonMaxUniquePlaybackTorrents = "max_unique_playback_torrents"
+)
+
 // streamAdmission controls concurrent stream limiting.
 type streamAdmission struct {
 	maxStreams        int32
 	maxUniqueTorrents int
 	queueSize         int
 	waitDuration      time.Duration
+}
+
+type StreamAdmissionDecision struct {
+	Allowed    bool
+	RetryAfter time.Duration
+	Reason     string
 }
 
 type streamAdmissionRegistry struct {
@@ -153,6 +165,30 @@ func tryAcquireStream(
 	}
 }
 
+func CheckStreamAdmission(
+	sets *settings.BTSets,
+	torrentKey string,
+	debugEnabled bool,
+) StreamAdmissionDecision {
+	admission := currentAdmission(sets)
+	allowed, reason := streamAdmissionState.canAcquireNow(admission, torrentKey)
+	if allowed {
+		return StreamAdmissionDecision{
+			Allowed:    true,
+			RetryAfter: admission.waitDuration,
+			Reason:     streamAdmissionReasonAllowed,
+		}
+	}
+
+	streamAdmissionState.recordOverloadRejection(debugEnabled)
+
+	return StreamAdmissionDecision{
+		Allowed:    false,
+		RetryAfter: admission.waitDuration,
+		Reason:     reason,
+	}
+}
+
 func (r *streamAdmissionRegistry) tryAcquire(
 	admission streamAdmission,
 	torrentKey string,
@@ -188,6 +224,21 @@ func (r *streamAdmissionRegistry) tryAcquire(
 	}
 
 	return release, true, false
+}
+
+func (r *streamAdmissionRegistry) canAcquireNow(admission streamAdmission, torrentKey string) (bool, string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if atomic.LoadInt32(&activeStreams) >= admission.maxStreams {
+		return false, streamAdmissionReasonMaxStreams
+	}
+
+	if !r.canAcquireUniqueTorrent(admission.maxUniqueTorrents, torrentKey) {
+		return false, streamAdmissionReasonMaxUniquePlaybackTorrents
+	}
+
+	return true, streamAdmissionReasonAllowed
 }
 
 func (r *streamAdmissionRegistry) canAcquireUniqueTorrent(maxUnique int, torrentKey string) bool {

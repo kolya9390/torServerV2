@@ -77,15 +77,16 @@ func (h *recordingTorrentHandle) Stream(index int, request *http.Request, writer
 }
 
 type testStreamService struct {
-	parseLinkErr      error
-	parseLinkCalls    int
-	parseMeta         contracts.StreamMeta
-	ensureTorrentErr  error
-	ensureTorrentTor  contracts.TorrentHandle
-	ensureAllowCreate bool
-	parseFileIndexVal int
-	parseFileIndexErr error
-	normalizeResult   string
+	parseLinkErr       error
+	parseLinkCalls     int
+	parseMeta          contracts.StreamMeta
+	ensureTorrentErr   error
+	ensureTorrentTor   contracts.TorrentHandle
+	ensureTorrentCalls int
+	ensureAllowCreate  bool
+	parseFileIndexVal  int
+	parseFileIndexErr  error
+	normalizeResult    string
 }
 
 func (m *testStreamService) ParseLink(link, title, poster, category string) (contracts.TorrentSpec, contracts.StreamMeta, error) {
@@ -103,6 +104,7 @@ func (m *testStreamService) ParseTorrentFile(reader io.Reader) (contracts.Torren
 }
 
 func (m *testStreamService) EnsureTorrent(torrents contracts.TorrentStreamService, spec contracts.TorrentSpec, meta contracts.StreamMeta, allowCreate bool) (contracts.TorrentHandle, error) {
+	m.ensureTorrentCalls++
 	m.ensureAllowCreate = allowCreate
 
 	if m.ensureTorrentErr != nil {
@@ -144,6 +146,11 @@ type testTorrentService struct {
 	preloadResult  bool
 	preloadCalled  bool
 	preloadIndex   int
+
+	admissionConfigured bool
+	admissionCalled     bool
+	admissionHash       string
+	admissionDecision   contracts.PlaybackAdmissionDecision
 
 	finalizeCalled bool
 	finalizeTor    contracts.TorrentHandle
@@ -235,6 +242,17 @@ func (m *testTorrentService) IsStored(tor contracts.TorrentHandle) bool {
 
 func (m *testTorrentService) DropReadiness(hash string) contracts.DropReadiness {
 	return m.readiness
+}
+
+func (m *testTorrentService) CheckPlaybackAdmission(hash string) contracts.PlaybackAdmissionDecision {
+	m.admissionCalled = true
+	m.admissionHash = hash
+
+	if m.admissionConfigured {
+		return m.admissionDecision
+	}
+
+	return contracts.PlaybackAdmissionDecision{Allowed: true}
 }
 
 func (m *testTorrentService) CacheStateByHash(hash string) (any, bool) {
@@ -413,6 +431,53 @@ func TestStreamPlayRepeatedRangeRequestStreamsWithoutPreload(t *testing.T) {
 
 	if torrentsSvc.preloadCalled {
 		t.Fatal("repeated range request without preload flag must not enqueue preload")
+	}
+}
+
+func TestStreamPlayRejectsAdmissionBeforeEnsureTorrent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tor := &recordingTorrentHandle{
+		hash:  "0102030405060708090a0b0c0d0e0f1011121314",
+		name:  "Demo",
+		files: 1,
+	}
+	torrentsSvc := &testTorrentService{
+		getResult:           tor,
+		admissionConfigured: true,
+		admissionDecision:   contracts.PlaybackAdmissionDecision{Allowed: false, RetryAfterSec: 3, Reason: "max_unique_playback_torrents"},
+	}
+	streamSvc := &testStreamService{ensureTorrentTor: tor}
+
+	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
+		Torrents: torrentsSvc,
+		Streams:  streamSvc,
+	})))
+	r.GET("/streams/play", streamPlay)
+
+	req := httptest.NewRequest(http.MethodGet, "/streams/play?link=magnet:?xt=urn:btih:abc123&index=1", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if got := w.Header().Get("Retry-After"); got != "3" {
+		t.Fatalf("Retry-After = %q, want 3", got)
+	}
+
+	if !torrentsSvc.admissionCalled || torrentsSvc.admissionHash == "" {
+		t.Fatalf("expected admission check with hash, called=%v hash=%q", torrentsSvc.admissionCalled, torrentsSvc.admissionHash)
+	}
+
+	if streamSvc.ensureTorrentCalls != 0 {
+		t.Fatalf("EnsureTorrent calls = %d, want 0", streamSvc.ensureTorrentCalls)
+	}
+
+	if tor.streamCalls != 0 {
+		t.Fatalf("Stream calls = %d, want 0", tor.streamCalls)
 	}
 }
 
@@ -603,6 +668,53 @@ func TestLegacyStreamUnauthenticatedM3UUsesReadOnlyActivation(t *testing.T) {
 	}
 }
 
+func TestLegacyStreamPlayRejectsAdmissionBeforeEnsureTorrent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tor := &recordingTorrentHandle{
+		hash:  "0102030405060708090a0b0c0d0e0f1011121314",
+		name:  "Demo",
+		files: 1,
+	}
+	torrentsSvc := &testTorrentService{
+		getResult:           tor,
+		admissionConfigured: true,
+		admissionDecision:   contracts.PlaybackAdmissionDecision{Allowed: false, RetryAfterSec: 3, Reason: "max_unique_playback_torrents"},
+	}
+	streamSvc := &testStreamService{ensureTorrentTor: tor}
+
+	r := gin.New()
+	r.Use(servicesMiddleware(newAPIServicesFixture(t, &contracts.APIServices{
+		Torrents: torrentsSvc,
+		Streams:  streamSvc,
+	})))
+	r.GET("/stream", stream)
+
+	req := httptest.NewRequest(http.MethodGet, "/stream?link=magnet:?xt=urn:btih:abc123&index=1&play", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if got := w.Header().Get("Retry-After"); got != "3" {
+		t.Fatalf("Retry-After = %q, want 3", got)
+	}
+
+	if !torrentsSvc.admissionCalled || torrentsSvc.admissionHash == "" {
+		t.Fatalf("expected admission check with hash, called=%v hash=%q", torrentsSvc.admissionCalled, torrentsSvc.admissionHash)
+	}
+
+	if streamSvc.ensureTorrentCalls != 0 {
+		t.Fatalf("EnsureTorrent calls = %d, want 0", streamSvc.ensureTorrentCalls)
+	}
+
+	if tor.streamCalls != 0 {
+		t.Fatalf("Stream calls = %d, want 0", tor.streamCalls)
+	}
+}
+
 func TestLegacyStreamPreloadOnlyReturnsOK(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -634,6 +746,9 @@ func TestLegacyStreamPreloadOnlyReturnsOK(t *testing.T) {
 		t.Fatalf("expected preload queue with index 1, called=%v index=%d", torrentsSvc.preloadCalled, torrentsSvc.preloadIndex)
 	}
 
+	if torrentsSvc.admissionCalled {
+		t.Fatal("preload-only request must not run playback admission")
+	}
 }
 
 func TestLegacyStreamPreloadQueueFullReturnsServiceUnavailable(t *testing.T) {

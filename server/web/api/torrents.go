@@ -127,6 +127,10 @@ func addTorrent(deps torrentHandlerDeps, req torrReqJS, c *gin.Context) {
 		return
 	}
 
+	if !req.SaveToDB && !ensurePlaybackAdmission(c, deps.Commands, hashHex) {
+		return
+	}
+
 	log.Debug("addTorrent: calling Torrents.Add", "hash", hashHex)
 
 	tor, err := deps.Commands.Add(torrSpec, req.Title, req.Poster, req.Data, req.Category)

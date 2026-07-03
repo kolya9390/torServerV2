@@ -178,6 +178,80 @@ func TestStreamAdmissionUnlimitedUniqueTorrentsWhenDisabled(t *testing.T) {
 	}
 }
 
+func TestStreamAdmissionCheckRejectsThirdUniqueWithoutQueueing(t *testing.T) {
+	resetStreamAdmissionForTest()
+
+	sets := &settings.BTSets{
+		MaxConcurrentStreams:      4,
+		MaxUniquePlaybackTorrents: 2,
+		StreamQueueSize:           2,
+		StreamQueueWaitSec:        3,
+	}
+
+	releaseA, err := tryAcquireStream(context.Background(), sets, "torrent-a", 11, true)
+	if err != nil {
+		t.Fatalf("torrent-a acquire err = %v", err)
+	}
+	defer releaseA()
+
+	releaseB, err := tryAcquireStream(context.Background(), sets, "torrent-b", 22, true)
+	if err != nil {
+		t.Fatalf("torrent-b acquire err = %v", err)
+	}
+	defer releaseB()
+
+	decision := CheckStreamAdmission(sets, "torrent-c", true)
+	if decision.Allowed {
+		t.Fatal("CheckStreamAdmission allowed third unique torrent, want rejection")
+	}
+
+	if decision.Reason != streamAdmissionReasonMaxUniquePlaybackTorrents {
+		t.Fatalf("Reason = %q, want %q", decision.Reason, streamAdmissionReasonMaxUniquePlaybackTorrents)
+	}
+
+	if decision.RetryAfter != 3*time.Second {
+		t.Fatalf("RetryAfter = %s, want 3s", decision.RetryAfter)
+	}
+
+	snapshot := SnapshotStreamAdmission()
+	if got, want := snapshot.ActiveStreams, int32(2); got != want {
+		t.Fatalf("ActiveStreams = %d, want %d", got, want)
+	}
+
+	if snapshot.QueuedRequests != 0 || snapshot.QueuedUniqueTorrentRequests != 0 {
+		t.Fatalf("queued requests after check = %+v, want zero queue", snapshot)
+	}
+
+	if got, want := snapshot.OverloadRejectionsTotal, int64(1); got != want {
+		t.Fatalf("OverloadRejectionsTotal = %d, want %d", got, want)
+	}
+}
+
+func TestStreamAdmissionCheckAllowsSameTorrent(t *testing.T) {
+	resetStreamAdmissionForTest()
+
+	sets := &settings.BTSets{
+		MaxConcurrentStreams:      2,
+		MaxUniquePlaybackTorrents: 1,
+		StreamQueueWaitSec:        1,
+	}
+
+	release, err := tryAcquireStream(context.Background(), sets, "torrent-a", 11, true)
+	if err != nil {
+		t.Fatalf("torrent-a acquire err = %v", err)
+	}
+	defer release()
+
+	decision := CheckStreamAdmission(sets, "torrent-a", true)
+	if !decision.Allowed {
+		t.Fatalf("CheckStreamAdmission rejected same torrent: %+v", decision)
+	}
+
+	if got, want := SnapshotStreamAdmission().ActiveStreams, int32(1); got != want {
+		t.Fatalf("ActiveStreams = %d, want unchanged %d", got, want)
+	}
+}
+
 func TestStreamAdmissionSnapshotIsPrivacySafe(t *testing.T) {
 	resetStreamAdmissionForTest()
 
