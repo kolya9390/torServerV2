@@ -15,6 +15,8 @@ type streamContentSource interface {
 	Offset() int64
 }
 
+const streamCopyBufferSize = 256 << 10
+
 type streamMetricsWriter struct {
 	http.ResponseWriter
 
@@ -74,12 +76,12 @@ func (w *streamMetricsWriter) ReadFrom(r io.Reader) (int64, error) {
 	}
 
 	if w.trackReadWait {
-		return io.Copy(writeOnly{Writer: w}, tr)
+		return copyStreamContent(writeOnly{Writer: w}, tr)
 	}
 
 	rf, ok := w.ResponseWriter.(io.ReaderFrom)
 	if !ok {
-		return io.Copy(writeOnly{Writer: w}, tr)
+		return copyStreamContent(writeOnly{Writer: w}, tr)
 	}
 
 	tr.fairness = w.fairness
@@ -89,6 +91,10 @@ func (w *streamMetricsWriter) ReadFrom(r io.Reader) (int64, error) {
 	w.recordError(err)
 
 	return n, err
+}
+
+func copyStreamContent(dst io.Writer, src io.Reader) (int64, error) {
+	return io.CopyBuffer(dst, src, make([]byte, streamCopyBufferSize))
 }
 
 func (w *streamMetricsWriter) recordError(err error) {

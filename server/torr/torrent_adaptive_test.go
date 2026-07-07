@@ -63,19 +63,35 @@ func TestAdaptiveReadahead(t *testing.T) {
 		name             string
 		cacheCap         int64
 		playbackTorrents int
+		cfg              settings.StreamConfig
 		want             int64
 	}{
-		{name: "single stream fixed horizon", cacheCap: 256 << 20, playbackTorrents: 1, want: 16 << 20},
-		{name: "two streams fixed horizon", cacheCap: 256 << 20, playbackTorrents: 2, want: 16 << 20},
-		{name: "medium cache", cacheCap: 64 << 20, playbackTorrents: 4, want: 16 << 20},
-		{name: "small cache clamp", cacheCap: 8 << 20, playbackTorrents: 4, want: 8 << 20},
+		{name: "default single stream uses configured default max", cacheCap: 256 << 20, playbackTorrents: 1, want: 64 << 20},
+		{name: "default two streams keep configured max", cacheCap: 256 << 20, playbackTorrents: 2, want: 64 << 20},
+		{name: "high throughput honors larger max", cacheCap: 256 << 20, playbackTorrents: 1, cfg: settings.StreamConfig{
+			AdaptiveRAMinMB: 4,
+			AdaptiveRAMaxMB: 128,
+		}, want: 128 << 20},
+		{name: "many playback torrents scale down within bounds", cacheCap: 256 << 20, playbackTorrents: 4, cfg: settings.StreamConfig{
+			AdaptiveRAMinMB: 4,
+			AdaptiveRAMaxMB: 128,
+		}, want: 64 << 20},
+		{name: "small cache clamp", cacheCap: 8 << 20, playbackTorrents: 4, cfg: settings.StreamConfig{
+			AdaptiveRAMinMB: 4,
+			AdaptiveRAMaxMB: 64,
+		}, want: 8 << 20},
+		{name: "min bound protects tiny scaled target", cacheCap: 256 << 20, playbackTorrents: 16, cfg: settings.StreamConfig{
+			AdaptiveRAMinMB: 16,
+			AdaptiveRAMaxMB: 64,
+		}, want: 16 << 20},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := adaptiveReadahead(tt.cacheCap, tt.playbackTorrents)
+			got := adaptiveReadahead(tt.cacheCap, tt.playbackTorrents, tt.cfg)
 			if got != tt.want {
-				t.Fatalf("adaptiveReadahead(%d, %d) = %d, want %d", tt.cacheCap, tt.playbackTorrents, got, tt.want)
+				t.Fatalf("adaptiveReadahead(%d, %d, %+v) = %d, want %d",
+					tt.cacheCap, tt.playbackTorrents, tt.cfg, got, tt.want)
 			}
 		})
 	}
@@ -145,18 +161,26 @@ func TestAdaptiveMaxEstablishedConnsForReaderAge(t *testing.T) {
 		oldestReaderAge  time.Duration
 		want             int
 	}{
-		{name: "custom profile does not apply stable relief", sets: &settings.BTSets{
+		{name: "custom profile keeps full peer reach without debug cap", sets: &settings.BTSets{
 			CoreProfile:      "custom",
 			ConnectionsLimit: 25,
 		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 25},
+		{name: "custom profile stable playback applies debug bounded relief", sets: &settings.BTSets{
+			CoreProfile:        "custom",
+			ConnectionsLimit:   100,
+			EnableDebug:        true,
+			DebugStablePeerCap: 48,
+		}, playbackTorrents: 1, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 48},
 		{name: "tcp only balanced startup keeps full peer reach", sets: &settings.BTSets{
 			CoreProfile:      "tcp-only-balanced",
 			ConnectionsLimit: 25,
 		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 30 * time.Second, want: 25},
-		{name: "tcp only balanced single playback keeps full peer reach", sets: &settings.BTSets{
-			CoreProfile:      "tcp-only-balanced",
-			ConnectionsLimit: 25,
-		}, playbackTorrents: 1, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 25},
+		{name: "tcp only balanced single playback applies debug bounded relief", sets: &settings.BTSets{
+			CoreProfile:        "tcp-only-balanced",
+			ConnectionsLimit:   25,
+			EnableDebug:        true,
+			DebugStablePeerCap: 22,
+		}, playbackTorrents: 1, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 22},
 		{name: "tcp only balanced same torrent readers keep full peer reach", sets: &settings.BTSets{
 			CoreProfile:      "tcp-only-balanced",
 			ConnectionsLimit: 25,
@@ -182,12 +206,13 @@ func TestAdaptiveMaxEstablishedConnsForReaderAge(t *testing.T) {
 			EnableDebug:        true,
 			DebugStablePeerCap: 22,
 		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 16},
-		{name: "debug override disables stable relief for experiments", sets: &settings.BTSets{
+		{name: "debug stable cap can bound debug override after warmup", sets: &settings.BTSets{
 			CoreProfile:                   "tcp-only-balanced",
 			ConnectionsLimit:              25,
 			EnableDebug:                   true,
 			DebugEstablishedConnsOverride: 30,
-		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 30},
+			DebugStablePeerCap:            22,
+		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 22},
 	}
 
 	for _, tt := range tests {
@@ -212,13 +237,21 @@ func TestShouldExpireTorrent(t *testing.T) {
 	future := now + int64(time.Second)
 
 	tests := []struct {
-		name    string
-		readers int
-		expNs   int64
-		stat    state.TorrentStat
-		want    bool
+		name            string
+		readers         int
+		hasActiveStream bool
+		expNs           int64
+		stat            state.TorrentStat
+		want            bool
 	}{
 		{name: "active reader", readers: 1, expNs: expired, stat: state.TorrentWorking, want: false},
+		{
+			name:            "active stream admission",
+			hasActiveStream: true,
+			expNs:           expired,
+			stat:            state.TorrentWorking,
+			want:            false,
+		},
 		{name: "not yet expired", expNs: future, stat: state.TorrentWorking, want: false},
 		{name: "wrong state", expNs: expired, stat: state.TorrentPreload, want: false},
 		{name: "expired working torrent", expNs: expired, stat: state.TorrentWorking, want: true},
@@ -227,10 +260,10 @@ func TestShouldExpireTorrent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.readers == 0 && tt.expNs < now && (tt.stat == state.TorrentWorking || tt.stat == state.TorrentClosed)
+			got := shouldExpireTorrent(tt.readers, tt.hasActiveStream, tt.expNs, now, tt.stat)
 			if got != tt.want {
-				t.Fatalf("expired predicate(%d, %d, %v) = %v, want %v",
-					tt.readers, tt.expNs, tt.stat, got, tt.want)
+				t.Fatalf("shouldExpireTorrent(%d, %v, %d, %v) = %v, want %v",
+					tt.readers, tt.hasActiveStream, tt.expNs, tt.stat, got, tt.want)
 			}
 		})
 	}
@@ -255,6 +288,14 @@ func TestShortenExpiredTime(t *testing.T) {
 	torr.ShortenExpiredTime(time.Minute)
 	if got := torr.lifecycle.expiredUnixNano.Load(); got != shortened {
 		t.Fatalf("ShortenExpiredTime() moved expiration later: got %d, want %d", got, shortened)
+	}
+
+	torr.lifecycle.expiredUnixNano.Store(time.Now().Add(-time.Second).UnixNano())
+	torr.ShortenExpiredTime(5 * time.Second)
+
+	grace := torr.lifecycle.expiredUnixNano.Load()
+	if grace <= time.Now().UnixNano() {
+		t.Fatalf("ShortenExpiredTime() with stale expiration = %d, want future grace period", grace)
 	}
 }
 

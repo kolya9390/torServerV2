@@ -104,6 +104,10 @@ func (c *Cache) Close() error {
 	c.readers.items = nil
 	c.readers.mu.Unlock()
 
+	c.resident.mu.Lock()
+	c.resident.items = nil
+	c.resident.mu.Unlock()
+
 	c.priorities.mu.Lock()
 	c.priorities.pieces = nil
 	c.priorities.mu.Unlock()

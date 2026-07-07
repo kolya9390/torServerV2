@@ -31,6 +31,10 @@ func NewDiskPiece(p *Piece) *DiskPiece {
 
 		p.Size.Store(size)
 		p.cache.addFilled(size)
+		if size > 0 {
+			p.cache.markResidentPiece(p)
+		}
+
 		p.Complete = size == p.cache.pieceLength
 		p.Accessed = ff.ModTime().Unix()
 	}
@@ -71,6 +75,9 @@ func (p *DiskPiece) WriteAt(data []byte, off int64) (n int, err error) {
 
 		p.piece.Size.Store(newSize)
 		p.piece.cache.addFilled(newSize - oldSize)
+		if oldSize == 0 && newSize > 0 {
+			p.piece.cache.markResidentPiece(p.piece)
+		}
 	}
 
 	// Synchronous cleanup for immediate eviction on first write
@@ -122,6 +129,10 @@ func (p *DiskPiece) Release() {
 
 	prev := p.piece.Size.Swap(0)
 	p.piece.cache.addFilled(-prev)
+	if prev > 0 {
+		p.piece.cache.unmarkResidentPiece(p.piece)
+	}
+
 	p.piece.Complete = false
 
 	_ = os.Remove(p.name)

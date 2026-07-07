@@ -3,18 +3,22 @@ package torr
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/anacrolix/dms/dlna"
 	"github.com/anacrolix/missinggo/v2/httptoo"
 	"github.com/anacrolix/torrent"
 
+	"server/log"
 	mt "server/mimetype"
+	"server/settings"
 	"server/torr/storage/torrstor"
 )
 
@@ -22,6 +26,9 @@ const (
 	defaultStreamReaderReadahead        = int64(16 << 20)
 	minConcurrentStreamReaderReadahead  = int64(4 << 20)
 	concurrentStreamReadaheadShareRatio = int64(4)
+	startupWarmupMaxBytes               = int64(8 << 20)
+	startupWarmupMaxInitialOffset       = int64(16 << 20)
+	startupWarmupTimeout                = 3 * time.Second
 )
 
 type streamReadAheadPolicyInput struct {
@@ -38,12 +45,61 @@ type streamReaderContextSetter interface {
 	SetContext(context.Context)
 }
 
+type playbackStartupWarmupState struct {
+	preloadTargetBytes int64
+	preloadedBytes     int64
+	cacheCapacityBytes int64
+}
+
+type playbackStartupWarmupReader interface {
+	io.ReadSeeker
+	Offset() int64
+	SetContext(context.Context)
+}
+
 func streamReaderReadahead(pieceLength, cacheCap int64, activeReaders int) int64 {
 	return streamReadAheadPolicyFor(streamReadAheadPolicyInput{
 		pieceLength:   pieceLength,
 		cacheCapacity: cacheCap,
 		activeReaders: activeReaders,
 	}).readerReadahead
+}
+
+func initialPlaybackReaderReadahead(
+	pieceLength int64,
+	cacheCap int64,
+	activeReaders int,
+	playbackTorrents int,
+	cfg settings.StreamConfig,
+) int64 {
+	if cacheCap <= 0 {
+		return streamReaderReadahead(pieceLength, cacheCap, activeReaders)
+	}
+
+	readahead := adaptiveReadahead(cacheCap, playbackTorrents, cfg)
+	if readahead <= 0 {
+		return streamReaderReadahead(pieceLength, cacheCap, activeReaders)
+	}
+
+	readerCap := streamReaderReadahead(pieceLength, cacheCap, activeReaders)
+	if readahead > readerCap {
+		readahead = readerCap
+	}
+
+	if activeReaders < 1 {
+		activeReaders = 1
+	}
+
+	perReaderCap := cacheCap / int64(activeReaders)
+	if perReaderCap <= 0 {
+		return 0
+	}
+
+	if readahead > perReaderCap {
+		return perReaderCap
+	}
+
+	return readahead
 }
 
 func streamReadAheadPolicyFor(input streamReadAheadPolicyInput) streamReadAheadPolicy {
@@ -152,6 +208,75 @@ func initialStreamOffset(req *http.Request, size int64) int64 {
 	return 0
 }
 
+func shouldWarmupPlaybackStartup(
+	req *http.Request,
+	startOffset int64,
+	fileSize int64,
+	state playbackStartupWarmupState,
+) bool {
+	if req == nil || req.Method != http.MethodGet {
+		return false
+	}
+
+	if !isPlaybackStreamRequest(req) {
+		return false
+	}
+
+	if startOffset < 0 || startOffset > startupWarmupMaxInitialOffset {
+		return false
+	}
+
+	targetBytes := playbackStartupWarmupTargetBytes(fileSize, startOffset, state.cacheCapacityBytes)
+	if targetBytes <= 0 {
+		return false
+	}
+
+	return state.preloadTargetBytes < targetBytes || state.preloadedBytes < targetBytes
+}
+
+func isPlaybackStreamRequest(req *http.Request) bool {
+	if req == nil || req.URL == nil {
+		return false
+	}
+
+	if _, ok := req.URL.Query()["play"]; ok {
+		return true
+	}
+
+	path := req.URL.Path
+
+	return path == "/streams/play" || strings.HasPrefix(path, "/play/")
+}
+
+func playbackStartupWarmupTargetBytes(fileSize, startOffset, cacheCapacity int64) int64 {
+	remaining := fileSize - startOffset
+	if remaining <= 0 {
+		return 0
+	}
+
+	target := startupWarmupMaxBytes
+	if cacheCapacity > 0 {
+		cacheTarget := cacheCapacity / 8
+		if cacheTarget <= 0 {
+			cacheTarget = cacheCapacity
+		}
+
+		if cacheTarget < target {
+			target = cacheTarget
+		}
+	}
+
+	if target <= 0 || target > startupWarmupMaxBytes {
+		target = startupWarmupMaxBytes
+	}
+
+	if target > remaining {
+		target = remaining
+	}
+
+	return target
+}
+
 // maxInt returns the maximum of two integers.
 func maxInt(a, b int) int {
 	if a > b {
@@ -170,6 +295,33 @@ func findFileByID(t *Torrent, fileID int) (*torrent.File, error) {
 	return file, nil
 }
 
+func (t *Torrent) streamFileForRequest(
+	fileID int,
+	maxSize int64,
+	req *http.Request,
+	resp http.ResponseWriter,
+) (*torrent.File, error) {
+	if !t.GotInfo() {
+		http.NotFound(resp, req)
+
+		return nil, errors.New("torrent doesn't have info yet")
+	}
+
+	file, err := findFileByID(t, fileID)
+	if err != nil {
+		return nil, err
+	}
+
+	if maxSize > 0 && file.Length() > maxSize {
+		log.TLogln("File size exceeded:", file.DisplayPath(), file.Length(), "max:", maxSize)
+		http.Error(resp, fmt.Sprintf("file size exceeded max allowed %d bytes", maxSize), http.StatusForbidden)
+
+		return nil, fmt.Errorf("file size exceeded max allowed %d bytes", maxSize)
+	}
+
+	return file, nil
+}
+
 func setStreamHeaders(resp http.ResponseWriter, file *torrent.File, t *Torrent, streamTimeout int, req *http.Request) {
 	if streamTimeout > 0 {
 		resp.Header().Set("X-Stream-Timeout", strconv.Itoa(streamTimeout))
@@ -180,6 +332,7 @@ func setStreamHeaders(resp http.ResponseWriter, file *torrent.File, t *Torrent, 
 	etagBuf = append(etagBuf, '/')
 	etagBuf = append(etagBuf, file.Path()...)
 	etag := hex.EncodeToString(etagBuf)
+	resp.Header().Set("Connection", "close")
 	resp.Header().Set("ETag", httptoo.EncodeQuotedString(etag))
 	resp.Header().Set("transferMode.dlna.org", "Streaming")
 
@@ -218,13 +371,24 @@ func (t *Torrent) newReaderForRequest(fileID int, file *torrent.File, req *http.
 		activeReaders = t.cache.GetUseReaders()
 	}
 
+	playbackTorrents := estimatePlaybackTorrents(GetActiveStreams(), activeReaders)
+	if t.bt != nil {
+		playbackTorrents = t.bt.ActivePlaybackTorrents()
+	}
+
 	readahead := defaultStreamReaderReadahead
 	if t.Info() != nil {
 		readahead = streamReaderReadahead(t.Info().PieceLength, 0, activeReaders)
 	}
 
 	if t.cache != nil {
-		readahead = streamReaderReadahead(0, t.cache.GetCapacity(), activeReaders)
+		readahead = initialPlaybackReaderReadahead(
+			0,
+			t.cache.GetCapacity(),
+			activeReaders,
+			playbackTorrents,
+			curSets.StreamConfig(),
+		)
 	}
 
 	reader.SetReadahead(readahead)
@@ -247,4 +411,117 @@ func (t *Torrent) newReaderForRequest(fileID int, file *torrent.File, req *http.
 	}
 
 	return reader, closeReader
+}
+
+func (t *Torrent) warmupPlaybackStartup(
+	req *http.Request,
+	reader playbackStartupWarmupReader,
+	fileSize int64,
+	debugEnabled bool,
+) error {
+	if reader == nil {
+		return nil
+	}
+
+	startOffset := reader.Offset()
+	state := t.playbackStartupWarmupState()
+	if !shouldWarmupPlaybackStartup(req, startOffset, fileSize, state) {
+		return nil
+	}
+
+	targetBytes := playbackStartupWarmupTargetBytes(fileSize, startOffset, state.cacheCapacityBytes)
+
+	return warmupPlaybackStartupReader(req, reader, startOffset, targetBytes, debugEnabled)
+}
+
+func (t *Torrent) playbackStartupWarmupState() playbackStartupWarmupState {
+	state := playbackStartupWarmupState{}
+	if t == nil {
+		return state
+	}
+
+	t.muTorrent.Lock()
+	state.preloadTargetBytes = t.preload.targetBytes
+	state.preloadedBytes = t.preload.loadedBytes
+	t.muTorrent.Unlock()
+
+	if t.cache != nil {
+		state.cacheCapacityBytes = t.cache.GetCapacity()
+		if filled := t.cache.Filled(); filled > state.preloadedBytes {
+			state.preloadedBytes = filled
+		}
+	}
+
+	return state
+}
+
+func warmupPlaybackStartupReader(
+	req *http.Request,
+	reader playbackStartupWarmupReader,
+	startOffset int64,
+	targetBytes int64,
+	debugEnabled bool,
+) error {
+	if req == nil || reader == nil || targetBytes <= 0 {
+		return nil
+	}
+
+	started := time.Now()
+	reqCtx := req.Context()
+	warmupCtx, cancel := context.WithTimeout(reqCtx, startupWarmupTimeout)
+	defer cancel()
+
+	reader.SetContext(warmupCtx)
+	readBytes, readErr := readPlaybackStartupWarmup(reader, targetBytes)
+	reader.SetContext(reqCtx)
+
+	if _, err := reader.Seek(startOffset, io.SeekStart); err != nil {
+		return fmt.Errorf("restore stream reader after startup warmup: %w", err)
+	}
+
+	if debugEnabled {
+		log.Debug(
+			"stream startup warmup",
+			"target_bytes", targetBytes,
+			"read_bytes", readBytes,
+			"elapsed_ms", time.Since(started).Milliseconds(),
+			"error", readErr,
+		)
+	}
+
+	switch {
+	case reqCtx.Err() != nil:
+		return reqCtx.Err()
+	case readErr == nil || errors.Is(readErr, io.EOF) || errors.Is(readErr, context.DeadlineExceeded):
+		return nil
+	default:
+		return fmt.Errorf("stream startup warmup: %w", readErr)
+	}
+}
+
+func readPlaybackStartupWarmup(reader io.Reader, targetBytes int64) (int64, error) {
+	buf := make([]byte, streamCopyBufferSize)
+	var readBytes int64
+
+	for readBytes < targetBytes {
+		readSize := len(buf)
+		if remaining := targetBytes - readBytes; remaining < int64(readSize) {
+			readSize = int(remaining)
+		}
+
+		n, err := reader.Read(buf[:readSize])
+		if n > 0 {
+			readBytes += int64(n)
+		}
+
+		if err != nil {
+			return readBytes, err
+		}
+
+		if n == 0 {
+			return readBytes, nil
+		}
+	}
+
+	return readBytes, nil
 }

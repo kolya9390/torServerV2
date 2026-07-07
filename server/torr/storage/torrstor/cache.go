@@ -25,6 +25,11 @@ type cacheReadersState struct {
 	active atomic.Int32
 }
 
+type cacheResidentState struct {
+	items map[int]*Piece
+	mu    sync.RWMutex
+}
+
 type cachePriorityState struct {
 	mu            sync.Mutex
 	pieces        map[int]torrent.PiecePriority
@@ -48,6 +53,7 @@ type cacheMetricsState struct {
 	hits                  atomic.Uint64
 	misses                atomic.Uint64
 	inMemoryChunks        atomic.Int64
+	residentPieces        atomic.Int64
 	cleanupRuns           atomic.Uint64
 	cleanedBytes          atomic.Uint64
 	priorityUpdates       atomic.Uint64
@@ -82,6 +88,7 @@ type Cache struct {
 	isClosed   atomic.Bool
 	torrent    *torrent.Torrent
 	readers    cacheReadersState
+	resident   cacheResidentState
 	priorities cachePriorityState
 	cleanup    cacheCleanupState
 	metrics    cacheMetricsState
@@ -94,6 +101,9 @@ func NewCache(capacity int64, host cacheHost) *Cache {
 		host:     host,
 		readers: cacheReadersState{
 			items: make(map[*Reader]struct{}),
+		},
+		resident: cacheResidentState{
+			items: make(map[int]*Piece),
 		},
 		priorities: cachePriorityState{
 			pieces: make(map[int]torrent.PiecePriority),

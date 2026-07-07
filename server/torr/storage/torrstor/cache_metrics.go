@@ -15,6 +15,7 @@ type CacheStats struct {
 	ConfiguredCapacityBytes int64  `json:"configured_capacity_bytes"`
 	LogicalOverheadBytes    int64  `json:"logical_overhead_bytes"`
 	PiecesCount             int64  `json:"pieces_count"`
+	ResidentPieces          int64  `json:"resident_pieces"`
 	InMemoryChunks          int64  `json:"in_memory_chunks"`
 	ReusableChunks          int64  `json:"reusable_chunks"`
 	ReusableBytes           int64  `json:"reusable_bytes"`
@@ -41,6 +42,7 @@ type cacheStatsCounters struct {
 	logicalFilledBytes      atomic.Int64
 	configuredCapacityBytes atomic.Int64
 	piecesCount             atomic.Int64
+	residentPieces          atomic.Int64
 	inMemoryChunks          atomic.Int64
 	cleanupRuns             atomic.Uint64
 	cleanedBytes            atomic.Uint64
@@ -79,6 +81,7 @@ func SnapshotCacheStats() CacheStats {
 		ConfiguredCapacityBytes: configuredCapacity,
 		LogicalOverheadBytes:    maxInt64(logicalFilled-configuredCapacity, 0),
 		PiecesCount:             globalCacheStats.piecesCount.Load(),
+		ResidentPieces:          globalCacheStats.residentPieces.Load(),
 		InMemoryChunks:          globalCacheStats.inMemoryChunks.Load(),
 		ReusableChunks:          reusableChunks,
 		ReusableBytes:           reusableChunks * memPieceChunkSize,
@@ -110,6 +113,7 @@ func (c *Cache) registerMetrics() {
 	globalCacheStats.activeCaches.Add(1)
 	globalCacheStats.configuredCapacityBytes.Add(c.capacity)
 	globalCacheStats.piecesCount.Add(int64(c.pieceCount))
+	globalCacheStats.residentPieces.Add(c.metrics.residentPieces.Load())
 }
 
 func (c *Cache) unregisterMetrics() {
@@ -120,12 +124,14 @@ func (c *Cache) unregisterMetrics() {
 	filled := c.filled.Swap(0)
 	chunks := c.metrics.inMemoryChunks.Swap(0)
 	readers := c.readers.active.Load()
+	residentPieces := c.metrics.residentPieces.Swap(0)
 	trackedPriorityPieces := c.metrics.priorityTrackedPieces.Swap(0)
 
 	globalCacheStats.activeCaches.Add(-1)
 	globalCacheStats.activeReaders.Add(-int64(readers))
 	globalCacheStats.configuredCapacityBytes.Add(-c.capacity)
 	globalCacheStats.piecesCount.Add(-int64(c.pieceCount))
+	globalCacheStats.residentPieces.Add(-residentPieces)
 	globalCacheStats.logicalFilledBytes.Add(-filled)
 	globalCacheStats.inMemoryChunks.Add(-chunks)
 	globalCacheStats.priorityTrackedPieces.Add(-trackedPriorityPieces)
@@ -197,6 +203,29 @@ func (c *Cache) addInMemoryChunks(delta int64) {
 		if c.metrics.inMemoryChunks.CompareAndSwap(old, next) {
 			if c.metrics.registered.Load() {
 				globalCacheStats.inMemoryChunks.Add(next - old)
+			}
+
+			return
+		}
+	}
+}
+
+func (c *Cache) addResidentPieces(delta int64) {
+	if c == nil || delta == 0 {
+		return
+	}
+
+	for {
+		old := c.metrics.residentPieces.Load()
+		next := old + delta
+
+		if next < 0 {
+			next = 0
+		}
+
+		if c.metrics.residentPieces.CompareAndSwap(old, next) {
+			if c.metrics.registered.Load() {
+				globalCacheStats.residentPieces.Add(next - old)
 			}
 
 			return

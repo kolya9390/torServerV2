@@ -16,6 +16,8 @@ import (
 
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
+
+	"server/settings"
 )
 
 type fakeStreamContentSource struct {
@@ -37,12 +39,26 @@ type slowOffsetReader struct {
 	done   bool
 }
 
+type bufferSizeReader struct {
+	maxReadSize int
+	done        bool
+}
+
 type fakeContextReader struct {
 	ctx context.Context
 }
 
+type fakeStartupWarmupReader struct {
+	fakeStreamContentSource
+	contexts []context.Context
+}
+
 func (r *fakeContextReader) SetContext(ctx context.Context) {
 	r.ctx = ctx
+}
+
+func (r *fakeStartupWarmupReader) SetContext(ctx context.Context) {
+	r.contexts = append(r.contexts, ctx)
 }
 
 func (r *slowOnceReader) Read(p []byte) (int, error) {
@@ -71,6 +87,21 @@ func (r *slowOffsetReader) Read(p []byte) (int, error) {
 
 func (r *slowOffsetReader) Offset() int64 {
 	return r.offset
+}
+
+func (r *bufferSizeReader) Read(p []byte) (int, error) {
+	if len(p) > r.maxReadSize {
+		r.maxReadSize = len(p)
+	}
+
+	if r.done {
+		return 0, io.EOF
+	}
+
+	r.done = true
+	p[0] = 'x'
+
+	return 1, nil
 }
 
 func (f *fakeStreamContentSource) Read(p []byte) (int, error) {
@@ -239,6 +270,57 @@ func TestStreamReaderReadahead(t *testing.T) {
 	}
 }
 
+func TestInitialPlaybackReaderReadaheadCapsAdaptiveLimitForHTTPReader(t *testing.T) {
+	got := initialPlaybackReaderReadahead(
+		2<<20,
+		256<<20,
+		1,
+		1,
+		settings.StreamConfig{
+			AdaptiveRAMinMB: 4,
+			AdaptiveRAMaxMB: 128,
+		},
+	)
+
+	if want := int64(16 << 20); got != want {
+		t.Fatalf("initialPlaybackReaderReadahead() = %d, want %d", got, want)
+	}
+}
+
+func TestInitialPlaybackReaderReadaheadBoundsPerReaderCapacity(t *testing.T) {
+	got := initialPlaybackReaderReadahead(
+		2<<20,
+		256<<20,
+		3,
+		1,
+		settings.StreamConfig{
+			AdaptiveRAMinMB: 4,
+			AdaptiveRAMaxMB: 128,
+		},
+	)
+
+	if want := int64(16 << 20); got != want {
+		t.Fatalf("initialPlaybackReaderReadahead() = %d, want %d", got, want)
+	}
+}
+
+func TestInitialPlaybackReaderReadaheadScalesDownAboveTwoPlaybackTorrents(t *testing.T) {
+	got := initialPlaybackReaderReadahead(
+		2<<20,
+		256<<20,
+		1,
+		4,
+		settings.StreamConfig{
+			AdaptiveRAMinMB: 4,
+			AdaptiveRAMaxMB: 128,
+		},
+	)
+
+	if want := int64(16 << 20); got != want {
+		t.Fatalf("initialPlaybackReaderReadahead() = %d, want %d", got, want)
+	}
+}
+
 func TestBindStreamReaderContext_UsesRequestContext(t *testing.T) {
 	reader := &fakeContextReader{}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -256,6 +338,138 @@ func TestBindStreamReaderContext_UsesRequestContext(t *testing.T) {
 func TestBindStreamReaderContext_NilSafe(t *testing.T) {
 	bindStreamReaderContext(nil, nil)
 	bindStreamReaderContext(&fakeContextReader{}, nil)
+}
+
+func TestShouldWarmupPlaybackStartup(t *testing.T) {
+	tests := []struct {
+		name        string
+		requestPath string
+		method      string
+		startOffset int64
+		fileSize    int64
+		state       playbackStartupWarmupState
+		want        bool
+	}{
+		{
+			name:        "legacy play without preload warms initial startup",
+			requestPath: "/stream/movie.mkv?link=abc&play",
+			method:      http.MethodGet,
+			fileSize:    128 << 20,
+			state:       playbackStartupWarmupState{cacheCapacityBytes: 64 << 20},
+			want:        true,
+		},
+		{
+			name:        "streams play warms initial startup",
+			requestPath: "/streams/play?link=abc",
+			method:      http.MethodGet,
+			fileSize:    128 << 20,
+			state:       playbackStartupWarmupState{cacheCapacityBytes: 64 << 20},
+			want:        true,
+		},
+		{
+			name:        "play route warms initial startup",
+			requestPath: "/play/hash/1",
+			method:      http.MethodGet,
+			fileSize:    128 << 20,
+			state:       playbackStartupWarmupState{cacheCapacityBytes: 64 << 20},
+			want:        true,
+		},
+		{
+			name:        "completed preload skips startup warmup",
+			requestPath: "/stream/movie.mkv?link=abc&play",
+			method:      http.MethodGet,
+			fileSize:    128 << 20,
+			state: playbackStartupWarmupState{
+				preloadTargetBytes: 8 << 20,
+				preloadedBytes:     8 << 20,
+				cacheCapacityBytes: 64 << 20,
+			},
+		},
+		{
+			name:        "far range skip avoids seek warmup",
+			requestPath: "/stream/movie.mkv?link=abc&play",
+			method:      http.MethodGet,
+			startOffset: startupWarmupMaxInitialOffset + 1,
+			fileSize:    128 << 20,
+			state:       playbackStartupWarmupState{cacheCapacityBytes: 64 << 20},
+		},
+		{
+			name:        "head request skip",
+			requestPath: "/stream/movie.mkv?link=abc&play",
+			method:      http.MethodHead,
+			fileSize:    128 << 20,
+			state:       playbackStartupWarmupState{cacheCapacityBytes: 64 << 20},
+		},
+		{
+			name:        "non playback request skip",
+			requestPath: "/stream/movie.mkv?link=abc",
+			method:      http.MethodGet,
+			fileSize:    128 << 20,
+			state:       playbackStartupWarmupState{cacheCapacityBytes: 64 << 20},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.requestPath, nil)
+			got := shouldWarmupPlaybackStartup(req, tt.startOffset, tt.fileSize, tt.state)
+			if got != tt.want {
+				t.Fatalf("shouldWarmupPlaybackStartup() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPlaybackStartupWarmupTargetBytes(t *testing.T) {
+	tests := []struct {
+		name        string
+		fileSize    int64
+		startOffset int64
+		cacheCap    int64
+		want        int64
+	}{
+		{name: "caps to max warmup bytes", fileSize: 128 << 20, cacheCap: 256 << 20, want: 8 << 20},
+		{name: "uses cache fraction for small cache", fileSize: 128 << 20, cacheCap: 32 << 20, want: 4 << 20},
+		{name: "falls back to max without cache", fileSize: 128 << 20, want: 8 << 20},
+		{name: "caps to remaining file bytes", fileSize: 10 << 20, startOffset: 6 << 20, cacheCap: 256 << 20, want: 4 << 20},
+		{name: "zero when offset reaches end", fileSize: 10 << 20, startOffset: 10 << 20, cacheCap: 256 << 20},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := playbackStartupWarmupTargetBytes(tt.fileSize, tt.startOffset, tt.cacheCap)
+			if got != tt.want {
+				t.Fatalf("playbackStartupWarmupTargetBytes() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWarmupPlaybackStartupReaderRestoresOffset(t *testing.T) {
+	reader := &fakeStartupWarmupReader{
+		fakeStreamContentSource: fakeStreamContentSource{
+			data: []byte("0123456789abcdefghijklmnopqrstuvwxyz"),
+			pos:  5,
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/stream/movie.mkv?play", nil)
+
+	err := warmupPlaybackStartupReader(req, reader, 5, 8, false)
+	if err != nil {
+		t.Fatalf("warmupPlaybackStartupReader() err = %v", err)
+	}
+
+	if got, want := reader.Offset(), int64(5); got != want {
+		t.Fatalf("reader offset after warmup = %d, want %d", got, want)
+	}
+
+	if got, want := len(reader.contexts), 2; got != want {
+		t.Fatalf("reader contexts = %d, want %d", got, want)
+	}
+
+	if got, want := reader.seeks, [][2]int64{{5, int64(io.SeekStart)}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("reader seeks = %v, want %v", got, want)
+	}
 }
 
 type readerFromRecorder struct {
@@ -380,6 +594,22 @@ func TestStreamMetricsWriter_ReadFrom(t *testing.T) {
 
 	if got, want := SnapshotStreamHealth().BytesWrittenTotal, int64(len("stream-data")); got != want {
 		t.Fatalf("BytesWrittenTotal = %d, want %d", got, want)
+	}
+}
+
+func TestStreamMetricsWriter_ReadFromUsesLargeDebugCopyBuffer(t *testing.T) {
+	t.Parallel()
+
+	rec := &writeOnlyRecorder{}
+	reader := &bufferSizeReader{}
+	w := &streamMetricsWriter{ResponseWriter: rec, trackReadWait: true}
+
+	if _, err := w.ReadFrom(reader); err != nil {
+		t.Fatalf("ReadFrom() err = %v", err)
+	}
+
+	if got := reader.maxReadSize; got != streamCopyBufferSize {
+		t.Fatalf("copy buffer size = %d, want %d", got, streamCopyBufferSize)
 	}
 }
 
@@ -620,6 +850,25 @@ func TestStreamDeliveryReadWaitDiagnosticsSnapshotIsPrivacySafe(t *testing.T) {
 	}
 }
 
+func TestStreamDeliveryReadWaitKeepsKnownOffset(t *testing.T) {
+	resetStreamDeliveryForTest()
+
+	delivery, release := registerStreamDelivery(time.Now(), 77)
+	defer release()
+
+	delivery.recordReadWaitLocation(streamReadWaitThreshold+time.Millisecond, 12345, 262144)
+	delivery.recordReadWait(streamReadWaitThreshold+time.Millisecond, -1, 262144)
+
+	streams := SnapshotStreamDelivery().Streams
+	if got, want := len(streams), 1; got != want {
+		t.Fatalf("len(Streams) = %d, want %d", got, want)
+	}
+
+	if got, want := streams[0].LastReadOffset, int64(12345); got != want {
+		t.Fatalf("LastReadOffset = %d, want %d", got, want)
+	}
+}
+
 func TestStreamMetricsWriterReadFromRecordsReadWaitWithoutDelivery(t *testing.T) {
 	resetStreamHealthForTest()
 	resetStreamDeliveryForTest()
@@ -816,7 +1065,10 @@ func TestStreamMetricsWriterRecordsSlowDeliveryWrite(t *testing.T) {
 func TestStreamDeliveryRecordsLongWriteThresholds(t *testing.T) {
 	resetStreamDeliveryForTest()
 
-	delivery, release := registerStreamDelivery(time.Now(), 0)
+	delivery, release := registerStreamDeliveryWithMetadata(time.Now(), 0, streamDeliveryMetadata{
+		initialOffset: 4096,
+		fileSize:      16 << 20,
+	})
 	defer release()
 
 	delivery.recordWrite(1, 4*time.Second)
@@ -837,6 +1089,89 @@ func TestStreamDeliveryRecordsLongWriteThresholds(t *testing.T) {
 
 	if got, want := snapshot.MaxWriteMS, int64(11000); got != want {
 		t.Fatalf("MaxWriteMS = %d, want %d", got, want)
+	}
+
+	if got, want := len(snapshot.Streams), 1; got != want {
+		t.Fatalf("len(Streams) = %d, want %d", got, want)
+	}
+
+	stream := snapshot.Streams[0]
+	if got, want := stream.LastSlowWriteMS, int64(11000); got != want {
+		t.Fatalf("LastSlowWriteMS = %d, want %d", got, want)
+	}
+
+	if got, want := stream.LastSlowWriteOffset, int64(4097); got != want {
+		t.Fatalf("LastSlowWriteOffset = %d, want %d", got, want)
+	}
+
+	if got, want := stream.LastSlowWriteSize, int64(1); got != want {
+		t.Fatalf("LastSlowWriteSize = %d, want %d", got, want)
+	}
+
+	if got := stream.LastSlowWriteAgeMS; got < 0 {
+		t.Fatalf("LastSlowWriteAgeMS = %d, want non-negative", got)
+	}
+}
+
+func TestStreamDeliveryRecordsWriteGaps(t *testing.T) {
+	resetStreamDeliveryForTest()
+
+	delivery, release := registerStreamDelivery(time.Now(), 0)
+	defer release()
+
+	delivery.recordWrite(1, time.Millisecond)
+	delivery.lastWriteUnixNano.Store(time.Now().Add(-1200 * time.Millisecond).UnixNano())
+	delivery.recordWrite(1, time.Millisecond)
+
+	snapshot := SnapshotStreamDelivery()
+	if got, want := len(snapshot.Streams), 1; got != want {
+		t.Fatalf("len(Streams) = %d, want %d", got, want)
+	}
+
+	stream := snapshot.Streams[0]
+	if stream.LastWriteGapMS < 1200 {
+		t.Fatalf("LastWriteGapMS = %d, want >= 1200", stream.LastWriteGapMS)
+	}
+
+	if stream.MaxWriteGapMS < 1200 {
+		t.Fatalf("MaxWriteGapMS = %d, want >= 1200", stream.MaxWriteGapMS)
+	}
+
+	if got, want := stream.WriteGapsOver250MS, int64(1); got != want {
+		t.Fatalf("WriteGapsOver250MS = %d, want %d", got, want)
+	}
+
+	if got, want := stream.WriteGapsOver500MS, int64(1); got != want {
+		t.Fatalf("WriteGapsOver500MS = %d, want %d", got, want)
+	}
+
+	if got, want := stream.WriteGapsOver1000MS, int64(1); got != want {
+		t.Fatalf("WriteGapsOver1000MS = %d, want %d", got, want)
+	}
+}
+
+func TestStreamDeliveryRecordsRollingThroughput(t *testing.T) {
+	resetStreamDeliveryForTest()
+
+	delivery, release := registerStreamDelivery(time.Now(), 0)
+	defer release()
+
+	delivery.window.startUnixNano = time.Now().Add(-streamDeliveryWindow).UnixNano()
+	delivery.window.bytes = 10 << 20
+	delivery.recordWrite(10<<20, time.Millisecond)
+
+	snapshot := SnapshotStreamDelivery()
+	if got, want := len(snapshot.Streams), 1; got != want {
+		t.Fatalf("len(Streams) = %d, want %d", got, want)
+	}
+
+	stream := snapshot.Streams[0]
+	if stream.Last5sBytesPerSec < 3<<20 {
+		t.Fatalf("Last5sBytesPerSec = %d, want at least 3MiB/s", stream.Last5sBytesPerSec)
+	}
+
+	if got := stream.Min5sBytesPerSec; got != stream.Last5sBytesPerSec {
+		t.Fatalf("Min5sBytesPerSec = %d, want %d", got, stream.Last5sBytesPerSec)
 	}
 }
 

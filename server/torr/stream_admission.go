@@ -253,6 +253,17 @@ func (r *streamAdmissionRegistry) canAcquireUniqueTorrent(maxUnique int, torrent
 	return len(r.active) < maxUnique
 }
 
+func (r *streamAdmissionRegistry) hasActiveTorrent(torrentKey string) bool {
+	if torrentKey == "" {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.active[torrentKey].readers > 0
+}
+
 func (r *streamAdmissionRegistry) release(torrentKey string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

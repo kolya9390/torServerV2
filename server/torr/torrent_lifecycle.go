@@ -98,11 +98,13 @@ func (t *Torrent) ShortenExpiredTime(duration time.Duration) {
 		return
 	}
 
-	newExp := time.Now().Add(duration).UnixNano()
+	now := time.Now()
+	nowUnixNano := now.UnixNano()
+	newExp := now.Add(duration).UnixNano()
 
 	for {
 		cur := t.lifecycle.expiredUnixNano.Load()
-		if cur > 0 && cur <= newExp {
+		if cur > nowUnixNano && cur <= newExp {
 			return
 		}
 
@@ -189,8 +191,35 @@ func (t *Torrent) expired() bool {
 	st := t.Stat
 	t.muTorrent.Unlock()
 
-	return t.cache.Readers() == 0 && expNs < time.Now().UnixNano() &&
-		(st == state.TorrentWorking || st == state.TorrentClosed)
+	return shouldExpireTorrent(
+		t.cache.Readers(),
+		t.hasActivePlaybackStream(),
+		expNs,
+		time.Now().UnixNano(),
+		st,
+	)
+}
+
+func (t *Torrent) hasActivePlaybackStream() bool {
+	if t == nil || t.TorrentSpec == nil {
+		return false
+	}
+
+	return streamAdmissionState.hasActiveTorrent(t.Hash().HexString())
+}
+
+func shouldExpireTorrent(
+	readers int,
+	hasActiveStream bool,
+	expiredUnixNano int64,
+	nowUnixNano int64,
+	st state.TorrentStat,
+) bool {
+	if readers > 0 || hasActiveStream || expiredUnixNano == 0 {
+		return false
+	}
+
+	return expiredUnixNano < nowUnixNano && (st == state.TorrentWorking || st == state.TorrentClosed)
 }
 
 func (t *Torrent) drop() {

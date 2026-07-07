@@ -63,22 +63,84 @@ func (c *Cache) getRemPieces() []*Piece {
 	piecesRemove := make([]*Piece, 0, 64)
 	ranges := c.getActiveReaderRanges()
 
-	c.mu.RLock()
+	residentPieces := c.copyResidentPieces()
 
-	pieces := c.pieces
-	for id, p := range pieces {
+	for _, p := range residentPieces {
+		if p == nil {
+			continue
+		}
+
 		pSize := p.Size.Load()
 		if pSize == 0 {
 			continue
 		}
 
+		id := p.ID
 		if !inRanges(ranges, id) && !c.isIDInFileBEFast(ranges, id) {
 			piecesRemove = append(piecesRemove, p)
 		}
 	}
-	c.mu.RUnlock()
 
 	return piecesRemove
+}
+
+func (c *Cache) copyResidentPieces() []*Piece {
+	if c == nil {
+		return nil
+	}
+
+	c.resident.mu.RLock()
+	defer c.resident.mu.RUnlock()
+
+	if len(c.resident.items) == 0 {
+		return nil
+	}
+
+	pieces := make([]*Piece, 0, len(c.resident.items))
+	for _, piece := range c.resident.items {
+		pieces = append(pieces, piece)
+	}
+
+	return pieces
+}
+
+func (c *Cache) markResidentPiece(piece *Piece) {
+	if c == nil || piece == nil {
+		return
+	}
+
+	c.resident.mu.Lock()
+	inserted := false
+	if c.resident.items != nil {
+		_, exists := c.resident.items[piece.ID]
+		if !exists {
+			c.resident.items[piece.ID] = piece
+			inserted = true
+		}
+	}
+	c.resident.mu.Unlock()
+
+	if inserted {
+		c.addResidentPieces(1)
+	}
+}
+
+func (c *Cache) unmarkResidentPiece(piece *Piece) {
+	if c == nil || piece == nil {
+		return
+	}
+
+	c.resident.mu.Lock()
+	exists := false
+	if c.resident.items != nil {
+		_, exists = c.resident.items[piece.ID]
+		delete(c.resident.items, piece.ID)
+	}
+	c.resident.mu.Unlock()
+
+	if exists {
+		c.addResidentPieces(-1)
+	}
 }
 
 func (c *Cache) queueCleanPieces() {

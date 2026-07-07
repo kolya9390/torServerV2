@@ -2,7 +2,6 @@ package torr
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -49,22 +48,9 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 	serverCfg := t.currentRuntimeState().ServerConfig()
 	streamTimeout := curSets.TorrentDisconnectTimeout
 
-	if !t.GotInfo() {
-		http.NotFound(resp, req)
-
-		return errors.New("torrent doesn't have info yet")
-	}
-
-	file, err := findFileByID(t, fileID)
+	file, err := t.streamFileForRequest(fileID, serverCfg.MaxSize, req, resp)
 	if err != nil {
 		return err
-	}
-
-	if serverCfg.MaxSize > 0 && file.Length() > serverCfg.MaxSize {
-		log.TLogln("File size exceeded:", file.DisplayPath(), file.Length(), "max:", serverCfg.MaxSize)
-		http.Error(resp, fmt.Sprintf("file size exceeded max allowed %d bytes", serverCfg.MaxSize), http.StatusForbidden)
-
-		return fmt.Errorf("file size exceeded max allowed %d bytes", serverCfg.MaxSize)
 	}
 
 	reader, closeReader := t.newReaderForRequest(fileID, file, req)
@@ -94,6 +80,10 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 		},
 	)
 	defer instrumentation.release()
+
+	if err := t.warmupPlaybackStartup(req, reader, file.Length(), debugEnabled); err != nil {
+		return err
+	}
 
 	content := newServeContentReadSeeker(reader, file.Length(), instrumentation.writer.delivery)
 	http.ServeContent(instrumentation.writer, req, file.Path(), time.Unix(t.Timestamp, 0), content)

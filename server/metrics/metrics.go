@@ -75,6 +75,9 @@ func registerCacheMetrics() {
 	expvar.Publish("cache_pieces_count", expvar.Func(func() any {
 		return torrstor.SnapshotCacheStats().PiecesCount
 	}))
+	expvar.Publish("cache_resident_pieces", expvar.Func(func() any {
+		return torrstor.SnapshotCacheStats().ResidentPieces
+	}))
 	expvar.Publish("cache_in_memory_chunks", expvar.Func(func() any {
 		return torrstor.SnapshotCacheStats().InMemoryChunks
 	}))
@@ -547,8 +550,8 @@ func requestStrategyPressureSnapshot(runtime map[string]any, cacheStats torrstor
 	downloadSpeed := aggregateTorrentRuntimeInt(runtime, "download_speed")
 	cacheFillPct := percent(cacheStats.LogicalFilledBytes, cacheStats.ConfiguredCapacityBytes)
 	cacheOverheadPct := percent(cacheStats.LogicalOverheadBytes, cacheStats.ConfiguredCapacityBytes)
-	score := requestStrategyPressureScore(activePeers, activeReaders, cacheStats.PiecesCount)
-	level := requestStrategyPressureLevel(activePeers, activeReaders, cacheStats.PiecesCount)
+	score := requestStrategyPressureScore(activePeers, activeReaders, cacheStats.ResidentPieces)
+	level := requestStrategyPressureLevel(activePeers, activeReaders, cacheStats.ResidentPieces)
 
 	return map[string]any{
 		"level":                      level,
@@ -559,6 +562,7 @@ func requestStrategyPressureSnapshot(runtime map[string]any, cacheStats torrstor
 		"active_readers":             activeReaders,
 		"download_speed":             downloadSpeed,
 		"cache_pieces_count":         cacheStats.PiecesCount,
+		"cache_resident_pieces":      cacheStats.ResidentPieces,
 		"cache_in_memory_chunks":     cacheStats.InMemoryChunks,
 		"cache_logical_filled_bytes": cacheStats.LogicalFilledBytes,
 		"cache_fill_percent":         cacheFillPct,

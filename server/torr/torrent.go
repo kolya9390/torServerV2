@@ -148,18 +148,39 @@ func adaptiveCacheCapacity(baseCap int64, playbackTorrents int) int64 {
 	return baseCap
 }
 
-func adaptiveReadahead(cacheCap int64, playbackTorrents int) int64 {
-	_ = playbackTorrents
+func adaptiveReadahead(cacheCap int64, playbackTorrents int, cfg settings.StreamConfig) int64 {
+	if cacheCap <= 0 {
+		return 0
+	}
 
-	// Original TorrServer keeps playback readahead simple and fixed. That
-	// narrower, predictable horizon tends to produce less request/cancel churn
-	// than the more adaptive V2 loop under range-heavy media clients.
-	ra := int64(16 << 20)
-	if cacheCap > 0 && cacheCap < ra {
+	minRA := readaheadBoundBytes(cfg.AdaptiveRAMinMB, 4)
+	maxRA := readaheadBoundBytes(cfg.AdaptiveRAMaxMB, 64)
+	if maxRA < minRA {
+		maxRA = minRA
+	}
+
+	target := maxRA
+	if playbackTorrents > 2 {
+		target = maxRA * 2 / int64(playbackTorrents)
+	}
+
+	if target < minRA {
+		target = minRA
+	}
+
+	if target > cacheCap {
 		return cacheCap
 	}
 
-	return ra
+	return target
+}
+
+func readaheadBoundBytes(valueMB, fallbackMB int) int64 {
+	if valueMB <= 0 {
+		valueMB = fallbackMB
+	}
+
+	return int64(valueMB) << 20
 }
 
 func adaptivePriorityInterval(playbackTorrents int) time.Duration {
@@ -204,19 +225,23 @@ func shouldApplyStablePeerRelief(
 	localReaders int,
 	oldestReaderAge time.Duration,
 ) bool {
-	if sets == nil || !isTCPOnlyBalancedCoreProfile(sets.CoreProfile) {
+	if sets == nil {
 		return false
 	}
 
-	if policy.debugOverride > 0 || stableCap <= 0 || policy.effectiveConns <= stableCap {
+	if stableCap <= 0 || policy.effectiveConns <= stableCap {
 		return false
 	}
 
-	if playbackTorrents < 2 || localReaders <= 0 {
+	if localReaders <= 0 {
 		return false
 	}
 
-	return oldestReaderAge >= tcpOnlyBalancedPeerReliefMinAge
+	if oldestReaderAge < tcpOnlyBalancedPeerReliefMinAge {
+		return false
+	}
+
+	return playbackTorrents >= 1
 }
 
 func stablePeerCapForDebug(debugCfg settings.DebugConfig, effectiveConns int) int {

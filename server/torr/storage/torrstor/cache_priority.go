@@ -6,6 +6,12 @@ import (
 	"github.com/anacrolix/torrent"
 )
 
+const (
+	maxPriorityPiecesPerReader = 80
+	priorityNextPieces         = 1
+	priorityHighTailPieces     = 5
+)
+
 type activeReaderSnapshot struct {
 	readerPos    int
 	readerRAHPos int
@@ -225,6 +231,14 @@ func priorityPieceBudget(connectionsLimit, activeReaders int, pieceLength int64)
 		budget = 1
 	}
 
+	if activeReaders <= 2 {
+		budget *= 2
+	}
+
+	if budget > maxPriorityPiecesPerReader {
+		budget = maxPriorityPiecesPerReader
+	}
+
 	return budget
 }
 
@@ -240,11 +254,11 @@ func desiredPiecePriority(pieceID, readerPos, readerRAHPos int) torrent.PiecePri
 	switch {
 	case pieceID == readerPos:
 		return torrent.PiecePriorityNow
-	case pieceID == readerPos+1:
+	case pieceID > readerPos && pieceID <= readerPos+priorityNextPieces:
 		return torrent.PiecePriorityNext
 	case pieceID > readerPos && pieceID <= readerRAHPos:
 		return torrent.PiecePriorityReadahead
-	case pieceID > readerRAHPos && pieceID <= readerRAHPos+5:
+	case pieceID > readerRAHPos && pieceID <= readerRAHPos+priorityHighTailPieces:
 		return torrent.PiecePriorityHigh
 	default:
 		return torrent.PiecePriorityNormal
@@ -276,10 +290,6 @@ func (c *Cache) desiredPrioritiesForReaders(
 	defer c.mu.RUnlock()
 
 	for _, reader := range readers {
-		if c.isIDInFileBE(ranges, reader.readerPos) {
-			continue
-		}
-
 		limit := 0
 
 		for i := reader.readerPos; i < reader.piecesRange.End && limit < count; i++ {

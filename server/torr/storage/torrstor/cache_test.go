@@ -21,6 +21,16 @@ func setupStorageTest() {
 	})
 }
 
+type testCacheHost struct {
+	sets *settings.BTSets
+}
+
+func (h testCacheHost) currentSettings() *settings.BTSets {
+	return h.sets
+}
+
+func (testCacheHost) unregisterCache(metainfo.Hash) {}
+
 func drainMemPieceChunkPoolForTest(t *testing.T) {
 	t.Helper()
 
@@ -181,6 +191,73 @@ func TestMemPieceWriteAt_TracksAllocatedChunks(t *testing.T) {
 
 	if got, want := piece.Size.Load(), int64(memPieceChunkSize*2); got != want {
 		t.Fatalf("piece.Size after second chunk = %d, want %d", got, want)
+	}
+}
+
+func TestMemPieceWriteAt_TracksResidentPiece(t *testing.T) {
+	setupStorageTest()
+
+	stor := NewStorage(1 * 1024 * 1024)
+	cache := NewCache(1*1024*1024, stor)
+
+	info := &metainfo.Info{
+		Files:       []metainfo.FileInfo{{Path: []string{"test.bin"}, Length: 64 * 1024}},
+		PieceLength: 64 * 1024,
+	}
+	info.Pieces = make([]byte, 20)
+	hash := metainfo.NewHashFromHex("abcdef1234567890abcdef1234567890abcdef12")
+	cache.Init(info, hash)
+
+	before := SnapshotCacheStats()
+	piece := cache.pieces[0]
+	data := bytes.Repeat([]byte{0xAB}, 1024)
+
+	if _, err := piece.WriteAt(data, 0); err != nil {
+		t.Fatalf("WriteAt error: %v", err)
+	}
+
+	if got := len(cache.copyResidentPieces()); got != 1 {
+		t.Fatalf("resident pieces after write = %d, want 1", got)
+	}
+
+	if got, want := SnapshotCacheStats().ResidentPieces-before.ResidentPieces, int64(1); got != want {
+		t.Fatalf("resident pieces metric after write = %d, want %d", got, want)
+	}
+
+	piece.Release()
+
+	if got := len(cache.copyResidentPieces()); got != 0 {
+		t.Fatalf("resident pieces after release = %d, want 0", got)
+	}
+
+	if got, want := SnapshotCacheStats().ResidentPieces-before.ResidentPieces, int64(0); got != want {
+		t.Fatalf("resident pieces metric after release = %d, want %d", got, want)
+	}
+}
+
+func TestMarkResidentPieceSkipsClosedResidentIndex(t *testing.T) {
+	setupStorageTest()
+
+	cache := NewCache(1*1024*1024, testCacheHost{})
+	info := &metainfo.Info{
+		Files:       []metainfo.FileInfo{{Path: []string{"test.bin"}, Length: 64 * 1024}},
+		PieceLength: 64 * 1024,
+	}
+	info.Pieces = make([]byte, 20)
+	hash := metainfo.NewHashFromHex("abcdef1234567890abcdef1234567890abcdef12")
+	cache.Init(info, hash)
+
+	cache.resident.items = nil
+	before := SnapshotCacheStats()
+
+	cache.markResidentPiece(&Piece{ID: 1, cache: cache})
+
+	if got := len(cache.copyResidentPieces()); got != 0 {
+		t.Fatalf("resident pieces after closed index mark = %d, want 0", got)
+	}
+
+	if got, want := SnapshotCacheStats().ResidentPieces-before.ResidentPieces, int64(0); got != want {
+		t.Fatalf("resident pieces metric after closed index mark = %d, want %d", got, want)
 	}
 }
 
@@ -556,6 +633,10 @@ func TestCleanPiecesConcurrentCallsAreSafe(t *testing.T) {
 	if got, wantMax := cache.filled.Load(), int64(2*memPieceChunkSize); got > wantMax {
 		t.Fatalf("filled bytes after concurrent CleanPieces = %d, want <= %d", got, wantMax)
 	}
+
+	if got := len(cache.copyResidentPieces()); got > 2 {
+		t.Fatalf("resident pieces after concurrent CleanPieces = %d, want <= 2", got)
+	}
 }
 
 func TestGetActiveReaderRangesDoesNotHoldReadersLockWhileCheckingReader(t *testing.T) {
@@ -926,32 +1007,32 @@ func TestPriorityPieceBudget(t *testing.T) {
 		want             int
 	}{
 		{
-			name:             "single reader uses connection budget within horizon",
+			name:             "single reader doubles connection budget within horizon",
 			connectionsLimit: 25,
 			activeReaders:    1,
 			pieceLength:      4 << 20,
-			want:             25,
+			want:             50,
 		},
 		{
-			name:             "two readers split connection budget",
+			name:             "two readers split and widen connection budget",
 			connectionsLimit: 25,
 			activeReaders:    2,
 			pieceLength:      4 << 20,
-			want:             12,
+			want:             24,
 		},
 		{
-			name:             "multi playback does not change budget",
-			connectionsLimit: 25,
-			activeReaders:    1,
-			pieceLength:      4 << 20,
-			want:             25,
-		},
-		{
-			name:             "same torrent multiple readers split connection budget",
+			name:             "same torrent two readers split and widen playback budget",
 			connectionsLimit: 50,
 			activeReaders:    2,
 			pieceLength:      8 << 20,
-			want:             25,
+			want:             50,
+		},
+		{
+			name:             "priority budget has upper bound",
+			connectionsLimit: 120,
+			activeReaders:    1,
+			pieceLength:      2 << 20,
+			want:             80,
 		},
 		{
 			name:             "three readers split connection budget",
@@ -965,7 +1046,7 @@ func TestPriorityPieceBudget(t *testing.T) {
 			connectionsLimit: 4,
 			activeReaders:    0,
 			pieceLength:      1 << 20,
-			want:             4,
+			want:             8,
 		},
 		{
 			name:             "connection floor",
@@ -1177,9 +1258,11 @@ func TestDesiredPiecePriority(t *testing.T) {
 	}{
 		{name: "current piece", pieceID: 10, readerPos: 10, readerRAH: 14, wantPrio: torrent.PiecePriorityNow},
 		{name: "next piece", pieceID: 11, readerPos: 10, readerRAH: 14, wantPrio: torrent.PiecePriorityNext},
-		{name: "readahead window", pieceID: 13, readerPos: 10, readerRAH: 14, wantPrio: torrent.PiecePriorityReadahead},
-		{name: "high tail", pieceID: 18, readerPos: 10, readerRAH: 14, wantPrio: torrent.PiecePriorityHigh},
-		{name: "normal tail", pieceID: 25, readerPos: 10, readerRAH: 14, wantPrio: torrent.PiecePriorityNormal},
+		{name: "reader readahead window", pieceID: 14, readerPos: 10, readerRAH: 14, wantPrio: torrent.PiecePriorityReadahead},
+		{name: "short high tail", pieceID: 19, readerPos: 10, readerRAH: 14, wantPrio: torrent.PiecePriorityHigh},
+		{name: "normal after short tail", pieceID: 20, readerPos: 10, readerRAH: 14, wantPrio: torrent.PiecePriorityNormal},
+		{name: "normal far tail", pieceID: 90, readerPos: 10, readerRAH: 14, wantPrio: torrent.PiecePriorityNormal},
+		{name: "normal distant tail", pieceID: 120, readerPos: 10, readerRAH: 14, wantPrio: torrent.PiecePriorityNormal},
 	}
 
 	for _, tt := range tests {
@@ -1197,5 +1280,45 @@ func TestDesiredPiecePriority(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestDesiredPrioritiesForReaderAtFileStart(t *testing.T) {
+	cache := NewCache(64<<20, testCacheHost{
+		sets: &settings.BTSets{
+			ConnectionsLimit: 80,
+		},
+	})
+	cache.pieceLength = 4 << 20
+	cache.pieces = make(map[int]*Piece)
+
+	for i := range 10 {
+		cache.pieces[i] = &Piece{ID: i}
+	}
+
+	ranges := []Range{{Start: 0, End: 9}}
+	readers := []activeReaderSnapshot{
+		{
+			readerPos:    0,
+			readerRAHPos: 4,
+			piecesRange:  Range{Start: 0, End: 9},
+		},
+	}
+
+	desired := cache.desiredPrioritiesForReaders(ranges, readers)
+	if got, want := desired[0], torrent.PiecePriorityNow; got != want {
+		t.Fatalf("desired[0] = %v, want %v", got, want)
+	}
+
+	if got, want := desired[1], torrent.PiecePriorityNext; got != want {
+		t.Fatalf("desired[1] = %v, want %v", got, want)
+	}
+
+	if got, want := desired[4], torrent.PiecePriorityReadahead; got != want {
+		t.Fatalf("desired[4] = %v, want %v", got, want)
+	}
+
+	if got, want := desired[5], torrent.PiecePriorityHigh; got != want {
+		t.Fatalf("desired[5] = %v, want %v", got, want)
 	}
 }

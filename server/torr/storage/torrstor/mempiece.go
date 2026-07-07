@@ -155,8 +155,13 @@ func (p *MemPiece) WriteAt(b []byte, off int64) (n int, err error) {
 	}
 
 	if allocated > 0 {
-		p.piece.Size.Store(p.piece.Size.Load() + allocated)
+		oldSize := p.piece.Size.Load()
+		p.piece.Size.Store(oldSize + allocated)
 		p.piece.cache.addFilled(allocated)
+		if oldSize == 0 {
+			p.piece.cache.markResidentPiece(p.piece)
+		}
+
 		// Queue cleanup asynchronously to avoid blocking the hot write path.
 		p.piece.cache.queueCleanPieces()
 	}
@@ -267,5 +272,9 @@ func (p *MemPiece) Release() {
 
 	prev := p.piece.Size.Swap(0)
 	p.piece.cache.addFilled(-prev)
+	if prev > 0 {
+		p.piece.cache.unmarkResidentPiece(p.piece)
+	}
+
 	p.piece.Complete = false
 }

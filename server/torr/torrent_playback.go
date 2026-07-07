@@ -49,7 +49,7 @@ func (t *Torrent) updateRA() {
 
 	t.maybeBoostPeerAcquisition(playbackTorrents)
 
-	adj := adaptiveReadahead(baseCap, playbackTorrents)
+	adj := adaptiveReadahead(baseCap, playbackTorrents, sets.StreamConfig())
 	t.cache.AdjustRA(adj)
 
 	if time.Since(t.lifecycle.lastPriorityUpdate) >= adaptivePriorityInterval(playbackTorrents) {
