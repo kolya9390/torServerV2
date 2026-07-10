@@ -119,9 +119,16 @@ func cmdSettingsSetKeyValue(cli *apiClient, opts globalOptions, key, value strin
 	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
 	defer cancel()
 
+	current, err := readCurrentSettings(cli, ctx)
+	if err != nil {
+		return err
+	}
+
+	current[field.Key] = parsed
+
 	payload := map[string]any{
 		"action": "set",
-		"sets":   map[string]any{field.Key: parsed},
+		"sets":   current,
 	}
 
 	if err := cli.doJSON(ctx, "POST", "/api/v1/settings", payload, nil, nil); err != nil {
@@ -131,4 +138,20 @@ func cmdSettingsSetKeyValue(cli *apiClient, opts globalOptions, key, value strin
 	fmt.Printf("OK: %s = %s\n", field.Key, formatSettingsValue(parsed))
 
 	return nil
+}
+
+func readCurrentSettings(cli *apiClient, ctx context.Context) (map[string]any, error) {
+	payload := map[string]any{"action": "get"}
+
+	var current map[string]any
+
+	if err := cli.doJSON(ctx, "POST", "/api/v1/settings", payload, &current, nil); err != nil {
+		return nil, fmt.Errorf("read current settings before update: %w", err)
+	}
+
+	if current == nil {
+		current = make(map[string]any)
+	}
+
+	return current, nil
 }

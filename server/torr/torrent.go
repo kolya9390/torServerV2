@@ -237,7 +237,7 @@ func shouldApplyStablePeerRelief(
 		return false
 	}
 
-	if oldestReaderAge < tcpOnlyBalancedPeerReliefMinAge {
+	if oldestReaderAge < stablePeerReliefMinAge {
 		return false
 	}
 

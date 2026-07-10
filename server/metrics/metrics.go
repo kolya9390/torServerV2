@@ -99,6 +99,9 @@ func registerCacheMetrics() {
 	expvar.Publish("cache_priority", expvar.Func(func() any {
 		return torrstor.SnapshotCachePriorityStats()
 	}))
+	expvar.Publish("cache_reader_lifecycle", expvar.Func(func() any {
+		return torrstor.SnapshotReaderLifecycleStats()
+	}))
 }
 
 func registerRuntimeMetrics(resolved Deps) {

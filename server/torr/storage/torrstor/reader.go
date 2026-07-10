@@ -12,6 +12,13 @@ import (
 	"server/log"
 )
 
+// readerIdleDemotionThreshold is an internal playback policy.
+//
+// Five minutes keeps paused or range-reconnecting home media clients warm long
+// enough to resume without immediate priority/cache loss, while still bounding
+// abandoned-reader readahead pressure during multi-reader playback.
+const readerIdleDemotionThreshold = 5 * time.Minute
+
 type Reader struct {
 	torrent.Reader
 
@@ -210,6 +217,14 @@ func (r *Reader) getReaderRAHPiece() int {
 }
 
 func (r *Reader) getPieceNum(offset int64) int {
+	if r == nil || r.cache == nil || r.cache.pieceLength <= 0 {
+		return 0
+	}
+
+	if r.file == nil {
+		return int(offset / r.cache.pieceLength)
+	}
+
 	return int((offset + r.file.Offset()) / r.cache.pieceLength)
 }
 
@@ -227,8 +242,19 @@ func (r *Reader) getOffsetRangeForReaders(activeReaders int) (int64, int64) {
 	}
 
 	perReaderWindow := r.cache.capacity / readers
-	beginOffset := offset - perReaderWindow*(100-prc)/100
-	endOffset := offset + perReaderWindow*prc/100
+	backwardWindow := perReaderWindow * (100 - prc) / 100
+	forwardWindow := perReaderWindow * prc / 100
+
+	effectiveReadahead, readaheadClamped := r.effectiveRetentionReadahead()
+	readaheadExpanded := effectiveReadahead > forwardWindow
+	if readaheadExpanded {
+		forwardWindow = effectiveReadahead
+	}
+
+	r.cache.recordRetentionWindowAdjustment(readaheadExpanded, readaheadClamped)
+
+	beginOffset := offset - backwardWindow
+	endOffset := offset + forwardWindow
 
 	if beginOffset < 0 {
 		beginOffset = 0
@@ -241,11 +267,33 @@ func (r *Reader) getOffsetRangeForReaders(activeReaders int) (int64, int64) {
 	return beginOffset, endOffset
 }
 
+func (r *Reader) effectiveRetentionReadahead() (int64, bool) {
+	if r == nil {
+		return 0, false
+	}
+
+	readahead := r.readahead.Load()
+	if readahead <= 0 {
+		return 0, false
+	}
+
+	if r.cache == nil || r.cache.capacity <= 0 || readahead <= r.cache.capacity {
+		return readahead, false
+	}
+
+	return r.cache.capacity, true
+}
+
 func (r *Reader) checkReader(totalReaders int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if time.Now().Unix() > r.lastAccess.Load()+60 && totalReaders > 1 {
+	if r.isClosed.Load() {
+		return
+	}
+
+	now := time.Now()
+	if readerIdleDuration(now, r.lastAccess.Load()) > readerIdleDemotionThreshold && totalReaders > 1 {
 		r.readerOffLocked()
 	} else {
 		r.readerOnLocked()
@@ -254,6 +302,12 @@ func (r *Reader) checkReader(totalReaders int) {
 
 func (r *Reader) readerOnLocked() {
 	if !r.isUse.Load() {
+		if r.Reader == nil {
+			return
+		}
+
+		idle := readerIdleDuration(time.Now(), r.lastAccess.Load())
+
 		if pos, err := r.Reader.Seek(0, io.SeekCurrent); err == nil && pos == 0 {
 			if _, err := r.Reader.Seek(r.offset.Load(), io.SeekStart); err != nil {
 				log.TLogln("readerOn seek error:", err)
@@ -265,21 +319,27 @@ func (r *Reader) readerOnLocked() {
 
 		if r.cache != nil {
 			r.cache.addActiveReaders(1)
+			r.cache.recordReaderReactivation(idle)
 		}
 	}
 }
 
 func (r *Reader) readerOffLocked() {
 	if r.isUse.Load() {
-		r.Reader.SetReadahead(0)
+		idle := readerIdleDuration(time.Now(), r.lastAccess.Load())
+
+		if r.Reader != nil {
+			r.Reader.SetReadahead(0)
+		}
 
 		r.isUse.Store(false)
 
 		if r.cache != nil {
 			r.cache.addActiveReaders(-1)
+			r.cache.recordReaderIdleDemotion(idle)
 		}
 
-		if r.offset.Load() > 0 {
+		if r.Reader != nil && r.offset.Load() > 0 {
 			if _, err := r.Reader.Seek(0, io.SeekStart); err != nil {
 				log.TLogln("readerOff seek error:", err)
 			}
@@ -289,4 +349,17 @@ func (r *Reader) readerOffLocked() {
 
 func (r *Reader) isActive() bool {
 	return r.isUse.Load()
+}
+
+func readerIdleDuration(now time.Time, lastAccessUnix int64) time.Duration {
+	if lastAccessUnix <= 0 {
+		return 0
+	}
+
+	idle := now.Sub(time.Unix(lastAccessUnix, 0))
+	if idle <= 0 {
+		return 0
+	}
+
+	return idle
 }

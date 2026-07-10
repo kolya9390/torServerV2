@@ -30,6 +30,10 @@ type cacheResidentState struct {
 	mu    sync.RWMutex
 }
 
+// Lock order invariant: priorities.mu is always outside anacrolix/torrent
+// client locks. PieceState and SetPriority acquire those internal locks, so
+// storage callbacks called by anacrolix must not call methods that acquire
+// priorities.mu while the library may already be holding its client lock.
 type cachePriorityState struct {
 	mu            sync.Mutex
 	pieces        map[int]torrent.PiecePriority
@@ -39,6 +43,31 @@ type cachePriorityState struct {
 	clearRunning  atomic.Bool
 	clearTimer    *time.Timer
 	clearMu       sync.Mutex
+}
+
+type torrentPriorityAPI interface {
+	PieceState(id int) torrent.PieceState
+	SetPiecePriority(id int, priority torrent.PiecePriority)
+}
+
+type realTorrentPriorityAPI struct {
+	torrent *torrent.Torrent
+}
+
+func (api realTorrentPriorityAPI) PieceState(id int) torrent.PieceState {
+	if api.torrent == nil {
+		return torrent.PieceState{}
+	}
+
+	return api.torrent.PieceState(id)
+}
+
+func (api realTorrentPriorityAPI) SetPiecePriority(id int, priority torrent.PiecePriority) {
+	if api.torrent == nil {
+		return
+	}
+
+	api.torrent.Piece(id).SetPriority(priority)
 }
 
 type cacheCleanupState struct {
@@ -64,6 +93,8 @@ type cacheMetricsState struct {
 	priorityNoopPieces    atomic.Uint64
 	priorityTrackedPieces atomic.Int64
 	priorityLastUpdateMS  atomic.Int64
+	retentionExpanded     atomic.Uint64
+	retentionClamped      atomic.Uint64
 }
 
 type cacheHost interface {
@@ -87,6 +118,7 @@ type Cache struct {
 
 	isClosed   atomic.Bool
 	torrent    *torrent.Torrent
+	priority   torrentPriorityAPI
 	readers    cacheReadersState
 	resident   cacheResidentState
 	priorities cachePriorityState

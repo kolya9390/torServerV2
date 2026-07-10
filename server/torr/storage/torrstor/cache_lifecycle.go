@@ -43,6 +43,13 @@ func (c *Cache) Init(info *metainfo.Info, hash metainfo.Hash) {
 
 func (c *Cache) SetTorrent(torr *torrent.Torrent) {
 	c.torrent = torr
+	if torr == nil {
+		c.priority = nil
+
+		return
+	}
+
+	c.priority = realTorrentPriorityAPI{torrent: torr}
 }
 
 func (c *Cache) Piece(m metainfo.Piece) storage.PieceImpl {
@@ -71,6 +78,9 @@ func (c *Cache) Close() error {
 	} else {
 		log.TLogln("Close cache for:", c.hash)
 	}
+	// Release the anacrolix torrent before forced GC so closed torrents are not
+	// kept alive by cache ownership after playback has stopped.
+	c.torrent = nil
 
 	c.priorities.clearMu.Lock()
 	if c.priorities.clearTimer != nil {

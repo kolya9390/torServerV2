@@ -60,6 +60,7 @@ var knownSettingsFields = []settingsField{
 	{Key: "MaxConcurrentStreams", Type: "int", Description: "Max concurrent streams (0=unlimited)"},
 	{Key: "StreamQueueSize", Type: "int", Description: "Stream queue size"},
 	{Key: "StreamQueueWaitSec", Type: "int", Description: "Stream queue wait time (seconds)"},
+	{Key: "StartupPreloadPolicy", Type: "string", Description: "Startup preload policy (skip-active or legacy)"},
 
 	// Proxy
 	{Key: "EnableProxy", Type: "bool", Description: "Enable proxy"},

@@ -60,10 +60,14 @@ func (c *Cache) CleanPieces() {
 }
 
 func (c *Cache) getRemPieces() []*Piece {
-	piecesRemove := make([]*Piece, 0, 64)
 	ranges := c.getActiveReaderRanges()
-
 	residentPieces := c.copyResidentPieces()
+
+	return c.removableResidentPieces(residentPieces, ranges)
+}
+
+func (c *Cache) removableResidentPieces(residentPieces []*Piece, ranges []Range) []*Piece {
+	piecesRemove := make([]*Piece, 0, 64)
 
 	for _, p := range residentPieces {
 		if p == nil {
@@ -173,6 +177,10 @@ func (c *Cache) isIDInFileBE(ranges []Range, id int) bool {
 	fileRangeNotDelete := max(c.pieceLength, 8<<20)
 
 	for _, rng := range ranges {
+		if rng.File == nil {
+			continue
+		}
+
 		ss := int(rng.File.Offset() / c.pieceLength)
 		se := int((rng.File.Offset() + fileRangeNotDelete) / c.pieceLength)
 		es := int((rng.File.Offset() + rng.File.Length() - fileRangeNotDelete) / c.pieceLength)
@@ -191,6 +199,10 @@ func (c *Cache) isIDInFileBEFast(ranges []Range, id int) bool {
 	fileRangeNotDelete := max(c.pieceLength, 8<<20)
 
 	for _, rng := range ranges {
+		if rng.File == nil {
+			continue
+		}
+
 		ss := int(rng.File.Offset() / c.pieceLength)
 		se := int((rng.File.Offset() + fileRangeNotDelete) / c.pieceLength)
 		es := int((rng.File.Offset() + rng.File.Length() - fileRangeNotDelete) / c.pieceLength)

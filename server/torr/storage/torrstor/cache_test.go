@@ -3,6 +3,7 @@ package torrstor
 import (
 	"bytes"
 	"context"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -25,8 +26,75 @@ type testCacheHost struct {
 	sets *settings.BTSets
 }
 
+type fakePrioritySetCall struct {
+	id       int
+	priority torrent.PiecePriority
+}
+
+type fakeTorrentPriorityAPI struct {
+	priorities map[int]torrent.PiecePriority
+	calls      []fakePrioritySetCall
+}
+
+type fakeTorrentReader struct {
+	pos       int64
+	readahead []int64
+}
+
 func (h testCacheHost) currentSettings() *settings.BTSets {
 	return h.sets
+}
+
+func (r *fakeTorrentReader) SetContext(context.Context) {}
+
+func (r *fakeTorrentReader) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (r *fakeTorrentReader) ReadContext(context.Context, []byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (r *fakeTorrentReader) Seek(offset int64, whence int) (int64, error) {
+	switch whence {
+	case io.SeekStart:
+		r.pos = offset
+	case io.SeekCurrent:
+		r.pos += offset
+	case io.SeekEnd:
+		r.pos = offset
+	}
+
+	return r.pos, nil
+}
+
+func (r *fakeTorrentReader) Close() error {
+	return nil
+}
+
+func (r *fakeTorrentReader) SetReadahead(length int64) {
+	r.readahead = append(r.readahead, length)
+}
+
+func (r *fakeTorrentReader) SetReadaheadFunc(torrent.ReadaheadFunc) {}
+
+func (r *fakeTorrentReader) SetResponsive() {}
+
+func (api *fakeTorrentPriorityAPI) PieceState(id int) torrent.PieceState {
+	if api == nil || api.priorities == nil {
+		return torrent.PieceState{}
+	}
+
+	return torrent.PieceState{Priority: api.priorities[id]}
+}
+
+func (api *fakeTorrentPriorityAPI) SetPiecePriority(id int, priority torrent.PiecePriority) {
+	if api.priorities == nil {
+		api.priorities = make(map[int]torrent.PiecePriority)
+	}
+
+	api.priorities[id] = priority
+	api.calls = append(api.calls, fakePrioritySetCall{id: id, priority: priority})
 }
 
 func (testCacheHost) unregisterCache(metainfo.Hash) {}
@@ -473,6 +541,10 @@ func TestCacheCloseReleasesResidentMemPieceChunksAndTrimsPool(t *testing.T) {
 		t.Fatalf("in-memory chunks delta after WriteAt = %d, want %d", got, want)
 	}
 
+	if got, want := afterWrite.ResidentPieces-before.ResidentPieces, int64(1); got != want {
+		t.Fatalf("resident pieces delta after WriteAt = %d, want %d", got, want)
+	}
+
 	if err := cache.Close(); err != nil {
 		t.Fatalf("Close error: %v", err)
 	}
@@ -492,6 +564,10 @@ func TestCacheCloseReleasesResidentMemPieceChunksAndTrimsPool(t *testing.T) {
 
 	if got, want := afterClose.InMemoryChunks-before.InMemoryChunks, int64(0); got != want {
 		t.Fatalf("in-memory chunks delta after Close = %d, want %d", got, want)
+	}
+
+	if got, want := afterClose.ResidentPieces-before.ResidentPieces, int64(0); got != want {
+		t.Fatalf("resident pieces delta after Close = %d, want %d", got, want)
 	}
 
 	if got, want := reusableMemPieceChunks(), int64(0); got != want {
@@ -534,6 +610,348 @@ func TestCacheCloseIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestReaderLifecycleDiagnosticsTrackIdleDemotionAndReactivation(t *testing.T) {
+	cache := NewCache(64<<20, testCacheHost{sets: &settings.BTSets{EnableDebug: true}})
+	reader, fake := newReaderLifecycleTestReader(cache, time.Now().Add(-(readerIdleDemotionThreshold + time.Second)), true)
+	reader.readahead.Store(32 << 20)
+	reader.offset.Store(128)
+
+	before := SnapshotReaderLifecycleStats()
+
+	reader.checkReader(2)
+
+	afterDemotion := SnapshotReaderLifecycleStats()
+	if got, want := afterDemotion.IdleDemotionsTotal-before.IdleDemotionsTotal, uint64(1); got != want {
+		t.Fatalf("IdleDemotionsTotal delta = %d, want %d", got, want)
+	}
+
+	minIdleMillis := uint64(readerIdleDemotionThreshold / time.Millisecond)
+	if got := afterDemotion.DemotionIdleMSTotal - before.DemotionIdleMSTotal; got < minIdleMillis {
+		t.Fatalf("DemotionIdleMSTotal delta = %d, want at least %d", got, minIdleMillis)
+	}
+
+	if reader.isActive() {
+		t.Fatal("reader should be idle after demotion")
+	}
+
+	if got, want := cache.GetUseReaders(), 0; got != want {
+		t.Fatalf("active readers after demotion = %d, want %d", got, want)
+	}
+
+	if got := fake.readahead[len(fake.readahead)-1]; got != 0 {
+		t.Fatalf("last readahead after demotion = %d, want 0", got)
+	}
+
+	if _, err := reader.Seek(256, io.SeekStart); err != nil {
+		t.Fatalf("Seek error: %v", err)
+	}
+
+	afterReactivation := SnapshotReaderLifecycleStats()
+	if got, want := afterReactivation.ReactivationsTotal-afterDemotion.ReactivationsTotal, uint64(1); got != want {
+		t.Fatalf("ReactivationsTotal delta = %d, want %d", got, want)
+	}
+
+	if got, want := afterReactivation.ReactivationsAfterIdleTotal-afterDemotion.ReactivationsAfterIdleTotal, uint64(1); got != want {
+		t.Fatalf("ReactivationsAfterIdleTotal delta = %d, want %d", got, want)
+	}
+
+	if !reader.isActive() {
+		t.Fatal("reader should be active after reactivation")
+	}
+
+	if got, want := cache.GetUseReaders(), 1; got != want {
+		t.Fatalf("active readers after reactivation = %d, want %d", got, want)
+	}
+
+	if got := fake.readahead[len(fake.readahead)-1]; got != 32<<20 {
+		t.Fatalf("last readahead after reactivation = %d, want %d", got, 32<<20)
+	}
+}
+
+func TestReaderLifecycleDiagnosticsAreDebugOnly(t *testing.T) {
+	cache := NewCache(64<<20, testCacheHost{sets: &settings.BTSets{EnableDebug: false}})
+	reader, _ := newReaderLifecycleTestReader(cache, time.Now().Add(-(readerIdleDemotionThreshold + time.Second)), true)
+	reader.readahead.Store(16 << 20)
+
+	before := SnapshotReaderLifecycleStats()
+
+	reader.checkReader(2)
+	if _, err := reader.Seek(512, io.SeekStart); err != nil {
+		t.Fatalf("Seek error: %v", err)
+	}
+
+	after := SnapshotReaderLifecycleStats()
+	if after != before {
+		t.Fatalf("reader lifecycle stats changed with debug disabled: before=%+v after=%+v", before, after)
+	}
+}
+
+func TestReaderLifecycleDiagnosticsIgnoreActiveReaderChecks(t *testing.T) {
+	cache := NewCache(64<<20, testCacheHost{sets: &settings.BTSets{EnableDebug: true}})
+	reader, _ := newReaderLifecycleTestReader(cache, time.Now().Add(-(readerIdleDemotionThreshold + time.Second)), true)
+
+	before := SnapshotReaderLifecycleStats()
+
+	reader.checkReader(1)
+
+	after := SnapshotReaderLifecycleStats()
+	if after != before {
+		t.Fatalf("active reader check changed lifecycle stats: before=%+v after=%+v", before, after)
+	}
+
+	if !reader.isActive() {
+		t.Fatal("single active reader should not be demoted")
+	}
+}
+
+func TestReaderIdleDemotionSemantics(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name              string
+		active            bool
+		closed            bool
+		lastAccess        time.Time
+		totalReaders      int
+		initialUseReaders int32
+		wantActive        bool
+		wantUseReaders    int
+		wantReadahead     []int64
+	}{
+		{
+			name:              "one stale active reader stays active",
+			active:            true,
+			lastAccess:        now.Add(-2 * readerIdleDemotionThreshold),
+			totalReaders:      1,
+			initialUseReaders: 1,
+			wantActive:        true,
+			wantUseReaders:    1,
+		},
+		{
+			name:              "two readers demote stale active reader",
+			active:            true,
+			lastAccess:        now.Add(-2 * readerIdleDemotionThreshold),
+			totalReaders:      2,
+			initialUseReaders: 1,
+			wantActive:        false,
+			wantUseReaders:    0,
+			wantReadahead:     []int64{0},
+		},
+		{
+			name:              "two readers keep active reader just below timeout",
+			active:            true,
+			lastAccess:        now.Add(-(readerIdleDemotionThreshold - time.Second)),
+			totalReaders:      2,
+			initialUseReaders: 1,
+			wantActive:        true,
+			wantUseReaders:    1,
+		},
+		{
+			name:              "two readers demote active reader just above timeout",
+			active:            true,
+			lastAccess:        now.Add(-(readerIdleDemotionThreshold + time.Second)),
+			totalReaders:      2,
+			initialUseReaders: 1,
+			wantActive:        false,
+			wantUseReaders:    0,
+			wantReadahead:     []int64{0},
+		},
+		{
+			name:              "idle reader plus active reader stays idle",
+			active:            false,
+			lastAccess:        now.Add(-2 * readerIdleDemotionThreshold),
+			totalReaders:      2,
+			initialUseReaders: 1,
+			wantActive:        false,
+			wantUseReaders:    1,
+		},
+		{
+			name:              "closed idle reader remains untouched",
+			active:            false,
+			closed:            true,
+			lastAccess:        now,
+			totalReaders:      1,
+			initialUseReaders: 0,
+			wantActive:        false,
+			wantUseReaders:    0,
+		},
+		{
+			name:              "closed active reader remains untouched",
+			active:            true,
+			closed:            true,
+			lastAccess:        now.Add(-2 * readerIdleDemotionThreshold),
+			totalReaders:      2,
+			initialUseReaders: 1,
+			wantActive:        true,
+			wantUseReaders:    1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := NewCache(64<<20, testCacheHost{sets: &settings.BTSets{EnableDebug: true}})
+			cache.readers.active.Store(tt.initialUseReaders)
+			reader, fake := newReaderLifecycleTestReader(cache, tt.lastAccess, tt.active)
+			reader.readahead.Store(16 << 20)
+			reader.isClosed.Store(tt.closed)
+
+			reader.checkReader(tt.totalReaders)
+
+			if got := reader.isActive(); got != tt.wantActive {
+				t.Fatalf("reader active = %v, want %v", got, tt.wantActive)
+			}
+
+			if got := cache.GetUseReaders(); got != tt.wantUseReaders {
+				t.Fatalf("active reader count = %d, want %d", got, tt.wantUseReaders)
+			}
+
+			if !equalInt64Slices(fake.readahead, tt.wantReadahead) {
+				t.Fatalf("readahead calls = %v, want %v", fake.readahead, tt.wantReadahead)
+			}
+		})
+	}
+}
+
+func TestIdleReaderExcludedFromPriorityAndCleanupRanges(t *testing.T) {
+	cache := NewCache(16<<20, testCacheHost{sets: &settings.BTSets{ReaderReadAHead: 50}})
+	cache.pieceLength = 1 << 20
+	for i := range 80 {
+		cache.pieces[i] = &Piece{ID: i}
+	}
+
+	active, _ := newReaderLifecycleTestReader(cache, time.Now(), true)
+	active.offset.Store(10 << 20)
+	active.readahead.Store(4 << 20)
+
+	idle, _ := newReaderLifecycleTestReader(cache, time.Now().Add(-2*readerIdleDemotionThreshold), false)
+	idle.offset.Store(60 << 20)
+	idle.readahead.Store(4 << 20)
+
+	cache.readers.items[active] = struct{}{}
+	cache.readers.items[idle] = struct{}{}
+	cache.readers.active.Store(1)
+
+	readers := cache.snapshotActiveReaders(true)
+	if got, want := len(readers), 1; got != want {
+		t.Fatalf("active reader snapshots = %d, want %d", got, want)
+	}
+
+	if got, want := readers[0].readerPos, 10; got != want {
+		t.Fatalf("active reader position = %d, want %d", got, want)
+	}
+
+	ranges := activeReaderRanges(readers)
+	if !inRanges(ranges, 10) {
+		t.Fatalf("active reader piece 10 is not protected by ranges: %+v", ranges)
+	}
+
+	if inRanges(ranges, 60) {
+		t.Fatalf("idle reader piece 60 should not be protected by ranges: %+v", ranges)
+	}
+
+	desired := cache.desiredPrioritiesForReaders(ranges, readers)
+	if _, ok := desired[60]; ok {
+		t.Fatalf("idle reader piece 60 should not receive priority: %+v", desired)
+	}
+}
+
+func TestSameTorrentCloseReadersShareMergedPriorityWindow(t *testing.T) {
+	cache := NewCache(64<<20, testCacheHost{sets: &settings.BTSets{
+		ConnectionsLimit: 25,
+		ReaderReadAHead:  50,
+	}})
+	cache.pieceLength = 1 << 20
+	for i := range 80 {
+		cache.pieces[i] = &Piece{ID: i}
+	}
+
+	first, _ := newReaderLifecycleTestReader(cache, time.Now(), true)
+	first.offset.Store(10 << 20)
+	first.readahead.Store(8 << 20)
+
+	second, _ := newReaderLifecycleTestReader(cache, time.Now(), true)
+	second.offset.Store(12 << 20)
+	second.readahead.Store(8 << 20)
+
+	cache.readers.items[first] = struct{}{}
+	cache.readers.items[second] = struct{}{}
+	cache.readers.active.Store(2)
+
+	readers := cache.snapshotActiveReaders(false)
+	if got, want := len(readers), 2; got != want {
+		t.Fatalf("active reader snapshots = %d, want %d", got, want)
+	}
+
+	ranges := activeReaderRanges(readers)
+	if got, want := len(ranges), 1; got != want {
+		t.Fatalf("merged ranges = %+v, want one shared close-offset range", ranges)
+	}
+
+	desired := cache.desiredPrioritiesForReaders(ranges, readers)
+	if got, want := desired[10], torrent.PiecePriorityNow; got != want {
+		t.Fatalf("desired priority for first reader piece = %v, want %v", got, want)
+	}
+
+	if got, want := desired[12], torrent.PiecePriorityNow; got != want {
+		t.Fatalf("desired priority for second reader piece = %v, want %v", got, want)
+	}
+
+	unionSize := ranges[0].End - ranges[0].Start + 1
+	if len(desired) > unionSize {
+		t.Fatalf("desired pieces = %d exceeds merged range size %d", len(desired), unionSize)
+	}
+}
+
+func TestSameTorrentDistantReadersKeepSeparateRangesAndTrimStoppedReaderRange(t *testing.T) {
+	cache := NewCache(64<<20, testCacheHost{sets: &settings.BTSets{
+		ConnectionsLimit: 25,
+		ReaderReadAHead:  50,
+	}})
+	cache.pieceLength = 1 << 20
+	for i := range 100 {
+		cache.pieces[i] = &Piece{ID: i}
+	}
+
+	first, _ := newReaderLifecycleTestReader(cache, time.Now(), true)
+	first.offset.Store(8 << 20)
+	first.readahead.Store(8 << 20)
+
+	second, _ := newReaderLifecycleTestReader(cache, time.Now(), true)
+	second.offset.Store(56 << 20)
+	second.readahead.Store(8 << 20)
+
+	cache.readers.items[first] = struct{}{}
+	cache.readers.items[second] = struct{}{}
+	cache.readers.active.Store(2)
+
+	readers := cache.snapshotActiveReaders(false)
+	ranges := activeReaderRanges(readers)
+	if got, want := len(ranges), 2; got != want {
+		t.Fatalf("active ranges = %+v, want two distant ranges", ranges)
+	}
+
+	residentPieces := []*Piece{
+		sizedTestPiece(8),
+		sizedTestPiece(10),
+		sizedTestPiece(56),
+		sizedTestPiece(60),
+		sizedTestPiece(90),
+	}
+	withBothReaders := cache.removableResidentPieces(residentPieces, ranges)
+	if got, want := pieceIDs(withBothReaders), []int{90}; !equalIntSlices(got, want) {
+		t.Fatalf("removable with both readers = %v, want %v", got, want)
+	}
+
+	delete(cache.readers.items, second)
+	cache.readers.active.Store(1)
+
+	afterStopRanges := cache.getActiveReaderRanges()
+	afterStopRemovable := cache.removableResidentPieces(residentPieces, afterStopRanges)
+	if got, want := pieceIDs(afterStopRemovable), []int{56, 60, 90}; !equalIntSlices(got, want) {
+		t.Fatalf("removable after stopping second reader = %v, want %v", got, want)
+	}
+}
+
 func TestPieceReleaseDoesNotDependOnCacheClosedState(t *testing.T) {
 	setupStorageTest()
 	drainMemPieceChunkPoolForTest(t)
@@ -570,6 +988,36 @@ func TestPieceReleaseDoesNotDependOnCacheClosedState(t *testing.T) {
 	if got, want := afterRelease.LogicalFilledBytes-before.LogicalFilledBytes, int64(0); got != want {
 		t.Fatalf("logical filled delta after Release = %d, want %d", got, want)
 	}
+}
+
+func newReaderLifecycleTestReader(cache *Cache, lastAccess time.Time, active bool) (*Reader, *fakeTorrentReader) {
+	fake := &fakeTorrentReader{}
+	reader := &Reader{
+		Reader: fake,
+		cache:  cache,
+	}
+	reader.lastAccess.Store(lastAccess.Unix())
+	reader.isUse.Store(active)
+
+	if active {
+		cache.readers.active.Store(1)
+	}
+
+	return reader, fake
+}
+
+func equalInt64Slices(left, right []int64) bool {
+	if len(left) != len(right) {
+		return false
+	}
+
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func TestReleasedPieceTorrentSyncDecisions(t *testing.T) {
@@ -637,6 +1085,57 @@ func TestCleanPiecesConcurrentCallsAreSafe(t *testing.T) {
 	if got := len(cache.copyResidentPieces()); got > 2 {
 		t.Fatalf("resident pieces after concurrent CleanPieces = %d, want <= 2", got)
 	}
+}
+
+func TestRemovableResidentPiecesKeepsProtectedReaderRange(t *testing.T) {
+	t.Parallel()
+
+	cache := &Cache{pieceLength: memPieceChunkSize}
+	residentPieces := []*Piece{
+		sizedTestPiece(9),
+		sizedTestPiece(10),
+		sizedTestPiece(74),
+		sizedTestPiece(75),
+		sizedTestPiece(90),
+	}
+
+	removable := cache.removableResidentPieces(residentPieces, []Range{{Start: 10, End: 74}})
+	gotIDs := pieceIDs(removable)
+	wantIDs := []int{9, 75, 90}
+
+	if !equalIntSlices(gotIDs, wantIDs) {
+		t.Fatalf("removable piece ids = %v, want %v", gotIDs, wantIDs)
+	}
+}
+
+func sizedTestPiece(id int) *Piece {
+	piece := &Piece{ID: id}
+	piece.Size.Store(1)
+
+	return piece
+}
+
+func pieceIDs(pieces []*Piece) []int {
+	ids := make([]int, 0, len(pieces))
+	for _, piece := range pieces {
+		ids = append(ids, piece.ID)
+	}
+
+	return ids
+}
+
+func equalIntSlices(left, right []int) bool {
+	if len(left) != len(right) {
+		return false
+	}
+
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func TestGetActiveReaderRangesDoesNotHoldReadersLockWhileCheckingReader(t *testing.T) {
@@ -1028,11 +1527,11 @@ func TestPriorityPieceBudget(t *testing.T) {
 			want:             50,
 		},
 		{
-			name:             "priority budget has upper bound",
+			name:             "priority budget scales upper bound with high connection profile",
 			connectionsLimit: 120,
 			activeReaders:    1,
 			pieceLength:      2 << 20,
-			want:             80,
+			want:             120,
 		},
 		{
 			name:             "three readers split connection budget",
@@ -1150,6 +1649,140 @@ func TestCachePriorityChurnStats(t *testing.T) {
 	}
 }
 
+func TestClearPrioritiesOutsideRangesUsesPriorityAdapter(t *testing.T) {
+	api := &fakeTorrentPriorityAPI{
+		priorities: map[int]torrent.PiecePriority{
+			1: torrent.PiecePriorityNow,
+			2: torrent.PiecePriorityNone,
+			3: torrent.PiecePriorityHigh,
+		},
+	}
+	cache := NewCache(64<<20, nil)
+	cache.priority = api
+	cache.priorities.pieces = map[int]torrent.PiecePriority{
+		1: torrent.PiecePriorityNow,
+		2: torrent.PiecePriorityReadahead,
+		3: torrent.PiecePriorityHigh,
+	}
+
+	cleared := cache.clearPrioritiesOutsideRanges([]Range{{Start: 1, End: 1}})
+
+	if got, want := cleared, 1; got != want {
+		t.Fatalf("cleared priorities = %d, want %d", got, want)
+	}
+
+	if _, ok := cache.priorities.pieces[1]; !ok {
+		t.Fatal("piece 1 should remain tracked inside active range")
+	}
+
+	if _, ok := cache.priorities.pieces[2]; ok {
+		t.Fatal("piece 2 should be untracked outside active range")
+	}
+
+	if _, ok := cache.priorities.pieces[3]; ok {
+		t.Fatal("piece 3 should be untracked outside active range")
+	}
+
+	if got, want := len(api.calls), 1; got != want {
+		t.Fatalf("priority set calls = %d, want %d", got, want)
+	}
+
+	if got := api.calls[0]; got != (fakePrioritySetCall{id: 3, priority: torrent.PiecePriorityNone}) {
+		t.Fatalf("priority set call = %+v, want clear piece 3", got)
+	}
+}
+
+func TestApplyDesiredPrioritiesUsesPriorityAdapterAndMaintainsTrackedState(t *testing.T) {
+	api := &fakeTorrentPriorityAPI{
+		priorities: map[int]torrent.PiecePriority{
+			1: torrent.PiecePriorityNext,
+			2: torrent.PiecePriorityNormal,
+			3: torrent.PiecePriorityHigh,
+			4: torrent.PiecePriorityNone,
+		},
+	}
+	cache := NewCache(64<<20, nil)
+	cache.registerMetrics()
+	t.Cleanup(cache.unregisterMetrics)
+	cache.priority = api
+	cache.priorities.pieces = map[int]torrent.PiecePriority{
+		1: torrent.PiecePriorityNext,
+		2: torrent.PiecePriorityReadahead,
+		3: torrent.PiecePriorityHigh,
+	}
+
+	desired := map[int]torrent.PiecePriority{
+		1: torrent.PiecePriorityNext,
+		2: torrent.PiecePriorityHigh,
+		4: torrent.PiecePriorityReadahead,
+	}
+
+	before := SnapshotCachePriorityStats()
+	setPieces, noopPieces, trackedPieces := cache.applyDesiredPriorities(desired)
+	cache.recordPriorityChurn(0, setPieces, noopPieces, trackedPieces)
+	after := SnapshotCachePriorityStats()
+
+	if got, want := setPieces, 2; got != want {
+		t.Fatalf("setPieces = %d, want %d", got, want)
+	}
+
+	if got, want := noopPieces, 1; got != want {
+		t.Fatalf("noopPieces = %d, want %d", got, want)
+	}
+
+	if got, want := trackedPieces, 3; got != want {
+		t.Fatalf("trackedPieces = %d, want %d", got, want)
+	}
+
+	if _, ok := cache.priorities.pieces[3]; ok {
+		t.Fatal("piece 3 should be removed from tracked priority state")
+	}
+
+	if got, want := cache.priorities.pieces[1], torrent.PiecePriorityNext; got != want {
+		t.Fatalf("tracked piece 1 = %v, want %v", got, want)
+	}
+
+	if got, want := cache.priorities.pieces[2], torrent.PiecePriorityHigh; got != want {
+		t.Fatalf("tracked piece 2 = %v, want %v", got, want)
+	}
+
+	if got, want := cache.priorities.pieces[4], torrent.PiecePriorityReadahead; got != want {
+		t.Fatalf("tracked piece 4 = %v, want %v", got, want)
+	}
+
+	wantCalls := []fakePrioritySetCall{
+		{id: 2, priority: torrent.PiecePriorityHigh},
+		{id: 3, priority: torrent.PiecePriorityNone},
+		{id: 4, priority: torrent.PiecePriorityReadahead},
+	}
+	if got := api.calls; len(got) != len(wantCalls) {
+		t.Fatalf("priority set calls = %+v, want %+v", got, wantCalls)
+	}
+
+	calls := make(map[fakePrioritySetCall]struct{}, len(api.calls))
+	for _, call := range api.calls {
+		calls[call] = struct{}{}
+	}
+
+	for _, want := range wantCalls {
+		if _, ok := calls[want]; !ok {
+			t.Fatalf("priority set calls = %+v, missing %+v", api.calls, want)
+		}
+	}
+
+	if got, want := after.SetPiecesTotal-before.SetPiecesTotal, uint64(2); got != want {
+		t.Fatalf("SetPiecesTotal delta = %d, want %d", got, want)
+	}
+
+	if got, want := after.NoopPiecesTotal-before.NoopPiecesTotal, uint64(1); got != want {
+		t.Fatalf("NoopPiecesTotal delta = %d, want %d", got, want)
+	}
+
+	if got, want := after.TrackedPieces-before.TrackedPieces, int64(3); got != want {
+		t.Fatalf("TrackedPieces delta = %d, want %d", got, want)
+	}
+}
+
 func TestCachePriorityTrackedPiecesCleanup(t *testing.T) {
 	before := SnapshotCachePriorityStats()
 	cache := NewCache(64<<20, nil)
@@ -1234,6 +1867,97 @@ func TestReaderOffsetRangeForReaders_UsesCapacityWindow(t *testing.T) {
 	}
 }
 
+func TestReaderOffsetRangeForReaders_ProtectsEffectiveReadahead(t *testing.T) {
+	cache := NewCache(64<<20, testCacheHost{
+		sets: &settings.BTSets{
+			ReaderReadAHead: 95,
+			EnableDebug:     true,
+		},
+	})
+	reader := &Reader{
+		cache: cache,
+	}
+	reader.offset.Store(128 << 20)
+	reader.readahead.Store(64 << 20)
+
+	before := SnapshotCachePriorityStats()
+	begin, end := reader.getOffsetRangeForReaders(2)
+	after := SnapshotCachePriorityStats()
+
+	if got, wantMin := end-reader.offset.Load(), reader.readahead.Load(); got < wantMin {
+		t.Fatalf("forward window = %d, want at least effective readahead %d", got, wantMin)
+	}
+
+	wantBack := int64((64 << 20) / 2 * 5 / 100)
+	if got := reader.offset.Load() - begin; got != wantBack {
+		t.Fatalf("back window = %d, want per-reader share back window %d", got, wantBack)
+	}
+
+	if got, want := after.RetentionExpandedTotal-before.RetentionExpandedTotal, uint64(1); got != want {
+		t.Fatalf("RetentionExpandedTotal delta = %d, want %d", got, want)
+	}
+
+	if got := after.RetentionClampedTotal - before.RetentionClampedTotal; got != 0 {
+		t.Fatalf("RetentionClampedTotal delta = %d, want 0", got)
+	}
+}
+
+func TestReaderOffsetRangeForReaders_ClampsReadaheadToCacheCapacity(t *testing.T) {
+	cache := NewCache(32<<20, testCacheHost{
+		sets: &settings.BTSets{
+			ReaderReadAHead: 95,
+			EnableDebug:     true,
+		},
+	})
+	reader := &Reader{
+		cache: cache,
+	}
+	reader.offset.Store(128 << 20)
+	reader.readahead.Store(64 << 20)
+
+	before := SnapshotCachePriorityStats()
+	_, end := reader.getOffsetRangeForReaders(1)
+	after := SnapshotCachePriorityStats()
+
+	if got, want := end-reader.offset.Load(), int64(32<<20); got != want {
+		t.Fatalf("forward window = %d, want clamped cache capacity %d", got, want)
+	}
+
+	if got, want := after.RetentionExpandedTotal-before.RetentionExpandedTotal, uint64(1); got != want {
+		t.Fatalf("RetentionExpandedTotal delta = %d, want %d", got, want)
+	}
+
+	if got, want := after.RetentionClampedTotal-before.RetentionClampedTotal, uint64(1); got != want {
+		t.Fatalf("RetentionClampedTotal delta = %d, want %d", got, want)
+	}
+}
+
+func TestReaderOffsetRangeForReaders_RetentionDiagnosticsAreDebugOnly(t *testing.T) {
+	cache := NewCache(32<<20, testCacheHost{
+		sets: &settings.BTSets{
+			ReaderReadAHead: 95,
+			EnableDebug:     false,
+		},
+	})
+	reader := &Reader{
+		cache: cache,
+	}
+	reader.offset.Store(128 << 20)
+	reader.readahead.Store(64 << 20)
+
+	before := SnapshotCachePriorityStats()
+	_, _ = reader.getOffsetRangeForReaders(1)
+	after := SnapshotCachePriorityStats()
+
+	if got := after.RetentionExpandedTotal - before.RetentionExpandedTotal; got != 0 {
+		t.Fatalf("RetentionExpandedTotal delta = %d, want 0 when debug is disabled", got)
+	}
+
+	if got := after.RetentionClampedTotal - before.RetentionClampedTotal; got != 0 {
+		t.Fatalf("RetentionClampedTotal delta = %d, want 0 when debug is disabled", got)
+	}
+}
+
 func TestMaxPiecePriority(t *testing.T) {
 	t.Parallel()
 
@@ -1295,6 +2019,7 @@ func TestDesiredPrioritiesForReaderAtFileStart(t *testing.T) {
 	for i := range 10 {
 		cache.pieces[i] = &Piece{ID: i}
 	}
+	cache.pieces[2].Complete = true
 
 	ranges := []Range{{Start: 0, End: 9}}
 	readers := []activeReaderSnapshot{
@@ -1312,6 +2037,10 @@ func TestDesiredPrioritiesForReaderAtFileStart(t *testing.T) {
 
 	if got, want := desired[1], torrent.PiecePriorityNext; got != want {
 		t.Fatalf("desired[1] = %v, want %v", got, want)
+	}
+
+	if _, ok := desired[2]; ok {
+		t.Fatal("completed piece 2 should not be selected for priority update")
 	}
 
 	if got, want := desired[4], torrent.PiecePriorityReadahead; got != want {

@@ -76,6 +76,18 @@ func (t *Torrent) NewReader(file *torrent.File) *torrstor.Reader {
 	return reader
 }
 
+// TouchPlaybackIntent keeps a torrent ready for imminent stream/preload work.
+// Some clients poll stat/preload before opening a real playback reader, so the
+// lifecycle must not quiesce network reads between those requests.
+func (t *Torrent) TouchPlaybackIntent() {
+	if t == nil {
+		return
+	}
+
+	t.AddExpiredTime(disconnectTimeout(t.currentSettings()))
+	t.resumePlaybackPeerAcquisition()
+}
+
 func (t *Torrent) CloseReader(reader *torrstor.Reader) {
 	if reader == nil || t == nil || t.cache == nil {
 		return

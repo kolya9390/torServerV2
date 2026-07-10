@@ -270,7 +270,7 @@ func TestStreamReaderReadahead(t *testing.T) {
 	}
 }
 
-func TestInitialPlaybackReaderReadaheadCapsAdaptiveLimitForHTTPReader(t *testing.T) {
+func TestInitialPlaybackReaderReadaheadHonorsAdaptiveLimitForHTTPReader(t *testing.T) {
 	got := initialPlaybackReaderReadahead(
 		2<<20,
 		256<<20,
@@ -282,7 +282,7 @@ func TestInitialPlaybackReaderReadaheadCapsAdaptiveLimitForHTTPReader(t *testing
 		},
 	)
 
-	if want := int64(16 << 20); got != want {
+	if want := int64(128 << 20); got != want {
 		t.Fatalf("initialPlaybackReaderReadahead() = %d, want %d", got, want)
 	}
 }
@@ -299,7 +299,7 @@ func TestInitialPlaybackReaderReadaheadBoundsPerReaderCapacity(t *testing.T) {
 		},
 	)
 
-	if want := int64(16 << 20); got != want {
+	if want := int64((256 << 20) / 3); got != want {
 		t.Fatalf("initialPlaybackReaderReadahead() = %d, want %d", got, want)
 	}
 }
@@ -316,7 +316,24 @@ func TestInitialPlaybackReaderReadaheadScalesDownAboveTwoPlaybackTorrents(t *tes
 		},
 	)
 
-	if want := int64(16 << 20); got != want {
+	if want := int64(64 << 20); got != want {
+		t.Fatalf("initialPlaybackReaderReadahead() = %d, want %d", got, want)
+	}
+}
+
+func TestInitialPlaybackReaderReadaheadUsesLargeSingleStreamWindow(t *testing.T) {
+	got := initialPlaybackReaderReadahead(
+		2<<20,
+		1024<<20,
+		1,
+		1,
+		settings.StreamConfig{
+			AdaptiveRAMinMB: 4,
+			AdaptiveRAMaxMB: 512,
+		},
+	)
+
+	if want := int64(512 << 20); got != want {
 		t.Fatalf("initialPlaybackReaderReadahead() = %d, want %d", got, want)
 	}
 }
@@ -1172,6 +1189,64 @@ func TestStreamDeliveryRecordsRollingThroughput(t *testing.T) {
 
 	if got := stream.Min5sBytesPerSec; got != stream.Last5sBytesPerSec {
 		t.Fatalf("Min5sBytesPerSec = %d, want %d", got, stream.Last5sBytesPerSec)
+	}
+}
+
+func TestStreamDeliveryHeadroomIsUnknownWhenDurationUnavailable(t *testing.T) {
+	resetStreamDeliveryForTest()
+
+	delivery, release := registerStreamDeliveryWithMetadata(time.Now(), 0, streamDeliveryMetadata{
+		fileSize: 100 << 20,
+	})
+	defer release()
+
+	delivery.recordWrite(10<<20, time.Millisecond)
+
+	stream := SnapshotStreamDelivery().Streams[0]
+	if got := stream.HeadroomStatus; got != "unknown_duration" {
+		t.Fatalf("HeadroomStatus = %q, want unknown_duration", got)
+	}
+
+	if stream.MediaDurationMS != nil {
+		t.Fatalf("MediaDurationMS = %v, want nil", *stream.MediaDurationMS)
+	}
+
+	if stream.RequiredBytesPerSec != nil {
+		t.Fatalf("RequiredBytesPerSec = %v, want nil", *stream.RequiredBytesPerSec)
+	}
+
+	if stream.HeadroomRatio != nil {
+		t.Fatalf("HeadroomRatio = %v, want nil", *stream.HeadroomRatio)
+	}
+}
+
+func TestStreamDeliveryHeadroomForKnownDuration(t *testing.T) {
+	resetStreamDeliveryForTest()
+
+	started := time.Now().Add(-2 * time.Second)
+	delivery, release := registerStreamDeliveryWithMetadata(started, 0, streamDeliveryMetadata{
+		fileSize:      100 << 20,
+		mediaDuration: 10 * time.Second,
+	})
+	defer release()
+
+	delivery.recordWrite(25<<20, time.Millisecond)
+
+	stream := SnapshotStreamDelivery().Streams[0]
+	if got := stream.HeadroomStatus; got != "pass" {
+		t.Fatalf("HeadroomStatus = %q, want pass", got)
+	}
+
+	if stream.MediaDurationMS == nil || *stream.MediaDurationMS != int64(10*time.Second/time.Millisecond) {
+		t.Fatalf("MediaDurationMS = %v, want 10000", stream.MediaDurationMS)
+	}
+
+	if stream.RequiredBytesPerSec == nil || *stream.RequiredBytesPerSec != 10<<20 {
+		t.Fatalf("RequiredBytesPerSec = %v, want %d", stream.RequiredBytesPerSec, 10<<20)
+	}
+
+	if stream.HeadroomRatio == nil || *stream.HeadroomRatio < 1.2 {
+		t.Fatalf("HeadroomRatio = %v, want >= 1.2", stream.HeadroomRatio)
 	}
 }
 

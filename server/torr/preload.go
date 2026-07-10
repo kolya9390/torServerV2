@@ -41,6 +41,7 @@ func (t *Torrent) PreloadWithSettings(index int, sets *settings.BTSets) {
 		size = cacheCfg.SizeBytes
 	}
 
+	t.TouchPlaybackIntent()
 	t.Preload(index, size)
 }
 
@@ -248,6 +249,7 @@ func (t *Torrent) setupPreloadReaders(file *torrent.File, size int64) preloadRes
 	// Calculate start/end ranges
 	result.startEnd = max(t.Info().PieceLength, 8<<20)
 
+	t.TouchPlaybackIntent()
 	result.readerStart = file.NewReader()
 	if result.readerStart == nil {
 		result.err = errors.New("null reader")
@@ -285,6 +287,7 @@ func (t *Torrent) runEndRangePreload(ctx context.Context, result *preloadResult,
 			return
 		}
 
+		t.TouchPlaybackIntent()
 		readerEnd := result.file.NewReader()
 		if readerEnd == nil {
 			log.TLogln("Err preload: null reader")

@@ -26,14 +26,28 @@ type CacheStats struct {
 }
 
 type CachePriorityStats struct {
-	UpdatesTotal       uint64 `json:"updates_total"`
-	DesiredPiecesTotal uint64 `json:"desired_pieces_total"`
-	BudgetLimitedTotal uint64 `json:"budget_limited_total"`
-	ClearedPiecesTotal uint64 `json:"cleared_pieces_total"`
-	SetPiecesTotal     uint64 `json:"set_pieces_total"`
-	NoopPiecesTotal    uint64 `json:"noop_pieces_total"`
-	TrackedPieces      int64  `json:"tracked_pieces"`
-	LastUpdateUnixMS   int64  `json:"last_update_unix_ms"`
+	UpdatesTotal           uint64 `json:"updates_total"`
+	DesiredPiecesTotal     uint64 `json:"desired_pieces_total"`
+	BudgetLimitedTotal     uint64 `json:"budget_limited_total"`
+	ClearedPiecesTotal     uint64 `json:"cleared_pieces_total"`
+	SetPiecesTotal         uint64 `json:"set_pieces_total"`
+	NoopPiecesTotal        uint64 `json:"noop_pieces_total"`
+	TrackedPieces          int64  `json:"tracked_pieces"`
+	LastUpdateUnixMS       int64  `json:"last_update_unix_ms"`
+	RetentionExpandedTotal uint64 `json:"retention_expanded_total"`
+	RetentionClampedTotal  uint64 `json:"retention_clamped_total"`
+}
+
+// ReaderLifecycleStats is an aggregate, privacy-safe view of reader idle
+// demotion/reactivation transitions.
+type ReaderLifecycleStats struct {
+	IdleDemotionsTotal          uint64 `json:"idle_demotions_total"`
+	ReactivationsTotal          uint64 `json:"reactivations_total"`
+	ReactivationsAfterIdleTotal uint64 `json:"reactivations_after_idle_total"`
+	DemotionIdleMSTotal         uint64 `json:"demotion_idle_ms_total"`
+	DemotionIdleMSMax           int64  `json:"demotion_idle_ms_max"`
+	ReactivationIdleMSTotal     uint64 `json:"reactivation_idle_ms_total"`
+	ReactivationIdleMSMax       int64  `json:"reactivation_idle_ms_max"`
 }
 
 type cacheStatsCounters struct {
@@ -56,6 +70,16 @@ type cacheStatsCounters struct {
 	priorityNoopPieces      atomic.Uint64
 	priorityTrackedPieces   atomic.Int64
 	priorityLastUpdateMS    atomic.Int64
+	retentionExpanded       atomic.Uint64
+	retentionClamped        atomic.Uint64
+
+	readerIdleDemotions           atomic.Uint64
+	readerReactivations           atomic.Uint64
+	readerReactivationsAfterIdle  atomic.Uint64
+	readerDemotionIdleMSTotal     atomic.Uint64
+	readerDemotionIdleMSMax       atomic.Int64
+	readerReactivationIdleMSTotal atomic.Uint64
+	readerReactivationIdleMSMax   atomic.Int64
 }
 
 var globalCacheStats cacheStatsCounters
@@ -94,14 +118,28 @@ func SnapshotCacheStats() CacheStats {
 
 func SnapshotCachePriorityStats() CachePriorityStats {
 	return CachePriorityStats{
-		UpdatesTotal:       globalCacheStats.priorityUpdates.Load(),
-		DesiredPiecesTotal: globalCacheStats.priorityDesiredPieces.Load(),
-		BudgetLimitedTotal: globalCacheStats.priorityBudgetLimited.Load(),
-		ClearedPiecesTotal: globalCacheStats.priorityClearedPieces.Load(),
-		SetPiecesTotal:     globalCacheStats.prioritySetPieces.Load(),
-		NoopPiecesTotal:    globalCacheStats.priorityNoopPieces.Load(),
-		TrackedPieces:      globalCacheStats.priorityTrackedPieces.Load(),
-		LastUpdateUnixMS:   globalCacheStats.priorityLastUpdateMS.Load(),
+		UpdatesTotal:           globalCacheStats.priorityUpdates.Load(),
+		DesiredPiecesTotal:     globalCacheStats.priorityDesiredPieces.Load(),
+		BudgetLimitedTotal:     globalCacheStats.priorityBudgetLimited.Load(),
+		ClearedPiecesTotal:     globalCacheStats.priorityClearedPieces.Load(),
+		SetPiecesTotal:         globalCacheStats.prioritySetPieces.Load(),
+		NoopPiecesTotal:        globalCacheStats.priorityNoopPieces.Load(),
+		TrackedPieces:          globalCacheStats.priorityTrackedPieces.Load(),
+		LastUpdateUnixMS:       globalCacheStats.priorityLastUpdateMS.Load(),
+		RetentionExpandedTotal: globalCacheStats.retentionExpanded.Load(),
+		RetentionClampedTotal:  globalCacheStats.retentionClamped.Load(),
+	}
+}
+
+func SnapshotReaderLifecycleStats() ReaderLifecycleStats {
+	return ReaderLifecycleStats{
+		IdleDemotionsTotal:          globalCacheStats.readerIdleDemotions.Load(),
+		ReactivationsTotal:          globalCacheStats.readerReactivations.Load(),
+		ReactivationsAfterIdleTotal: globalCacheStats.readerReactivationsAfterIdle.Load(),
+		DemotionIdleMSTotal:         globalCacheStats.readerDemotionIdleMSTotal.Load(),
+		DemotionIdleMSMax:           globalCacheStats.readerDemotionIdleMSMax.Load(),
+		ReactivationIdleMSTotal:     globalCacheStats.readerReactivationIdleMSTotal.Load(),
+		ReactivationIdleMSMax:       globalCacheStats.readerReactivationIdleMSMax.Load(),
 	}
 }
 
@@ -300,6 +338,48 @@ func (c *Cache) recordPriorityChurn(clearedPieces, setPieces, noopPieces, tracke
 	c.setTrackedPriorityPieces(trackedPieces)
 }
 
+func (c *Cache) recordRetentionWindowAdjustment(expanded, clamped bool) {
+	if c == nil || !c.debugMetricsEnabled() {
+		return
+	}
+
+	if expanded {
+		c.metrics.retentionExpanded.Add(1)
+		globalCacheStats.retentionExpanded.Add(1)
+	}
+
+	if clamped {
+		c.metrics.retentionClamped.Add(1)
+		globalCacheStats.retentionClamped.Add(1)
+	}
+}
+
+func (c *Cache) recordReaderIdleDemotion(idle time.Duration) {
+	if c == nil || !c.debugMetricsEnabled() {
+		return
+	}
+
+	idleMS := durationMilliseconds(idle)
+	globalCacheStats.readerIdleDemotions.Add(1)
+	globalCacheStats.readerDemotionIdleMSTotal.Add(uint64(idleMS))
+	updateAtomicMax(&globalCacheStats.readerDemotionIdleMSMax, idleMS)
+}
+
+func (c *Cache) recordReaderReactivation(idle time.Duration) {
+	if c == nil || !c.debugMetricsEnabled() {
+		return
+	}
+
+	idleMS := durationMilliseconds(idle)
+	globalCacheStats.readerReactivations.Add(1)
+	globalCacheStats.readerReactivationIdleMSTotal.Add(uint64(idleMS))
+	updateAtomicMax(&globalCacheStats.readerReactivationIdleMSMax, idleMS)
+
+	if idle >= readerIdleDemotionThreshold {
+		globalCacheStats.readerReactivationsAfterIdle.Add(1)
+	}
+}
+
 func (c *Cache) setTrackedPriorityPieces(trackedPieces int) {
 	if c == nil {
 		return
@@ -314,6 +394,36 @@ func (c *Cache) setTrackedPriorityPieces(trackedPieces int) {
 
 	if c.metrics.registered.Load() {
 		globalCacheStats.priorityTrackedPieces.Add(next - old)
+	}
+}
+
+func (c *Cache) debugMetricsEnabled() bool {
+	sets := c.currentSettings()
+	if sets == nil {
+		return false
+	}
+
+	return sets.DebugConfig().EnableDebug
+}
+
+func durationMilliseconds(duration time.Duration) int64 {
+	if duration <= 0 {
+		return 0
+	}
+
+	return duration.Milliseconds()
+}
+
+func updateAtomicMax(target *atomic.Int64, value int64) {
+	for {
+		old := target.Load()
+		if value <= old {
+			return
+		}
+
+		if target.CompareAndSwap(old, value) {
+			return
+		}
 	}
 }
 

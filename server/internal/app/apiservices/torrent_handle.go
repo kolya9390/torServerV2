@@ -99,6 +99,12 @@ func (h torrentHandle) Metadata() contracts.StreamMeta {
 	}
 }
 
+func (h torrentHandle) TouchPlaybackIntent() {
+	if h.tor != nil {
+		h.tor.TouchPlaybackIntent()
+	}
+}
+
 func (h torrentHandle) Stream(index int, request *http.Request, writer http.ResponseWriter) error {
 	if h.tor == nil {
 		return contracts.ErrPlayTorrentNotFound

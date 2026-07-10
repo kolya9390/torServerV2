@@ -19,6 +19,7 @@ func TestMapSettingsFromBTSetsUsesApplicationDTO(t *testing.T) {
 		DebugTotalHalfOpenConnsOverride: 500,
 		DebugTrackerBudgetOverride:      64,
 		DebugStablePeerCap:              22,
+		StartupPreloadPolicy:            sets.StartupPreloadPolicyLegacy,
 		TorznabUrls: []sets.TorznabConfig{
 			{Host: "https://torznab.test", Key: "key", Name: "main"},
 		},
@@ -42,6 +43,7 @@ func TestMapSettingsFromBTSetsUsesApplicationDTO(t *testing.T) {
 		DebugTotalHalfOpenConnsOverride: 500,
 		DebugTrackerBudgetOverride:      64,
 		DebugStablePeerCap:              22,
+		StartupPreloadPolicy:            sets.StartupPreloadPolicyLegacy,
 		TorznabUrls: []contracts.TorznabConfig{
 			{Host: "https://torznab.test", Key: "key", Name: "main"},
 		},
@@ -70,6 +72,7 @@ func TestMapSettingsToBTSetsKeepsLegacyShape(t *testing.T) {
 		DebugTotalHalfOpenConnsOverride: 500,
 		DebugTrackerBudgetOverride:      64,
 		DebugStablePeerCap:              22,
+		StartupPreloadPolicy:            sets.StartupPreloadPolicyLegacy,
 		TorznabUrls: []contracts.TorznabConfig{
 			{Host: "https://torznab.test", Key: "key", Name: "main"},
 		},
@@ -93,6 +96,7 @@ func TestMapSettingsToBTSetsKeepsLegacyShape(t *testing.T) {
 		DebugTotalHalfOpenConnsOverride: 500,
 		DebugTrackerBudgetOverride:      64,
 		DebugStablePeerCap:              22,
+		StartupPreloadPolicy:            sets.StartupPreloadPolicyLegacy,
 		TorznabUrls: []sets.TorznabConfig{
 			{Host: "https://torznab.test", Key: "key", Name: "main"},
 		},

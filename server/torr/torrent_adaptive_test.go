@@ -171,10 +171,18 @@ func TestAdaptiveMaxEstablishedConnsForReaderAge(t *testing.T) {
 			EnableDebug:        true,
 			DebugStablePeerCap: 48,
 		}, playbackTorrents: 1, localReaders: 1, oldestReaderAge: 2 * time.Minute, want: 48},
-		{name: "tcp only balanced startup keeps full peer reach", sets: &settings.BTSets{
-			CoreProfile:      "tcp-only-balanced",
-			ConnectionsLimit: 25,
-		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 30 * time.Second, want: 25},
+		{name: "debug stable cap keeps full peer reach during startup window", sets: &settings.BTSets{
+			CoreProfile:        "tcp-only-balanced",
+			ConnectionsLimit:   25,
+			EnableDebug:        true,
+			DebugStablePeerCap: 22,
+		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 10 * time.Second, want: 25},
+		{name: "debug stable cap applies after startup window", sets: &settings.BTSets{
+			CoreProfile:        "tcp-only-balanced",
+			ConnectionsLimit:   25,
+			EnableDebug:        true,
+			DebugStablePeerCap: 22,
+		}, playbackTorrents: 2, localReaders: 1, oldestReaderAge: 20 * time.Second, want: 22},
 		{name: "tcp only balanced single playback applies debug bounded relief", sets: &settings.BTSets{
 			CoreProfile:        "tcp-only-balanced",
 			ConnectionsLimit:   25,
@@ -296,6 +304,17 @@ func TestShortenExpiredTime(t *testing.T) {
 	grace := torr.lifecycle.expiredUnixNano.Load()
 	if grace <= time.Now().UnixNano() {
 		t.Fatalf("ShortenExpiredTime() with stale expiration = %d, want future grace period", grace)
+	}
+}
+
+func TestTouchPlaybackIntentExtendsExpiration(t *testing.T) {
+	torr := &Torrent{}
+	torr.lifecycle.expiredUnixNano.Store(time.Now().Add(-time.Second).UnixNano())
+
+	torr.TouchPlaybackIntent()
+
+	if got := torr.lifecycle.expiredUnixNano.Load(); got <= time.Now().UnixNano() {
+		t.Fatalf("TouchPlaybackIntent() expiration = %d, want future timestamp", got)
 	}
 }
 

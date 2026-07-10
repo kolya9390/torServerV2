@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"server/internal/app/contracts"
 	"server/log"
@@ -30,6 +31,27 @@ func (meta streamMeta) toContract() contracts.StreamMeta {
 
 type playbackAdmissionChecker interface {
 	CheckPlaybackAdmission(hash string) contracts.PlaybackAdmissionDecision
+}
+
+type playbackIntentToucher interface {
+	TouchPlaybackIntent()
+}
+
+func touchPlaybackIntent(tor contracts.TorrentHandle) {
+	toucher, ok := tor.(playbackIntentToucher)
+	if ok {
+		toucher.TouchPlaybackIntent()
+	}
+}
+
+func shouldTouchStatPlaybackIntent(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+
+	path := c.Request.URL.Path
+
+	return path == "/stream" || strings.HasPrefix(path, "/stream/")
 }
 
 func ensurePlaybackAdmission(c *gin.Context, service any, hash string) bool {
@@ -98,6 +120,9 @@ func streamStat(c *gin.Context) {
 		return
 	}
 
+	if shouldTouchStatPlaybackIntent(c) {
+		touchPlaybackIntent(tor)
+	}
 	writeStreamStatusResponse(c, tor.Status())
 }
 
@@ -207,6 +232,7 @@ func streamPlay(c *gin.Context) {
 		return
 	}
 
+	touchPlaybackIntent(tor)
 	if req.Preload {
 		if queued := deps.Torrents.EnqueuePreload(tor, index); !queued {
 			log.TLogln("preload queue is full, skipping preload")

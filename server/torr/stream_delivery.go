@@ -42,6 +42,7 @@ type streamDelivery struct {
 	initialOffset       int64
 	fileSize            int64
 	requestedRange      bool
+	mediaDuration       time.Duration
 	firstWriteUnixNano  atomic.Int64
 	lastWriteUnixNano   atomic.Int64
 	lastWriteGapMS      atomic.Int64
@@ -106,6 +107,10 @@ type activeDeliverySnapshot struct {
 	BytesPerSecond      int64            `json:"bytes_per_second"`
 	Last5sBytesPerSec   int64            `json:"last_5s_bytes_per_second"`
 	Min5sBytesPerSec    int64            `json:"min_5s_bytes_per_second"`
+	MediaDurationMS     *int64           `json:"media_duration_ms"`
+	RequiredBytesPerSec *int64           `json:"estimated_required_bytes_per_second"`
+	HeadroomRatio       *float64         `json:"delivery_headroom_ratio"`
+	HeadroomStatus      string           `json:"delivery_headroom_status"`
 	WriteCalls          int64            `json:"write_calls"`
 	LastWriteGapMS      int64            `json:"last_write_gap_ms"`
 	MaxWriteGapMS       int64            `json:"max_write_gap_ms"`
@@ -136,6 +141,14 @@ type streamDeliveryMetadata struct {
 	initialOffset  int64
 	fileSize       int64
 	requestedRange bool
+	mediaDuration  time.Duration
+}
+
+type streamDeliveryHeadroom struct {
+	mediaDurationMS     *int64
+	requiredBytesPerSec *int64
+	ratio               *float64
+	status              string
 }
 
 func registerStreamDelivery(started time.Time, torrentID uint64) (*streamDelivery, func()) {
@@ -154,6 +167,7 @@ func registerStreamDeliveryWithMetadata(
 		initialOffset:   maxInt64(metadata.initialOffset, 0),
 		fileSize:        maxInt64(metadata.fileSize, 0),
 		requestedRange:  metadata.requestedRange,
+		mediaDuration:   metadata.mediaDuration,
 	}
 
 	streamDeliveries.mu.Lock()
@@ -336,6 +350,8 @@ func (d *streamDelivery) snapshot(now time.Time) activeDeliverySnapshot {
 	elapsed := now.Sub(time.Unix(0, d.startedUnixNano))
 	bytesWritten := d.bytesWritten.Load()
 	currentOffset := d.currentOffset(bytesWritten)
+	bytesPerSec := bytesPerSecond(bytesWritten, elapsed)
+	headroom := deliveryHeadroom(d.fileSize, d.mediaDuration, bytesPerSec)
 
 	return activeDeliverySnapshot{
 		TorrentID:           d.torrentID,
@@ -349,9 +365,13 @@ func (d *streamDelivery) snapshot(now time.Time) activeDeliverySnapshot {
 		FirstByteMS:         durationSinceStartMS(d.startedUnixNano, d.firstWriteUnixNano.Load()),
 		SinceLastWriteMS:    durationSinceEventMS(now, d.lastWriteUnixNano.Load()),
 		BytesWritten:        bytesWritten,
-		BytesPerSecond:      bytesPerSecond(bytesWritten, elapsed),
+		BytesPerSecond:      bytesPerSec,
 		Last5sBytesPerSec:   d.window.lastBytesPerSec.Load(),
 		Min5sBytesPerSec:    d.window.minBytesPerSec.Load(),
+		MediaDurationMS:     headroom.mediaDurationMS,
+		RequiredBytesPerSec: headroom.requiredBytesPerSec,
+		HeadroomRatio:       headroom.ratio,
+		HeadroomStatus:      headroom.status,
 		WriteCalls:          d.writeCalls.Load(),
 		LastWriteGapMS:      d.lastWriteGapMS.Load(),
 		MaxWriteGapMS:       d.maxWriteGapMS.Load(),
@@ -377,6 +397,42 @@ func (d *streamDelivery) snapshot(now time.Time) activeDeliverySnapshot {
 		LastReadSize:        d.lastReadSize.Load(),
 		ReadWaitMSBuckets:   snapshotBuckets(&d.readWaitBuckets),
 	}
+}
+
+func deliveryHeadroom(fileSize int64, mediaDuration time.Duration, deliveryBytesPerSec int64) streamDeliveryHeadroom {
+	if fileSize <= 0 {
+		return streamDeliveryHeadroom{status: "unknown_file_size"}
+	}
+
+	if mediaDuration <= 0 {
+		return streamDeliveryHeadroom{status: "unknown_duration"}
+	}
+
+	durationMS := mediaDuration.Milliseconds()
+	if durationMS <= 0 {
+		return streamDeliveryHeadroom{status: "unknown_duration"}
+	}
+
+	required := bytesPerSecond(fileSize, mediaDuration)
+	result := streamDeliveryHeadroom{
+		mediaDurationMS:     int64Ptr(durationMS),
+		requiredBytesPerSec: int64Ptr(required),
+		status:              "unknown_delivery",
+	}
+
+	if required <= 0 || deliveryBytesPerSec <= 0 {
+		return result
+	}
+
+	ratio := float64(deliveryBytesPerSec) / float64(required)
+	result.ratio = float64Ptr(roundFloat(ratio, 3))
+	if ratio >= 1 {
+		result.status = "pass"
+	} else {
+		result.status = "fail"
+	}
+
+	return result
 }
 
 func (d *streamDelivery) currentOffset(bytesWritten int64) int64 {
@@ -406,6 +462,27 @@ func maxInt64(left, right int64) int64 {
 	}
 
 	return right
+}
+
+func int64Ptr(value int64) *int64 {
+	return &value
+}
+
+func float64Ptr(value float64) *float64 {
+	return &value
+}
+
+func roundFloat(value float64, precision int) float64 {
+	if precision <= 0 {
+		return value
+	}
+
+	multiplier := 1.0
+	for range precision {
+		multiplier *= 10
+	}
+
+	return float64(int64(value*multiplier+0.5)) / multiplier
 }
 
 func durationSinceStartMS(startedUnixNano, eventUnixNano int64) int64 {

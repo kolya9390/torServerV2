@@ -6,6 +6,7 @@ import (
 	"server/log"
 	"server/torr/state"
 	"server/torr/storage/torrstor"
+	"server/torr/utils"
 )
 
 func (t *Torrent) WaitInfo() bool {
@@ -224,11 +225,16 @@ func shouldExpireTorrent(
 
 func (t *Torrent) drop() {
 	t.muTorrent.Lock()
-	defer t.muTorrent.Unlock()
+	torrentRef := t.Torrent
+	// Drop can trigger anacrolix tracker dispatcher follow-up work. Clear the
+	// wrapper reference first so the library's weak references can be collected.
+	t.Torrent = nil
+	t.muTorrent.Unlock()
 
-	if t.Torrent != nil {
-		t.Drop()
-		t.Torrent = nil
+	if torrentRef != nil {
+		torrentRef.Drop()
+		torrentRef = nil
+		utils.FreeOSMemGC()
 	}
 }
 
@@ -268,6 +274,7 @@ func (t *Torrent) Close() bool {
 		}
 	}
 
+	t.cache = nil
 	t.drop()
 
 	return true

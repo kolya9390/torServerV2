@@ -358,6 +358,7 @@ type Settings struct {
 	StreamQueueSize           int
 	StreamQueueWaitSec        int
 	MaxUniquePlaybackTorrents int
+	StartupPreloadPolicy      string
 	AdaptiveRAMinMB           int
 	AdaptiveRAMaxMB           int
 	WarmDiskCacheSizeMB       int64

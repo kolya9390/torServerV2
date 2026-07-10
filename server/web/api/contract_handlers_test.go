@@ -19,14 +19,16 @@ type contractTorrentService struct{ mockTorrentService }
 type contractSettingsService struct {
 	mockSettingsService
 	current    *contracts.Settings
+	set        *contracts.Settings
 	defaultSet bool
 	enableDLNA bool
 }
 
 type contractModulesService struct {
 	mockModulesService
-	stopCalled    bool
-	restartCalled bool
+	stopCalled       bool
+	restartCalled    bool
+	restartEnableArg bool
 }
 
 type contractSearchService struct {
@@ -50,6 +52,10 @@ func (s *contractSettingsService) SetDefault() {
 	s.defaultSet = true
 }
 
+func (s *contractSettingsService) Set(settings *contracts.Settings) {
+	s.set = settings
+}
+
 func (s *contractSettingsService) EnableDLNA() bool {
 	return s.enableDLNA
 }
@@ -60,6 +66,7 @@ func (s *contractModulesService) StopDLNA() {
 
 func (s *contractModulesService) RestartDLNA(enable bool) error {
 	s.restartCalled = true
+	s.restartEnableArg = enable
 
 	return nil
 }
@@ -155,6 +162,94 @@ func TestSetupRouteWithServicesUsesScopedServices(t *testing.T) {
 
 	if !modulesSvc.stopCalled {
 		t.Fatal("expected scoped ModulesService.StopDLNA to be called")
+	}
+}
+
+func TestSettingsSetMergesPartialPayloadWithCurrentSettings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	settingsSvc := &contractSettingsService{
+		current: &contracts.Settings{
+			CacheSize:            1024,
+			ConnectionsLimit:     25,
+			ResponsiveMode:       true,
+			EnableDLNA:           true,
+			EnableDebug:          true,
+			FriendlyName:         "Home TorrServer",
+			StartupPreloadPolicy: sets.StartupPreloadPolicyLegacy,
+		},
+	}
+	modulesSvc := &contractModulesService{}
+
+	r := gin.New()
+	withServices(t, r, &contracts.APIServices{
+		Torrents: &contractTorrentService{},
+		Settings: settingsSvc,
+		Viewed:   &contractViewedService{},
+		System:   &contractSystemService{},
+		Search:   &contractSearchService{},
+		Media:    &contractMediaService{},
+		Modules:  modulesSvc,
+	})
+
+	body := `{
+		"action": "set",
+		"sets": {
+			"ResponsiveMode": false,
+			"ConnectionsLimit": 0,
+			"FriendlyName": "",
+			"UnknownField": "ignored"
+		}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	r.POST("/settings", settings)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	if settingsSvc.set == nil {
+		t.Fatal("expected Settings.Set to be called")
+	}
+
+	if settingsSvc.set.ResponsiveMode {
+		t.Fatal("ResponsiveMode = true, want explicit false from patch")
+	}
+
+	if got := settingsSvc.set.ConnectionsLimit; got != 0 {
+		t.Fatalf("ConnectionsLimit = %d, want explicit zero from patch", got)
+	}
+
+	if got := settingsSvc.set.FriendlyName; got != "" {
+		t.Fatalf("FriendlyName = %q, want explicit empty string from patch", got)
+	}
+
+	if got, want := settingsSvc.set.CacheSize, int64(1024); got != want {
+		t.Fatalf("CacheSize = %d, want preserved %d", got, want)
+	}
+
+	if got, want := settingsSvc.set.StartupPreloadPolicy, sets.StartupPreloadPolicyLegacy; got != want {
+		t.Fatalf("StartupPreloadPolicy = %q, want preserved %q", got, want)
+	}
+
+	if !settingsSvc.set.EnableDebug {
+		t.Fatal("EnableDebug = false, want startup debug value preserved")
+	}
+
+	if !settingsSvc.set.EnableDLNA {
+		t.Fatal("EnableDLNA = false, want preserved true")
+	}
+
+	if !modulesSvc.restartCalled {
+		t.Fatal("expected RestartDLNA to be called")
+	}
+
+	if !modulesSvc.restartEnableArg {
+		t.Fatal("RestartDLNA enable arg = false, want merged EnableDLNA=true")
 	}
 }
 

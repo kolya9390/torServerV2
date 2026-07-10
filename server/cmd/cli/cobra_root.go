@@ -362,7 +362,7 @@ func newSettingsCmd(opts *globalOptions) *cobra.Command {
 Поддерживаемые суффиксы:
   Размеры: KB, MB, GB (например 128MB → 134217728)
   Время: s, m, h (например 30s → 30)`,
-		Args: cobra.MinimumNArgs(1),
+		Args: validateSettingsSetArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
 				// If --json or --file flags are used, fall back to JSON-based update
@@ -418,6 +418,16 @@ func newSettingsCmd(opts *globalOptions) *cobra.Command {
 	})
 
 	return settingsCmd
+}
+
+func validateSettingsSetArgs(cmd *cobra.Command, args []string) error {
+	jsonRaw, _ := cmd.Flags().GetString("json")
+	filePath, _ := cmd.Flags().GetString("file")
+	if strings.TrimSpace(jsonRaw) != "" || strings.TrimSpace(filePath) != "" {
+		return cobra.MaximumNArgs(0)(cmd, args)
+	}
+
+	return cobra.MinimumNArgs(1)(cmd, args)
 }
 
 func newShutdownCmd(opts *globalOptions) *cobra.Command {

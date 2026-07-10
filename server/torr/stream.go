@@ -21,6 +21,8 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 		return errors.New("torrent is closed")
 	}
 
+	t.TouchPlaybackIntent()
+
 	curSets := t.currentSettings()
 	admission := currentAdmission(curSets)
 	debugCfg := curSets.DebugConfig()

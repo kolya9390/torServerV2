@@ -113,9 +113,25 @@ func (c *Cache) snapshotActiveReaders(refreshActivity bool) []activeReaderSnapsh
 	return snapshots
 }
 
+func (c *Cache) torrentPriorityAPI() torrentPriorityAPI {
+	if c == nil || c.isClosed.Load() {
+		return nil
+	}
+
+	if c.priority != nil {
+		return c.priority
+	}
+
+	if c.torrent == nil {
+		return nil
+	}
+
+	return realTorrentPriorityAPI{torrent: c.torrent}
+}
+
 // UpdatePriorities refreshes piece download priorities based on reader positions.
 func (c *Cache) UpdatePriorities() {
-	if c == nil || c.isClosed.Load() || c.torrent == nil {
+	if c == nil || c.torrentPriorityAPI() == nil {
 		return
 	}
 
@@ -141,7 +157,8 @@ func (c *Cache) RequestPriorityUpdate() {
 }
 
 func (c *Cache) clearPrioritiesOutsideRanges(ranges []Range) int {
-	if c == nil || c.isClosed.Load() || c.torrent == nil {
+	api := c.torrentPriorityAPI()
+	if c == nil || api == nil {
 		return 0
 	}
 
@@ -155,8 +172,8 @@ func (c *Cache) clearPrioritiesOutsideRanges(ranges []Range) int {
 			continue
 		}
 
-		if c.torrent.PieceState(id).Priority != torrent.PiecePriorityNone {
-			c.torrent.Piece(id).SetPriority(torrent.PiecePriorityNone)
+		if api.PieceState(id).Priority != torrent.PiecePriorityNone {
+			api.SetPiecePriority(id, torrent.PiecePriorityNone)
 
 			clearedPieces++
 		}
@@ -235,11 +252,20 @@ func priorityPieceBudget(connectionsLimit, activeReaders int, pieceLength int64)
 		budget *= 2
 	}
 
-	if budget > maxPriorityPiecesPerReader {
-		budget = maxPriorityPiecesPerReader
+	upperBound := priorityPieceBudgetUpperBound(connectionsLimit)
+	if budget > upperBound {
+		budget = upperBound
 	}
 
 	return budget
+}
+
+func priorityPieceBudgetUpperBound(connectionsLimit int) int {
+	if connectionsLimit > maxPriorityPiecesPerReader {
+		return connectionsLimit
+	}
+
+	return maxPriorityPiecesPerReader
 }
 
 func maxPiecePriority(current, next torrent.PiecePriority) torrent.PiecePriority {
@@ -255,6 +281,9 @@ func desiredPiecePriority(pieceID, readerPos, readerRAHPos int) torrent.PiecePri
 	case pieceID == readerPos:
 		return torrent.PiecePriorityNow
 	case pieceID > readerPos && pieceID <= readerPos+priorityNextPieces:
+		// Next intentionally outranks the general Readahead band for each
+		// active reader. anacrolix breaks ties inside one priority level by
+		// global piece index, which can starve later readers on the same torrent.
 		return torrent.PiecePriorityNext
 	case pieceID > readerPos && pieceID <= readerRAHPos:
 		return torrent.PiecePriorityReadahead
@@ -314,7 +343,8 @@ func (c *Cache) desiredPrioritiesForReaders(
 }
 
 func (c *Cache) applyDesiredPriorities(desired map[int]torrent.PiecePriority) (int, int, int) {
-	if c == nil || c.isClosed.Load() || c.torrent == nil {
+	api := c.torrentPriorityAPI()
+	if c == nil || api == nil {
 		return 0, 0, 0
 	}
 
@@ -330,11 +360,11 @@ func (c *Cache) applyDesiredPriorities(desired map[int]torrent.PiecePriority) (i
 
 	for id, tracked := range c.priorities.pieces {
 		want, keep := desired[id]
-		actual := c.torrent.PieceState(id).Priority
+		actual := api.PieceState(id).Priority
 
 		if !keep {
 			if actual != torrent.PiecePriorityNone {
-				c.torrent.Piece(id).SetPriority(torrent.PiecePriorityNone)
+				api.SetPiecePriority(id, torrent.PiecePriorityNone)
 			}
 
 			delete(c.priorities.pieces, id)
@@ -351,7 +381,7 @@ func (c *Cache) applyDesiredPriorities(desired map[int]torrent.PiecePriority) (i
 		}
 
 		if actual != want {
-			c.torrent.Piece(id).SetPriority(want)
+			api.SetPiecePriority(id, want)
 
 			setPieces++
 		}
@@ -362,8 +392,8 @@ func (c *Cache) applyDesiredPriorities(desired map[int]torrent.PiecePriority) (i
 	}
 
 	for id, want := range desired {
-		if c.torrent.PieceState(id).Priority != want {
-			c.torrent.Piece(id).SetPriority(want)
+		if api.PieceState(id).Priority != want {
+			api.SetPiecePriority(id, want)
 
 			setPieces++
 		}
@@ -481,7 +511,7 @@ func (c *Cache) CloseReader(r *Reader) {
 }
 
 func (c *Cache) clearPriorityAsync() {
-	if c == nil || c.isClosed.Load() || c.torrent == nil {
+	if c == nil || c.torrentPriorityAPI() == nil {
 		return
 	}
 
@@ -496,7 +526,7 @@ func (c *Cache) clearPriorityAsync() {
 }
 
 func (c *Cache) runClearPriority() {
-	if c == nil || c.isClosed.Load() || c.torrent == nil {
+	if c == nil || c.torrentPriorityAPI() == nil {
 		return
 	}
 
@@ -509,7 +539,7 @@ func (c *Cache) runClearPriority() {
 }
 
 func (c *Cache) clearPriority() {
-	if c == nil || c.isClosed.Load() || c.torrent == nil {
+	if c == nil || c.torrentPriorityAPI() == nil {
 		return
 	}
 

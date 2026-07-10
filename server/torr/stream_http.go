@@ -81,11 +81,6 @@ func initialPlaybackReaderReadahead(
 		return streamReaderReadahead(pieceLength, cacheCap, activeReaders)
 	}
 
-	readerCap := streamReaderReadahead(pieceLength, cacheCap, activeReaders)
-	if readahead > readerCap {
-		readahead = readerCap
-	}
-
 	if activeReaders < 1 {
 		activeReaders = 1
 	}

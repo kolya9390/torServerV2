@@ -11,7 +11,7 @@ const (
 	defaultEstablishedConns            = 50
 	lowCPUCoreProfile                  = "low-cpu"
 	tcpOnlyBalancedCoreProfile         = "tcp-only-balanced"
-	tcpOnlyBalancedPeerReliefMinAge    = time.Minute
+	stablePeerReliefMinAge             = 20 * time.Second
 	maxDebugTotalHalfOpenConnsOverride = 2000
 	maxDebugTrackerBudgetOverride      = 256
 )

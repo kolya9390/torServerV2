@@ -38,13 +38,24 @@ func settings(c *gin.Context) {
 
 		return
 	case "set":
-		// Block EnableDebug changes via API — only config.yml controls debug mode.
-		// This prevents runtime toggling and ensures debug is set at startup.
-		req.Sets.EnableDebug = false
+		current := deps.Settings.Current()
+		merged, err := mergeSettingsPatch(current, req.Sets, req.SetsRaw)
+		if err != nil {
+			abortAPIError(c, http.StatusBadRequest, err)
 
-		deps.Settings.Set(req.Sets)
+			return
+		}
 
-		if err := deps.Modules.RestartDLNA(req.Sets.EnableDLNA); err != nil {
+		// Block EnableDebug changes via API: debug remains a startup/config.yml decision.
+		enableDebug := false
+		if current != nil {
+			enableDebug = current.EnableDebug
+		}
+		merged.EnableDebug = enableDebug
+
+		deps.Settings.Set(merged)
+
+		if err := deps.Modules.RestartDLNA(merged.EnableDLNA); err != nil {
 			abortAPIError(c, http.StatusInternalServerError, newInternalError("dlna start failed", err))
 
 			return

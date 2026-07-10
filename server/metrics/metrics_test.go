@@ -285,6 +285,7 @@ func TestRequestStrategyPressureSnapshotLow(t *testing.T) {
 		LogicalFilledBytes:      80 * 1024 * 1024,
 		ConfiguredCapacityBytes: 64 * 1024 * 1024,
 		PiecesCount:             11_464,
+		ResidentPieces:          11_464,
 		InMemoryChunks:          4_876,
 		Misses:                  0,
 	}
@@ -313,6 +314,7 @@ func TestRequestStrategyPressureSnapshotHigh(t *testing.T) {
 		ConfiguredCapacityBytes: 128 * 1024 * 1024,
 		LogicalOverheadBytes:    32 * 1024 * 1024,
 		PiecesCount:             20_000,
+		ResidentPieces:          20_000,
 	}
 
 	got := requestStrategyPressureSnapshot(runtime, cacheStats)
