@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strings"
 	"syscall"
 	"time"
 
@@ -31,12 +30,7 @@ import (
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	// Determine mode: CLI or Server
-	// If args exist and the first one does NOT start with '-', it's a CLI command.
-	// If no args or starts with '-', it's Server mode (pass flags to go-arg).
-	isCli := len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-")
-
-	if isCli {
+	if cli.IsInvocation(os.Args[1:]) {
 		cli.Execute()
 
 		return

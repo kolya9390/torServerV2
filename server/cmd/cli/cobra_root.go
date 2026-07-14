@@ -31,7 +31,9 @@ func newRootCmd() *cobra.Command {
 			"  torrserver                                        # Запуск сервера",
 			"  torrserver status                                 # Проверить статус",
 			"  torrserver torrents list                          # Список торрентов",
-			"  torrserver torrents add --link 'magnet:...'       # Добавить торрент",
+			"  torrserver torrents add 'magnet:...' --save        # Добавить magnet",
+			"  torrserver torrents add ./movie.torrent --save     # Загрузить .torrent",
+			"  torrserver url 1                                  # Получить stream URL",
 			"  torrserver settings get                           # Получить настройки",
 			"  torrserver settings set CacheSize 128MB           # Изменить кэш",
 		}, "\n"),
@@ -228,6 +230,7 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 
 	var (
 		addLink     string
+		addFile     string
 		addTitle    string
 		addPoster   string
 		addCategory string
@@ -236,37 +239,45 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 	)
 
 	addCmd := &cobra.Command{
-		Use:   "add",
+		Use:   "add [MAGNET|HASH|FILE]",
 		Short: "Добавить торрент",
-		Long: `Добавить торрент по magnet ссылке, хэшу или TSS.
+		Long: `Добавить торрент по magnet-ссылке, хэшу или загрузить локальный .torrent-файл.
 
 Примеры:
-  torrserver torrents add --link "magnet:?xt=..."
-  torrserver torrents add --link "d41d8cd98f00b204e9800998ecf8427e"
-  torrserver torrents add --link /path/to/file.torrent --title "My Movie"
+	  torrserver torrents add "magnet:?xt=..." --save
+	  torrserver torrents add d41d8cd98f00b204e9800998ecf8427e
+	  torrserver torrents add ./movie.torrent --save
+	  torrserver torrents add --file ./movie.torrent --title "My Movie"
 
-Обязательные флаги:
-  --link - magnet URI, хэш или путь к .torrent файлу`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+Локальный файл загружается на выбранный сервер через multipart API.
+Флаг --link сохранён для совместимости.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			addOpts, err := resolveTorrentAddOptions(args, torrentAddOptions{
+				Link:     addLink,
+				File:     addFile,
+				Title:    addTitle,
+				Poster:   addPoster,
+				Category: addCategory,
+				Data:     addData,
+				Save:     addSave,
+			})
+			if err != nil {
+				return err
+			}
+
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
-				return cmdTorrentsAdd(cli, resolved, []string{
-					"--link", addLink,
-					"--title", addTitle,
-					"--poster", addPoster,
-					"--category", addCategory,
-					"--data", addData,
-					boolFlagArg("save", addSave),
-				})
+				return cmdTorrentsAdd(cli, resolved, addOpts)
 			})
 		},
 	}
-	addCmd.Flags().StringVar(&addLink, "link", "", "magnet/hash/file link")
+	addCmd.Flags().StringVar(&addLink, "link", "", "magnet, hash, remote link, or local .torrent path")
+	addCmd.Flags().StringVar(&addFile, "file", "", "local .torrent file to upload")
 	addCmd.Flags().StringVar(&addTitle, "title", "", "title")
 	addCmd.Flags().StringVar(&addPoster, "poster", "", "poster URL")
 	addCmd.Flags().StringVar(&addCategory, "category", "", "category")
 	addCmd.Flags().StringVar(&addData, "data", "", "custom data")
 	addCmd.Flags().BoolVar(&addSave, "save", false, "save torrent to db")
-	_ = addCmd.MarkFlagRequired("link")
 	torrentsCmd.AddCommand(addCmd)
 
 	remCmd := &cobra.Command{
@@ -550,43 +561,21 @@ func runWithClient(cmd *cobra.Command, opts *globalOptions, fn func(*apiClient, 
 		return errors.New("global options are not initialized")
 	}
 
-	resolved := *opts
-	resolved.insecureExplicit = isFlagChanged(cmd, "insecure")
-	resolved.Output = strings.ToLower(strings.TrimSpace(resolved.Output))
-
-	if resolved.Output != outputTable && resolved.Output != outputJSON {
-		return fmt.Errorf("invalid --output value: %s (valid: %v)", resolved.Output, ValidOutputFormats())
-	}
-
-	if resolved.Timeout <= 0 {
-		return fmt.Errorf("invalid --timeout value: %s", resolved.Timeout)
-	}
-
-	// SEC5: Support env vars for secure credential handling
-	if resolved.User == "" {
-		resolved.User = os.Getenv(envUser)
-	}
-
-	if resolved.Pass == "" {
-		resolved.Pass = os.Getenv(envPassword)
-	}
-
 	// Warn if password is passed via command line (visible in ps)
 	if isFlagChanged(cmd, "pass") {
 		fmt.Fprintln(os.Stderr, "Warning: --pass is visible in process list. Use "+envPassword+" env var for security.")
 	}
 
-	// Prompt for password interactively if user is set but password is not
-	if resolved.User != "" && resolved.Pass == "" && !isFlagChanged(cmd, "pass") {
-		pass, err := readPasswordInteractive()
-		if err != nil {
-			return err
-		}
-
-		resolved.Pass = pass
+	resolved, err := resolveClientOptions(cmd, *opts)
+	if err != nil {
+		return err
 	}
 
-	resolved, err := applyContextToOptions(resolved)
+	resolved, err = resolveClientPassword(
+		resolved,
+		term.IsTerminal(int(os.Stdin.Fd())),
+		readPasswordInteractive,
+	)
 	if err != nil {
 		return err
 	}
@@ -597,6 +586,63 @@ func runWithClient(cmd *cobra.Command, opts *globalOptions, fn func(*apiClient, 
 	}
 
 	return fn(cli, resolved)
+}
+
+func resolveClientOptions(cmd *cobra.Command, opts globalOptions) (globalOptions, error) {
+	resolved := opts
+	resolved.insecureExplicit = isFlagChanged(cmd, "insecure")
+	resolved.Output = strings.ToLower(strings.TrimSpace(resolved.Output))
+
+	if resolved.Output != outputTable && resolved.Output != outputJSON {
+		return globalOptions{}, fmt.Errorf(
+			"invalid --output value: %s (valid: %v)",
+			resolved.Output,
+			ValidOutputFormats(),
+		)
+	}
+
+	if resolved.Timeout <= 0 {
+		return globalOptions{}, fmt.Errorf("invalid --timeout value: %s", resolved.Timeout)
+	}
+
+	if resolved.User == "" {
+		resolved.User = strings.TrimSpace(os.Getenv(envUser))
+	}
+
+	if resolved.Pass == "" {
+		resolved.Pass = os.Getenv(envPassword)
+	}
+
+	if resolved.Token == "" {
+		resolved.Token = strings.TrimSpace(os.Getenv(envToken))
+	}
+
+	return applyContextToOptions(resolved)
+}
+
+func resolveClientPassword(
+	opts globalOptions,
+	interactive bool,
+	readPassword func() (string, error),
+) (globalOptions, error) {
+	if opts.User == "" || opts.Pass != "" {
+		return opts, nil
+	}
+
+	if !interactive {
+		return globalOptions{}, errors.New(
+			"password is required for the selected user; set TS_PASSWORD or configure the context password",
+		)
+	}
+
+	pass, err := readPassword()
+	if err != nil {
+		return globalOptions{}, err
+	}
+
+	opts.Pass = pass
+
+	return opts, nil
 }
 
 func isFlagChanged(cmd *cobra.Command, name string) bool {

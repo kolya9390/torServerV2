@@ -8,8 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -117,6 +120,123 @@ func (c *apiClient) doJSON(ctx context.Context, method, path string, requestBody
 
 	if err := json.Unmarshal(data, responseBody); err != nil {
 		return fmt.Errorf("decode response: %w", err)
+	}
+
+	return nil
+}
+
+func (c *apiClient) doMultipartFile(
+	ctx context.Context,
+	path string,
+	filePath string,
+	fields map[string]string,
+	responseBody any,
+) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("open torrent file: %w", err)
+	}
+
+	reader, writer := io.Pipe()
+	multipartWriter := multipart.NewWriter(writer)
+	writeErr := make(chan error, 1)
+
+	go writeMultipartFile(file, filepath.Base(filePath), fields, multipartWriter, writer, writeErr)
+
+	req, err := c.newRequest(ctx, http.MethodPost, path, reader)
+	if err != nil {
+		_ = reader.CloseWithError(err)
+
+		<-writeErr
+
+		return err
+	}
+
+	req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		_ = reader.CloseWithError(err)
+
+		<-writeErr
+
+		return fmt.Errorf("request failed: %w", err)
+	}
+
+	data, readErr := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		readErr = errors.Join(readErr, fmt.Errorf("close response: %w", closeErr))
+	}
+
+	_ = reader.Close()
+	uploadErr := <-writeErr
+
+	if readErr != nil {
+		return fmt.Errorf("read response: %w", readErr)
+	}
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		return parseAPIError(resp.StatusCode, data)
+	}
+
+	if uploadErr != nil {
+		return fmt.Errorf("upload torrent file: %w", uploadErr)
+	}
+
+	if responseBody == nil || len(data) == 0 {
+		return nil
+	}
+
+	if err := json.Unmarshal(data, responseBody); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+
+	return nil
+}
+
+func writeMultipartFile(
+	file *os.File,
+	fileName string,
+	fields map[string]string,
+	multipartWriter *multipart.Writer,
+	pipeWriter *io.PipeWriter,
+	result chan<- error,
+) {
+	err := writeMultipartContent(file, fileName, fields, multipartWriter)
+	if closeErr := file.Close(); closeErr != nil {
+		err = errors.Join(err, fmt.Errorf("close torrent file: %w", closeErr))
+	}
+
+	if closeErr := multipartWriter.Close(); closeErr != nil {
+		err = errors.Join(err, fmt.Errorf("close multipart writer: %w", closeErr))
+	}
+
+	if closeErr := pipeWriter.CloseWithError(err); closeErr != nil && !errors.Is(closeErr, io.ErrClosedPipe) {
+		err = errors.Join(err, fmt.Errorf("close upload pipe: %w", closeErr))
+	}
+
+	result <- err
+}
+
+func writeMultipartContent(file *os.File, fileName string, fields map[string]string, writer *multipart.Writer) error {
+	part, err := writer.CreateFormFile("file", fileName)
+	if err != nil {
+		return fmt.Errorf("create torrent file form field: %w", err)
+	}
+
+	if _, err := io.Copy(part, file); err != nil {
+		return fmt.Errorf("copy torrent file: %w", err)
+	}
+
+	for key, val := range fields {
+		if val == "" {
+			continue
+		}
+
+		if err := writer.WriteField(key, val); err != nil {
+			return fmt.Errorf("write multipart field %s: %w", key, err)
+		}
 	}
 
 	return nil

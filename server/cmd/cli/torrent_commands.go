@@ -5,7 +5,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -23,6 +25,23 @@ type torrentStatus struct {
 	PendingPeers  int     `json:"pending_peers"`
 	DownloadSpeed float64 `json:"download_speed"`
 	UploadSpeed   float64 `json:"upload_speed"`
+}
+
+const (
+	maxTorrentUploadBodyBytes   int64 = 4 << 20
+	multipartUploadReserveBytes int64 = 64 << 10
+	maxTorrentUploadFileBytes         = maxTorrentUploadBodyBytes - multipartUploadReserveBytes
+)
+
+type torrentAddOptions struct {
+	Source   string
+	Link     string
+	File     string
+	Title    string
+	Poster   string
+	Category string
+	Data     string
+	Save     bool
 }
 
 func cmdTorrentsList(cli *apiClient, opts globalOptions) error {
@@ -176,36 +195,22 @@ func cmdTorrentsGet(cli *apiClient, opts globalOptions, args []string) error {
 	return printJSON(out)
 }
 
-func cmdTorrentsAdd(cli *apiClient, opts globalOptions, args []string) error {
-	fs := flag.NewFlagSet("torrents add", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-
-	link := fs.String("link", "", "magnet/hash/file link")
-	title := fs.String("title", "", "title")
-	poster := fs.String("poster", "", "poster URL")
-	category := fs.String("category", "", "category")
-	data := fs.String("data", "", "custom data")
-	save := fs.Bool("save", false, "save torrent to db")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	if strings.TrimSpace(*link) == "" {
-		return errors.New("torrents add requires --link")
-	}
-
+func cmdTorrentsAdd(cli *apiClient, opts globalOptions, addOpts torrentAddOptions) error {
 	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
 	defer cancel()
 
+	if addOpts.File != "" {
+		return uploadTorrentFile(ctx, cli, opts, addOpts)
+	}
+
 	payload := map[string]any{
 		"action":     "add",
-		"link":       strings.TrimSpace(*link),
-		"title":      strings.TrimSpace(*title),
-		"poster":     strings.TrimSpace(*poster),
-		"category":   strings.TrimSpace(*category),
-		"data":       strings.TrimSpace(*data),
-		"save_to_db": *save,
+		"link":       addOpts.Source,
+		"title":      addOpts.Title,
+		"poster":     addOpts.Poster,
+		"category":   addOpts.Category,
+		"data":       addOpts.Data,
+		"save_to_db": addOpts.Save,
 	}
 
 	var out map[string]any
@@ -214,7 +219,196 @@ func cmdTorrentsAdd(cli *apiClient, opts globalOptions, args []string) error {
 		return err
 	}
 
-	return printJSON(out)
+	return printTorrentAdded(out, opts)
+}
+
+func resolveTorrentAddOptions(args []string, opts torrentAddOptions) (torrentAddOptions, error) {
+	positional := ""
+	if len(args) > 0 {
+		positional = strings.TrimSpace(args[0])
+	}
+
+	link := strings.TrimSpace(opts.Link)
+	filePath := strings.TrimSpace(opts.File)
+	sourceCount := 0
+
+	sources := []string{positional, link, filePath}
+	for _, source := range sources {
+		if source != "" {
+			sourceCount++
+		}
+	}
+
+	if sourceCount == 0 {
+		return torrentAddOptions{}, errors.New("torrents add requires a magnet, hash, link, or local .torrent file")
+	}
+
+	if sourceCount > 1 {
+		return torrentAddOptions{}, errors.New("provide exactly one torrent source: positional argument, --link, or --file")
+	}
+
+	opts.Source = firstNonEmpty(positional, firstNonEmpty(link, filePath))
+	opts.Link = ""
+	opts.File = ""
+	opts.Title = strings.TrimSpace(opts.Title)
+	opts.Poster = strings.TrimSpace(opts.Poster)
+	opts.Category = strings.TrimSpace(opts.Category)
+	opts.Data = strings.TrimSpace(opts.Data)
+
+	if filePath != "" {
+		opts.File = filePath
+
+		return validateTorrentUploadFile(opts)
+	}
+
+	localPath, local, err := resolveLocalTorrentPath(opts.Source)
+	if err != nil {
+		return torrentAddOptions{}, err
+	}
+
+	if local {
+		opts.File = localPath
+	}
+
+	return validateTorrentUploadFile(opts)
+}
+
+func resolveLocalTorrentPath(source string) (string, bool, error) {
+	parsed, err := url.Parse(source)
+	if err == nil && parsed.Scheme == "file" {
+		if parsed.Host != "" && parsed.Host != "localhost" {
+			return "", false, fmt.Errorf("file URI host %q is not local", parsed.Host)
+		}
+
+		path, unescapeErr := url.PathUnescape(parsed.Path)
+		if unescapeErr != nil {
+			return "", false, fmt.Errorf("decode file URI: %w", unescapeErr)
+		}
+
+		return path, true, nil
+	}
+
+	if err == nil && parsed.Scheme != "" {
+		return "", false, nil
+	}
+
+	_, statErr := os.Stat(source)
+	if statErr == nil {
+		return source, true, nil
+	}
+
+	if !errors.Is(statErr, os.ErrNotExist) {
+		return "", false, fmt.Errorf("inspect torrent source: %w", statErr)
+	}
+
+	if strings.EqualFold(filepath.Ext(source), ".torrent") || strings.ContainsRune(source, filepath.Separator) {
+		return "", false, fmt.Errorf("local torrent file %q does not exist", source)
+	}
+
+	return "", false, nil
+}
+
+func validateTorrentUploadFile(opts torrentAddOptions) (torrentAddOptions, error) {
+	if opts.File == "" {
+		return opts, nil
+	}
+
+	info, err := os.Stat(opts.File)
+	if err != nil {
+		return torrentAddOptions{}, fmt.Errorf("inspect torrent file: %w", err)
+	}
+
+	if !info.Mode().IsRegular() {
+		return torrentAddOptions{}, fmt.Errorf("torrent file %q is not a regular file", opts.File)
+	}
+
+	if info.Size() <= 0 {
+		return torrentAddOptions{}, fmt.Errorf("torrent file %q is empty", opts.File)
+	}
+
+	if info.Size() >= maxTorrentUploadFileBytes {
+		return torrentAddOptions{}, fmt.Errorf(
+			"torrent file %q is too large: %d bytes (maximum file size is %d bytes)",
+			opts.File,
+			info.Size(),
+			maxTorrentUploadFileBytes-1,
+		)
+	}
+
+	return opts, nil
+}
+
+func uploadTorrentFile(ctx context.Context, cli *apiClient, opts globalOptions, addOpts torrentAddOptions) error {
+	fields := map[string]string{
+		"title":    addOpts.Title,
+		"poster":   addOpts.Poster,
+		"category": addOpts.Category,
+		"data":     addOpts.Data,
+	}
+	if addOpts.Save {
+		fields["save"] = "true"
+	}
+
+	var out map[string]any
+	if err := cli.doMultipartFile(ctx, "/api/v1/torrent/upload", addOpts.File, fields, &out); err != nil {
+		return err
+	}
+
+	return printTorrentAdded(out, opts)
+}
+
+func printTorrentAdded(out map[string]any, opts globalOptions) error {
+	if opts.Output == outputJSON {
+		return printJSON(out)
+	}
+
+	fmt.Println(torrentAddedMessage(out, opts))
+
+	return nil
+}
+
+func torrentAddedMessage(out map[string]any, opts globalOptions) string {
+	title := stringMapValue(out, "title")
+	hash := stringMapValue(out, "hash")
+	lines := make([]string, 0, 3)
+
+	if title != "" {
+		lines = append(lines, "Added: "+title)
+	} else {
+		lines = append(lines, "Torrent added")
+	}
+
+	if hash == "" {
+		return strings.Join(append(
+			lines,
+			"Next: run `torrserver torrents list`, then `torrserver url <INDEX|NAME|HASH>`",
+		), "\n")
+	}
+
+	lines = append(lines, "Hash: "+hash, "Next: "+streamURLCommand(opts, hash))
+
+	return strings.Join(lines, "\n")
+}
+
+func stringMapValue(values map[string]any, key string) string {
+	value, ok := values[key].(string)
+	if !ok {
+		return ""
+	}
+
+	return value
+}
+
+func streamURLCommand(opts globalOptions, hash string) string {
+	if opts.Context != "" {
+		return fmt.Sprintf("torrserver --context %s url %s", opts.Context, hash)
+	}
+
+	if opts.Server != "" && strings.TrimRight(opts.Server, "/") != defaultServerURL {
+		return fmt.Sprintf("torrserver --server %s url %s", opts.Server, hash)
+	}
+
+	return "torrserver url " + hash
 }
 
 func cmdTorrentsHashAction(cli *apiClient, opts globalOptions, action string, args []string) error {

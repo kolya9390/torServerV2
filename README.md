@@ -139,9 +139,14 @@ docker compose -f docker-compose.yml up -d
 # Список торрентов (обратите внимание на колонку # — это индекс торрента)
 ./torrserver torrents list
 
-# Добавить торрент
-./torrserver torrents add --link "magnet:?xt=urn:btih:..." --title "Movie" --save
-./torrserver torrents add --link "file:///path/to/file.torrent" --save
+# Добавить magnet-ссылку и сохранить торрент в базе
+./torrserver torrents add "magnet:?xt=urn:btih:..." --title "Movie" --save
+
+# Загрузить локальный .torrent-файл на сервер и сохранить его в базе
+./torrserver torrents add ./movie.torrent --save
+
+# Явная форма того же file upload
+./torrserver torrents add --file ./movie.torrent --save
 
 # Получить детали торрента (по индексу из списка, названию или хэшу)
 ./torrserver torrents get 1
@@ -195,6 +200,17 @@ docker compose -f docker-compose.yml up -d
 mpv "$(./torrserver url 1)"
 vlc "$(./torrserver url "Beef")"
 ```
+
+Команда `url` ограниченно ждёт, пока torrent engine получит metadata и список файлов. Если у раздачи нет доступных
+пиров, команда завершится по `--timeout` с понятной ошибкой; увеличьте ожидание, например:
+
+```bash
+./torrserver --timeout 45s url 1
+```
+
+У старого сохранённого, но неактивного торрента список файлов может отсутствовать в базе. Если ID файла уже известен,
+ссылку можно получить без активации движка: `./torrserver url 1 --file 1`. Иначе повторно добавьте его hash с `--save`,
+дождитесь metadata и вызовите `url` ещё раз.
 
 **Управление пользователями:**
 ```bash
@@ -272,17 +288,23 @@ export TS_PASSWORD=MySecretPass123
 ./torrserver torrents list  # Без запроса пароля
 ```
 
+Приоритет параметров CLI: явные флаги, переменные окружения, выбранный context, затем значения по умолчанию.
+Для shutdown token используйте `TS_SHUTDOWN_TOKEN`; это безопаснее, чем передавать секрет через `--token`.
+
 > ⚠️ **Важно:** Не передавайте пароль через флаг `--pass` — он виден в списке процессов (`ps aux`). Используйте `TS_PASSWORD`.
 
 ### Shutdown Token
 
 Для защиты от случайного выключения сервера:
 ```bash
-# Сгенерировать и сохранить токен
-./torrserver config generate-shutdown-token
+# Сгенерировать и сохранить токен через authenticated API
+curl -u admin -X POST http://127.0.0.1:8090/api/v1/config/shutdown-token/generate
+
+# Сохранить полученный token для CLI-сессии
+export TS_SHUTDOWN_TOKEN='<полученный token>'
 
 # Остановить сервер с токеном
-./torrserver shutdown --mode public --token <ваш_токен>
+./torrserver shutdown --mode public
 ```
 
 ---
@@ -302,7 +324,10 @@ export TS_PASSWORD=MySecretPass123
 
 **Добавить торрент на удаленный сервер:**
 ```bash
-./torrserver --context home torrents add --link "magnet:?xt=urn:btih:..." --title "Movie" --save
+./torrserver --context home torrents add "magnet:?xt=urn:btih:..." --title "Movie" --save
+
+# Файл читается на машине с CLI и загружается на сервер из контекста home
+./torrserver --context home torrents add ./movie.torrent --save
 ```
 
 **Получить ссылку на стрим с удаленного сервера:**
