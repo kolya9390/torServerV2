@@ -448,7 +448,11 @@ func TestPlaybackStartupWarmupTargetBytes(t *testing.T) {
 		{name: "caps to max warmup bytes", fileSize: 128 << 20, cacheCap: 256 << 20, want: 8 << 20},
 		{name: "uses cache fraction for small cache", fileSize: 128 << 20, cacheCap: 32 << 20, want: 4 << 20},
 		{name: "falls back to max without cache", fileSize: 128 << 20, want: 8 << 20},
+		{name: "keeps default cache warmup for heavy file", fileSize: 100 << 30, cacheCap: 64 << 20, want: 8 << 20},
+		{name: "scales heavy file warmup with intermediate cache", fileSize: 100 << 30, cacheCap: 128 << 20, want: 16 << 20},
+		{name: "caps heavy file warmup for home 4k cache", fileSize: 100 << 30, cacheCap: 512 << 20, want: 32 << 20},
 		{name: "caps to remaining file bytes", fileSize: 10 << 20, startOffset: 6 << 20, cacheCap: 256 << 20, want: 4 << 20},
+		{name: "caps heavy file warmup to remaining bytes", fileSize: 100 << 30, startOffset: 100<<30 - 20<<20, cacheCap: 512 << 20, want: 20 << 20},
 		{name: "zero when offset reaches end", fileSize: 10 << 20, startOffset: 10 << 20, cacheCap: 256 << 20},
 	}
 
@@ -954,6 +958,84 @@ func TestStreamMetricsWriterReadFromSkipsReadWaitWhenDebugDisabled(t *testing.T)
 
 	if got := deliverySnapshot.Streams[0].ReadWaitsTotal; got != 0 {
 		t.Fatalf("stream ReadWaitsTotal = %d, want 0", got)
+	}
+}
+
+func TestStartStreamInstrumentationSkipsDeliveryDiagnosticsWhenDebugDisabled(t *testing.T) {
+	resetStreamHealthForTest()
+	resetStreamDeliveryForTest()
+	resetStreamFairnessForTest()
+	defer resetStreamFairnessForTest()
+
+	req := httptest.NewRequest(http.MethodGet, "/stream/movie.mkv?link=secret-hash&play", nil)
+	req.RemoteAddr = "192.168.1.133:12345"
+	rec := httptest.NewRecorder()
+
+	instrumentation := startStreamInstrumentation(nil, req, rec, false, 77, streamDeliveryMetadata{
+		initialOffset:  4096,
+		fileSize:       8192,
+		requestedRange: true,
+	})
+
+	if instrumentation.writer.delivery != nil {
+		t.Fatal("debug-disabled instrumentation must not register active stream delivery")
+	}
+
+	if _, err := instrumentation.writer.Write([]byte("stream-data")); err != nil {
+		t.Fatalf("Write() err = %v", err)
+	}
+
+	finishStreamInstrumentation(instrumentation, req.RemoteAddr)
+	instrumentation.release()
+
+	if got := SnapshotStreamDelivery().ActiveStreams; got != 0 {
+		t.Fatalf("delivery ActiveStreams = %d, want 0", got)
+	}
+
+	if got := SnapshotStreamDelivery().BytesWrittenTotal; got != 0 {
+		t.Fatalf("delivery BytesWrittenTotal = %d, want 0", got)
+	}
+
+	if got := SnapshotStreamHealth().RequestsTotal; got != 0 {
+		t.Fatalf("stream health RequestsTotal = %d, want 0", got)
+	}
+}
+
+func TestStartStreamInstrumentationDeliverySnapshotIsPrivacySafe(t *testing.T) {
+	resetStreamHealthForTest()
+	resetStreamDeliveryForTest()
+	resetStreamFairnessForTest()
+	defer resetStreamFairnessForTest()
+
+	req := httptest.NewRequest(http.MethodGet, "/stream/private-title.mkv?link=secret-hash&play", nil)
+	req.RemoteAddr = "192.168.1.133:12345"
+	rec := httptest.NewRecorder()
+
+	instrumentation := startStreamInstrumentation(nil, req, rec, true, 77, streamDeliveryMetadata{
+		initialOffset:  4096,
+		fileSize:       8192,
+		requestedRange: true,
+	})
+	defer instrumentation.release()
+
+	if instrumentation.writer.delivery == nil {
+		t.Fatal("debug-enabled instrumentation must register active stream delivery")
+	}
+
+	if _, err := instrumentation.writer.Write([]byte("stream-data")); err != nil {
+		t.Fatalf("Write() err = %v", err)
+	}
+
+	data, err := json.Marshal(SnapshotStreamDelivery())
+	if err != nil {
+		t.Fatalf("marshal delivery snapshot: %v", err)
+	}
+
+	payload := strings.ToLower(string(data))
+	for _, forbidden := range []string{"secret-hash", "private-title", "192.168.1.133", "link=", "query"} {
+		if strings.Contains(payload, forbidden) {
+			t.Fatalf("delivery snapshot leaks %q: %s", forbidden, payload)
+		}
 	}
 }
 

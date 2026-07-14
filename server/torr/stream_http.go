@@ -26,7 +26,10 @@ const (
 	defaultStreamReaderReadahead        = int64(16 << 20)
 	minConcurrentStreamReaderReadahead  = int64(4 << 20)
 	concurrentStreamReadaheadShareRatio = int64(4)
-	startupWarmupMaxBytes               = int64(8 << 20)
+	startupWarmupDefaultMaxBytes        = int64(8 << 20)
+	startupWarmupHeavyFileThreshold     = int64(80 << 30)
+	startupWarmupHeavyFileMaxBytes      = int64(32 << 20)
+	startupWarmupCacheShareRatio        = int64(8)
 	startupWarmupMaxInitialOffset       = int64(16 << 20)
 	startupWarmupTimeout                = 3 * time.Second
 )
@@ -249,9 +252,13 @@ func playbackStartupWarmupTargetBytes(fileSize, startOffset, cacheCapacity int64
 		return 0
 	}
 
-	target := startupWarmupMaxBytes
+	target := startupWarmupDefaultMaxBytes
 	if cacheCapacity > 0 {
-		cacheTarget := cacheCapacity / 8
+		if fileSize >= startupWarmupHeavyFileThreshold {
+			target = startupWarmupHeavyFileMaxBytes
+		}
+
+		cacheTarget := cacheCapacity / startupWarmupCacheShareRatio
 		if cacheTarget <= 0 {
 			cacheTarget = cacheCapacity
 		}
@@ -261,8 +268,8 @@ func playbackStartupWarmupTargetBytes(fileSize, startOffset, cacheCapacity int64
 		}
 	}
 
-	if target <= 0 || target > startupWarmupMaxBytes {
-		target = startupWarmupMaxBytes
+	if target <= 0 || target > startupWarmupHeavyFileMaxBytes {
+		target = startupWarmupDefaultMaxBytes
 	}
 
 	if target > remaining {

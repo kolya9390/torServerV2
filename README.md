@@ -62,6 +62,25 @@ on-demand, кэширует нужные части и отдает медиап
 Но torrent streaming зависит от swarm, seeders, trackers, WAN/LAN, клиента, Wi-Fi и bitrate файла. Поэтому
 стабильность конкретного фильма всегда зависит не только от сервера.
 
+### Честное performance-позиционирование
+
+TorrServerV2 развивается как конкурентный домашний streaming engine, но не обещает бесконечную конкурентность любой
+ценой. Продуктовая цель - надежный просмотр 1-2 heavy 4K фильмов на рекомендуемом железе без постоянной debug-нагрузки.
+
+Текущий measured verdict:
+
+| Область | Статус |
+|---------|--------|
+| **Idle / release overhead** | Сильная сторона TorrServerV2: debug endpoints, pprof и тяжелые stream diagnostics выключены при `debug.enabled=false`. |
+| **1 heavy 4K stream** | Основной поддерживаемый сценарий. Для экстремальных remux файлов успех зависит от sustained bitrate, swarm и LAN/client path. |
+| **2 unique heavy 4K streams** | Целевой режим на recommended hardware. Третий уникальный heavy stream может быть ограничен, поставлен в очередь или отклонен, чтобы не ломать первые два. |
+| **2 клиента на одном фильме** | Должно переиспользовать один torrent/cache workload и не считаться как два разных heavy фильма. |
+| **Оригинальный TorrServer** | Может быть лучше на отдельных swarm/client/startup сценариях из-за зрелых исторических defaults. TorrServerV2 сильнее там, где важны явные limits, debug-off overhead, privacy-safe diagnostics и предсказуемый lifecycle. |
+
+Если фильм подвисает, это не всегда означает баг в Go-коде. Для heavy remux нужно проверять три вещи отдельно:
+delivery throughput сервера, качество torrent swarm и путь клиент/LAN/декодер. Для этого debug mode включается
+временно, а не работает как постоянный мониторинг.
+
 ---
 
 ## 🚀 Быстрый старт
