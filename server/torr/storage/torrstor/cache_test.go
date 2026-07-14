@@ -676,6 +676,7 @@ func TestReaderLifecycleDiagnosticsAreDebugOnly(t *testing.T) {
 	before := SnapshotReaderLifecycleStats()
 
 	reader.checkReader(2)
+
 	if _, err := reader.Seek(512, io.SeekStart); err != nil {
 		t.Fatalf("Seek error: %v", err)
 	}
@@ -849,7 +850,7 @@ func TestIdleReaderExcludedFromPriorityAndCleanupRanges(t *testing.T) {
 		t.Fatalf("idle reader piece 60 should not be protected by ranges: %+v", ranges)
 	}
 
-	desired := cache.desiredPrioritiesForReaders(ranges, readers)
+	desired := cache.desiredPrioritiesForReaders(readers)
 	if _, ok := desired[60]; ok {
 		t.Fatalf("idle reader piece 60 should not receive priority: %+v", desired)
 	}
@@ -887,7 +888,7 @@ func TestSameTorrentCloseReadersShareMergedPriorityWindow(t *testing.T) {
 		t.Fatalf("merged ranges = %+v, want one shared close-offset range", ranges)
 	}
 
-	desired := cache.desiredPrioritiesForReaders(ranges, readers)
+	desired := cache.desiredPrioritiesForReaders(readers)
 	if got, want := desired[10], torrent.PiecePriorityNow; got != want {
 		t.Fatalf("desired priority for first reader piece = %v, want %v", got, want)
 	}
@@ -1720,6 +1721,7 @@ func TestApplyDesiredPrioritiesUsesPriorityAdapterAndMaintainsTrackedState(t *te
 	before := SnapshotCachePriorityStats()
 	setPieces, noopPieces, trackedPieces := cache.applyDesiredPriorities(desired)
 	cache.recordPriorityChurn(0, setPieces, noopPieces, trackedPieces)
+
 	after := SnapshotCachePriorityStats()
 
 	if got, want := setPieces, 2; got != want {
@@ -2019,9 +2021,9 @@ func TestDesiredPrioritiesForReaderAtFileStart(t *testing.T) {
 	for i := range 10 {
 		cache.pieces[i] = &Piece{ID: i}
 	}
+
 	cache.pieces[2].Complete = true
 
-	ranges := []Range{{Start: 0, End: 9}}
 	readers := []activeReaderSnapshot{
 		{
 			readerPos:    0,
@@ -2030,7 +2032,7 @@ func TestDesiredPrioritiesForReaderAtFileStart(t *testing.T) {
 		},
 	}
 
-	desired := cache.desiredPrioritiesForReaders(ranges, readers)
+	desired := cache.desiredPrioritiesForReaders(readers)
 	if got, want := desired[0], torrent.PiecePriorityNow; got != want {
 		t.Fatalf("desired[0] = %v, want %v", got, want)
 	}

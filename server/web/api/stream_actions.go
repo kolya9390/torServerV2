@@ -123,6 +123,7 @@ func streamStat(c *gin.Context) {
 	if shouldTouchStatPlaybackIntent(c) {
 		touchPlaybackIntent(tor)
 	}
+
 	writeStreamStatusResponse(c, tor.Status())
 }
 
@@ -233,6 +234,7 @@ func streamPlay(c *gin.Context) {
 	}
 
 	touchPlaybackIntent(tor)
+
 	if req.Preload {
 		if queued := deps.Torrents.EnqueuePreload(tor, index); !queued {
 			log.TLogln("preload queue is full, skipping preload")

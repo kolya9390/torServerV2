@@ -145,9 +145,11 @@ func benchmarkSequentialWriteRead(b *testing.B, piece benchmarkMemPiece, payload
 
 	for range b.N {
 		piece.Release()
+
 		if _, err := piece.WriteAt(payload, 0); err != nil {
 			b.Fatal(err)
 		}
+
 		if _, err := piece.ReadAt(readBuf, 0); err != nil {
 			b.Fatal(err)
 		}
@@ -156,6 +158,7 @@ func benchmarkSequentialWriteRead(b *testing.B, piece benchmarkMemPiece, payload
 
 func benchmarkSparsePartialRead(b *testing.B, piece benchmarkMemPiece) {
 	b.Helper()
+
 	head := benchmarkPayload(memPieceChunkSize)
 	tail := benchmarkPayload(memPieceChunkSize)
 	readBuf := make([]byte, benchmarkPieceLength)
@@ -167,12 +170,15 @@ func benchmarkSparsePartialRead(b *testing.B, piece benchmarkMemPiece) {
 
 	for range b.N {
 		piece.Release()
+
 		if _, err := piece.WriteAt(head, 0); err != nil {
 			b.Fatal(err)
 		}
+
 		if _, err := piece.WriteAt(tail, tailOff); err != nil {
 			b.Fatal(err)
 		}
+
 		if _, err := piece.ReadAt(readBuf, 0); err != nil {
 			b.Fatal(err)
 		}
@@ -181,6 +187,7 @@ func benchmarkSparsePartialRead(b *testing.B, piece benchmarkMemPiece) {
 
 func benchmarkReleaseChurn(b *testing.B, piece benchmarkMemPiece) {
 	b.Helper()
+
 	payload := benchmarkPayload(32 << 10)
 
 	b.ReportAllocs()
@@ -191,12 +198,14 @@ func benchmarkReleaseChurn(b *testing.B, piece benchmarkMemPiece) {
 		if _, err := piece.WriteAt(payload, 0); err != nil {
 			b.Fatal(err)
 		}
+
 		piece.Release()
 	}
 }
 
 func benchmarkTwoReaderConcurrent(b *testing.B, piece benchmarkMemPiece, payload []byte) {
 	b.Helper()
+
 	readBuf := make([]byte, benchmarkPieceLength)
 
 	if _, err := piece.WriteAt(payload, 0); err != nil {

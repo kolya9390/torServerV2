@@ -147,7 +147,7 @@ func (c *Cache) UpdatePriorities() {
 
 	ranges := activeReaderRanges(readers)
 	clearedPieces := c.clearPrioritiesOutsideRanges(ranges)
-	setPieces, noopPieces, trackedPieces := c.applyDesiredPriorities(c.desiredPrioritiesForReaders(ranges, readers))
+	setPieces, noopPieces, trackedPieces := c.applyDesiredPriorities(c.desiredPrioritiesForReaders(readers))
 
 	c.recordPriorityChurn(clearedPieces, setPieces, noopPieces, trackedPieces)
 }
@@ -294,19 +294,7 @@ func desiredPiecePriority(pieceID, readerPos, readerRAHPos int) torrent.PiecePri
 	}
 }
 
-func (c *Cache) desiredPriorities(ranges []Range) map[int]torrent.PiecePriority {
-	readers := c.snapshotActiveReaders(false)
-	if len(readers) == 0 {
-		return nil
-	}
-
-	return c.desiredPrioritiesForReaders(ranges, readers)
-}
-
-func (c *Cache) desiredPrioritiesForReaders(
-	ranges []Range,
-	readers []activeReaderSnapshot,
-) map[int]torrent.PiecePriority {
+func (c *Cache) desiredPrioritiesForReaders(readers []activeReaderSnapshot) map[int]torrent.PiecePriority {
 	if len(readers) == 0 {
 		return nil
 	}

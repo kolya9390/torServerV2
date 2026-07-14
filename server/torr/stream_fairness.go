@@ -19,6 +19,7 @@ const (
 	streamStartupProtectionMinGap  = 2 * time.Second
 	streamFairnessSnapshotLimit    = 64
 	streamFairnessPressureWindow   = 10 * time.Second
+	streamFairnessSevereReadWait   = 3 * time.Second
 
 	streamFairnessImbalanceNumerator   = int64(3)
 	streamFairnessImbalanceDenominator = int64(2)
@@ -200,6 +201,7 @@ func (f *streamFairnessFlow) fairnessCurrent(
 	now time.Time,
 ) (*streamFairnessTorrentState, map[uint64]*streamFairnessTorrentState, bool) {
 	aggregates := streamFairnessTorrentAggregates(now)
+
 	current := aggregates[f.torrentID]
 	if current == nil {
 		return nil, nil, false
@@ -268,6 +270,7 @@ func (f *streamFairnessFlow) rateLimitedDelay(
 
 func streamFairnessTorrentAggregates(now time.Time) map[uint64]*streamFairnessTorrentState {
 	aggregates := make(map[uint64]*streamFairnessTorrentState)
+
 	for _, flow := range streamFairness.active {
 		if flow.torrentID == 0 {
 			continue
@@ -359,19 +362,6 @@ func (s *streamFairnessTorrentState) bytesPerSecond(now time.Time) int64 {
 	return bytesPerSecond(s.bytesWritten, elapsed)
 }
 
-func (f *streamFairnessFlow) hasReadWaits() bool {
-	if f == nil {
-		return false
-	}
-
-	delivery := f.delivery.Load()
-	if delivery == nil {
-		return false
-	}
-
-	return delivery.readWaitsTotal.Load() > 0
-}
-
 func (f *streamFairnessFlow) hasFirstByte() bool {
 	if f == nil {
 		return false
@@ -413,7 +403,7 @@ func (f *streamFairnessFlow) hasRecentSevereReadWait(now time.Time) bool {
 	}
 
 	delivery := f.delivery.Load()
-	if delivery == nil || delivery.lastReadWaitMS.Load() <= int64((3*time.Second).Milliseconds()) {
+	if delivery == nil || delivery.lastReadWaitMS.Load() <= streamFairnessSevereReadWait.Milliseconds() {
 		return false
 	}
 
@@ -438,17 +428,6 @@ func (f *streamFairnessFlow) hasClientBackpressure() bool {
 	return delivery.slowWritesTotal.Load() > 0 ||
 		delivery.writesOver3sTotal.Load() > 0 ||
 		delivery.writesOver10sTotal.Load() > 0
-}
-
-func (f *streamFairnessFlow) matureBytesPerSecond(now time.Time) (int64, bool) {
-	elapsed := now.Sub(time.Unix(0, f.startedUnixNano))
-	bytesWritten := f.bytesWritten.Load()
-
-	if elapsed < streamFairnessMinAge || bytesWritten < streamFairnessMinBytes {
-		return 0, false
-	}
-
-	return bytesPerSecond(bytesWritten, elapsed), true
 }
 
 func (f *streamFairnessFlow) recordFairnessDelay(decision streamFairnessDelayDecision) {
@@ -508,6 +487,7 @@ func SnapshotStreamFairness() streamFairnessSnapshot {
 
 func countStartupProtectedTorrents(aggregates map[uint64]*streamFairnessTorrentState, now time.Time) int {
 	count := 0
+
 	for _, aggregate := range aggregates {
 		if aggregate.needsStartupProtection(now) {
 			count++

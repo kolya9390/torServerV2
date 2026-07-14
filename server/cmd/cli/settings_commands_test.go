@@ -35,6 +35,7 @@ func TestSettingsSetKeyValuePreservesCurrentSettings(t *testing.T) {
 		switch req["action"] {
 		case "get":
 			w.Header().Set("Content-Type", "application/json")
+
 			if err := json.NewEncoder(w).Encode(current); err != nil {
 				t.Fatalf("encode settings: %v", err)
 			}
@@ -45,6 +46,7 @@ func TestSettingsSetKeyValuePreservesCurrentSettings(t *testing.T) {
 			}
 
 			setPayload = sets
+
 			w.WriteHeader(http.StatusOK)
 		default:
 			t.Fatalf("unexpected action %v", req["action"])

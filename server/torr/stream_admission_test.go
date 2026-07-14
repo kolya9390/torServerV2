@@ -457,6 +457,7 @@ func TestStreamAdmissionDebugOffSkipsCounters(t *testing.T) {
 func resetStreamAdmissionForTest() {
 	atomic.StoreInt32(&activeStreams, 0)
 	atomic.StoreInt64(&lastStreamActivityUnixNano, 0)
+
 	streamAdmissionState = newStreamAdmissionState()
 }
 

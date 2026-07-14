@@ -247,6 +247,7 @@ func (r *Reader) getOffsetRangeForReaders(activeReaders int) (int64, int64) {
 
 	effectiveReadahead, readaheadClamped := r.effectiveRetentionReadahead()
 	readaheadExpanded := effectiveReadahead > forwardWindow
+
 	if readaheadExpanded {
 		forwardWindow = effectiveReadahead
 	}

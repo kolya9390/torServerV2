@@ -39,6 +39,7 @@ func settings(c *gin.Context) {
 		return
 	case "set":
 		current := deps.Settings.Current()
+
 		merged, err := mergeSettingsPatch(current, req.Sets, req.SetsRaw)
 		if err != nil {
 			abortAPIError(c, http.StatusBadRequest, err)
@@ -51,6 +52,7 @@ func settings(c *gin.Context) {
 		if current != nil {
 			enableDebug = current.EnableDebug
 		}
+
 		merged.EnableDebug = enableDebug
 
 		deps.Settings.Set(merged)

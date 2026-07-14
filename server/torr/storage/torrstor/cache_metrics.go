@@ -360,6 +360,7 @@ func (c *Cache) recordReaderIdleDemotion(idle time.Duration) {
 	}
 
 	idleMS := durationMilliseconds(idle)
+
 	globalCacheStats.readerIdleDemotions.Add(1)
 	globalCacheStats.readerDemotionIdleMSTotal.Add(uint64(idleMS))
 	updateAtomicMax(&globalCacheStats.readerDemotionIdleMSMax, idleMS)
@@ -371,6 +372,7 @@ func (c *Cache) recordReaderReactivation(idle time.Duration) {
 	}
 
 	idleMS := durationMilliseconds(idle)
+
 	globalCacheStats.readerReactivations.Add(1)
 	globalCacheStats.readerReactivationIdleMSTotal.Add(uint64(idleMS))
 	updateAtomicMax(&globalCacheStats.readerReactivationIdleMSMax, idleMS)

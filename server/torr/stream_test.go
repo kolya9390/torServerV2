@@ -971,7 +971,7 @@ func TestStartStreamInstrumentationSkipsDeliveryDiagnosticsWhenDebugDisabled(t *
 	req.RemoteAddr = "192.168.1.133:12345"
 	rec := httptest.NewRecorder()
 
-	instrumentation := startStreamInstrumentation(nil, req, rec, false, 77, streamDeliveryMetadata{
+	instrumentation := startStreamInstrumentation(req, rec, false, 77, streamDeliveryMetadata{
 		initialOffset:  4096,
 		fileSize:       8192,
 		requestedRange: true,
@@ -1011,7 +1011,7 @@ func TestStartStreamInstrumentationDeliverySnapshotIsPrivacySafe(t *testing.T) {
 	req.RemoteAddr = "192.168.1.133:12345"
 	rec := httptest.NewRecorder()
 
-	instrumentation := startStreamInstrumentation(nil, req, rec, true, 77, streamDeliveryMetadata{
+	instrumentation := startStreamInstrumentation(req, rec, true, 77, streamDeliveryMetadata{
 		initialOffset:  4096,
 		fileSize:       8192,
 		requestedRange: true,

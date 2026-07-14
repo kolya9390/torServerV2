@@ -105,7 +105,7 @@ func TestA156DesiredPrioritiesStayBoundedAcrossPieceLengths(t *testing.T) {
 					piecesRange:  Range{Start: 10, End: 200},
 				},
 			}
-			desired := cache.desiredPrioritiesForReaders([]Range{readers[0].piecesRange}, readers)
+			desired := cache.desiredPrioritiesForReaders(readers)
 
 			if got, want := len(desired), priorityPieceBudget(50, 1, tt.pieceLength); got != want {
 				t.Fatalf("desired priorities = %d, want budget %d", got, want)

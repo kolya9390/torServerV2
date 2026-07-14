@@ -261,6 +261,7 @@ func (d *streamDelivery) recordDeliveryWindow(now int64, bytesWritten int) {
 	}
 
 	d.window.bytes += int64(bytesWritten)
+
 	elapsed := time.Duration(now - d.window.startUnixNano)
 	if elapsed < streamDeliveryWindow {
 		return
@@ -426,6 +427,7 @@ func deliveryHeadroom(fileSize int64, mediaDuration time.Duration, deliveryBytes
 
 	ratio := float64(deliveryBytesPerSec) / float64(required)
 	result.ratio = float64Ptr(roundFloat(ratio, 3))
+
 	if ratio >= 1 {
 		result.status = "pass"
 	} else {

@@ -155,6 +155,7 @@ type streamOffsetReader interface {
 
 func (r *firstByteTrackingReader) Read(p []byte) (int, error) {
 	var started time.Time
+
 	offset := int64(-1)
 
 	if r.trackReadWait {

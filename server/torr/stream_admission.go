@@ -93,7 +93,7 @@ func currentAdmission(sets *settings.BTSets) streamAdmission {
 
 	queueSize := streamCfg.StreamQueueSize
 	if queueSize <= 0 {
-		queueSize = maxInt(1, int(maxStreams)*2)
+		queueSize = maxInt(1, maxStreams*2)
 	}
 
 	return streamAdmission{
@@ -126,6 +126,7 @@ func tryAcquireStream(
 	queuedUnique := false
 	timer := time.NewTimer(admission.waitDuration)
 	ticker := time.NewTicker(250 * time.Millisecond)
+
 	defer timer.Stop()
 	defer ticker.Stop()
 
@@ -172,6 +173,7 @@ func CheckStreamAdmission(
 ) StreamAdmissionDecision {
 	admission := currentAdmission(sets)
 	allowed, reason := streamAdmissionState.canAcquireNow(admission, torrentKey)
+
 	if allowed {
 		return StreamAdmissionDecision{
 			Allowed:    true,
@@ -206,9 +208,11 @@ func (r *streamAdmissionRegistry) tryAcquire(
 	}
 
 	atomic.AddInt32(&activeStreams, 1)
+
 	if torrentKey != "" {
 		active := r.active[torrentKey]
 		active.readers++
+
 		if active.torrentID == 0 {
 			active.torrentID = torrentID
 		}
@@ -217,6 +221,7 @@ func (r *streamAdmissionRegistry) tryAcquire(
 	}
 
 	var once sync.Once
+
 	release := func() {
 		once.Do(func() {
 			r.release(torrentKey)
@@ -298,6 +303,7 @@ func (r *streamAdmissionRegistry) tryAcquireQueueSlot(queueSize int, uniqueBlock
 	r.waiters++
 	if debugEnabled {
 		r.waitsTotal.Add(1)
+
 		if uniqueBlocked {
 			r.uniqueWaiters++
 			r.uniqueWaitsTotal.Add(1)

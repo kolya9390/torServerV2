@@ -94,6 +94,7 @@ func (t *Torrent) CloseReader(reader *torrstor.Reader) {
 	}
 
 	t.cache.CloseReader(reader)
+
 	if t.ActiveReaders() == 0 {
 		t.quiescePlaybackPeerAcquisition()
 		t.ShortenExpiredTime(postPlaybackDisconnectDelay(t.currentSettings()))
@@ -127,6 +128,7 @@ func (t *Torrent) resumePlaybackPeerAcquisition() {
 	}
 
 	sets := t.currentSettings()
+
 	playbackTorrents := estimatePlaybackTorrents(GetActiveStreams(), t.ActiveReaders())
 	if t.bt != nil {
 		playbackTorrents = t.bt.ActivePlaybackTorrents()

@@ -423,6 +423,7 @@ func newSettingsCmd(opts *globalOptions) *cobra.Command {
 func validateSettingsSetArgs(cmd *cobra.Command, args []string) error {
 	jsonRaw, _ := cmd.Flags().GetString("json")
 	filePath, _ := cmd.Flags().GetString("file")
+
 	if strings.TrimSpace(jsonRaw) != "" || strings.TrimSpace(filePath) != "" {
 		return cobra.MaximumNArgs(0)(cmd, args)
 	}

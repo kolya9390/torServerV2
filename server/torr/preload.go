@@ -250,6 +250,7 @@ func (t *Torrent) setupPreloadReaders(file *torrent.File, size int64) preloadRes
 	result.startEnd = max(t.Info().PieceLength, 8<<20)
 
 	t.TouchPlaybackIntent()
+
 	result.readerStart = file.NewReader()
 	if result.readerStart == nil {
 		result.err = errors.New("null reader")
@@ -288,6 +289,7 @@ func (t *Torrent) runEndRangePreload(ctx context.Context, result *preloadResult,
 		}
 
 		t.TouchPlaybackIntent()
+
 		readerEnd := result.file.NewReader()
 		if readerEnd == nil {
 			log.TLogln("Err preload: null reader")

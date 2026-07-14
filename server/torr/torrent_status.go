@@ -185,6 +185,7 @@ func (t *Torrent) RuntimeMetricsSnapshot() (TorrentRuntimeMetrics, bool) {
 
 	stats := t.Stats()
 	trackerTiers, trackers := countTrackerTiers(t.TorrentSpec)
+
 	readerActivity := torrstor.ReaderActivitySnapshot{}
 	if t.cache != nil {
 		readerActivity = t.cache.ReaderActivitySnapshot(time.Now())

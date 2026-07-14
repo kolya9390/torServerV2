@@ -31,6 +31,7 @@ func NewDiskPiece(p *Piece) *DiskPiece {
 
 		p.Size.Store(size)
 		p.cache.addFilled(size)
+
 		if size > 0 {
 			p.cache.markResidentPiece(p)
 		}
@@ -75,6 +76,7 @@ func (p *DiskPiece) WriteAt(data []byte, off int64) (n int, err error) {
 
 		p.piece.Size.Store(newSize)
 		p.piece.cache.addFilled(newSize - oldSize)
+
 		if oldSize == 0 && newSize > 0 {
 			p.piece.cache.markResidentPiece(p.piece)
 		}
@@ -129,6 +131,7 @@ func (p *DiskPiece) Release() {
 
 	prev := p.piece.Size.Swap(0)
 	p.piece.cache.addFilled(-prev)
+
 	if prev > 0 {
 		p.piece.cache.unmarkResidentPiece(p.piece)
 	}

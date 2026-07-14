@@ -115,6 +115,7 @@ func (c *Cache) markResidentPiece(piece *Piece) {
 
 	c.resident.mu.Lock()
 	inserted := false
+
 	if c.resident.items != nil {
 		_, exists := c.resident.items[piece.ID]
 		if !exists {
@@ -135,6 +136,7 @@ func (c *Cache) unmarkResidentPiece(piece *Piece) {
 	}
 
 	c.resident.mu.Lock()
+
 	exists := false
 	if c.resident.items != nil {
 		_, exists = c.resident.items[piece.ID]
@@ -171,27 +173,6 @@ func (c *Cache) queueCleanPieces() {
 		defer c.cleanup.queued.Store(false)
 		c.CleanPieces()
 	}()
-}
-
-func (c *Cache) isIDInFileBE(ranges []Range, id int) bool {
-	fileRangeNotDelete := max(c.pieceLength, 8<<20)
-
-	for _, rng := range ranges {
-		if rng.File == nil {
-			continue
-		}
-
-		ss := int(rng.File.Offset() / c.pieceLength)
-		se := int((rng.File.Offset() + fileRangeNotDelete) / c.pieceLength)
-		es := int((rng.File.Offset() + rng.File.Length() - fileRangeNotDelete) / c.pieceLength)
-		ee := int((rng.File.Offset() + rng.File.Length()) / c.pieceLength)
-
-		if id >= ss && id < se || id > es && id <= ee {
-			return true
-		}
-	}
-
-	return false
 }
 
 // isIDInFileBEFast is a non-locking variant for use inside locked sections.

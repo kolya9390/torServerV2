@@ -243,6 +243,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.Stream.CoreProfile == "" {
 		cfg.Stream.CoreProfile = "custom"
 	}
+
 	cfg.Stream.StartupPreloadPolicy = settings.NormalizeStartupPreloadPolicy(cfg.Stream.StartupPreloadPolicy)
 
 	if cfg.Stream.StreamQueueWaitSec == 0 {

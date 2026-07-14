@@ -253,6 +253,7 @@ func playbackStartupWarmupTargetBytes(fileSize, startOffset, cacheCapacity int64
 	}
 
 	target := startupWarmupDefaultMaxBytes
+
 	if cacheCapacity > 0 {
 		if fileSize >= startupWarmupHeavyFileThreshold {
 			target = startupWarmupHeavyFileMaxBytes
@@ -334,6 +335,7 @@ func setStreamHeaders(resp http.ResponseWriter, file *torrent.File, t *Torrent, 
 	etagBuf = append(etagBuf, '/')
 	etagBuf = append(etagBuf, file.Path()...)
 	etag := hex.EncodeToString(etagBuf)
+
 	resp.Header().Set("Connection", "close")
 	resp.Header().Set("ETag", httptoo.EncodeQuotedString(etag))
 	resp.Header().Set("transferMode.dlna.org", "Streaming")
@@ -427,6 +429,7 @@ func (t *Torrent) warmupPlaybackStartup(
 
 	startOffset := reader.Offset()
 	state := t.playbackStartupWarmupState()
+
 	if !shouldWarmupPlaybackStartup(req, startOffset, fileSize, state) {
 		return nil
 	}
@@ -470,6 +473,7 @@ func warmupPlaybackStartupReader(
 
 	started := time.Now()
 	reqCtx := req.Context()
+
 	warmupCtx, cancel := context.WithTimeout(reqCtx, startupWarmupTimeout)
 	defer cancel()
 
@@ -503,6 +507,7 @@ func warmupPlaybackStartupReader(
 
 func readPlaybackStartupWarmup(reader io.Reader, targetBytes int64) (int64, error) {
 	buf := make([]byte, streamCopyBufferSize)
+
 	var readBytes int64
 
 	for readBytes < targetBytes {

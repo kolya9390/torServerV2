@@ -464,7 +464,7 @@ func streamSessionTorrentItem(
 	}
 }
 
-func (t streamSessionTotals) snapshot(activePlaybackSessions, activeUniquePlaybackTorrents int) map[string]any {
+func (t *streamSessionTotals) snapshot(activePlaybackSessions, activeUniquePlaybackTorrents int) map[string]any {
 	return map[string]any{
 		"active_playback_sessions":        activePlaybackSessions,
 		"active_unique_playback_torrents": activeUniquePlaybackTorrents,
@@ -492,6 +492,7 @@ func streamSessionRuntimeSources(runtimeSnapshot map[string]any) map[uint64]stre
 	}
 
 	sources := make(map[uint64]streamSessionTorrentSource, len(items))
+
 	for _, item := range items {
 		torrentID := uint64Metric(item, "torrent_id")
 		if torrentID == 0 {

@@ -205,6 +205,7 @@ func TestSettingsSetMergesPartialPayloadWithCurrentSettings(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
+
 	r.POST("/settings", settings)
 	r.ServeHTTP(w, req)
 

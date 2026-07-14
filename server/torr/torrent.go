@@ -155,6 +155,7 @@ func adaptiveReadahead(cacheCap int64, playbackTorrents int, cfg settings.Stream
 
 	minRA := readaheadBoundBytes(cfg.AdaptiveRAMinMB, 4)
 	maxRA := readaheadBoundBytes(cfg.AdaptiveRAMaxMB, 64)
+
 	if maxRA < minRA {
 		maxRA = minRA
 	}
@@ -203,6 +204,7 @@ func adaptiveMaxEstablishedConnsForReaderAge(
 ) int {
 	policy := connectionPolicyForSettings(sets, defaultEstablishedConns)
 	target := policy.effectiveConns
+
 	debugCfg := settings.DebugConfig{}
 	if sets != nil {
 		debugCfg = sets.DebugConfig()

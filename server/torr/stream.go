@@ -70,7 +70,6 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 	setStreamHeaders(resp, file, t, streamTimeout, req)
 
 	instrumentation := startStreamInstrumentation(
-		t,
 		req,
 		resp,
 		debugEnabled,
@@ -105,7 +104,6 @@ type streamInstrumentation struct {
 }
 
 func startStreamInstrumentation(
-	t *Torrent,
 	req *http.Request,
 	resp http.ResponseWriter,
 	debugEnabled bool,
@@ -127,6 +125,7 @@ func startStreamInstrumentation(
 		delivery, releaseDelivery := registerStreamDeliveryWithMetadata(started, torrentID, deliveryMetadata)
 		writer.delivery = delivery
 		fairness.setDelivery(delivery)
+
 		release = func() {
 			releaseDelivery()
 			releaseFairness()

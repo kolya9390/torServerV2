@@ -294,6 +294,7 @@ func TestShortenExpiredTime(t *testing.T) {
 	}
 
 	torr.ShortenExpiredTime(time.Minute)
+
 	if got := torr.lifecycle.expiredUnixNano.Load(); got != shortened {
 		t.Fatalf("ShortenExpiredTime() moved expiration later: got %d, want %d", got, shortened)
 	}

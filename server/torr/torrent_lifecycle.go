@@ -234,6 +234,7 @@ func (t *Torrent) drop() {
 	if torrentRef != nil {
 		torrentRef.Drop()
 		torrentRef = nil
+
 		utils.FreeOSMemGC()
 	}
 }

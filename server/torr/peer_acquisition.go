@@ -62,6 +62,7 @@ func (t *Torrent) maybeBoostPeerAcquisition(activePlaybackTorrents int) {
 	}
 
 	sets := t.currentSettings()
+
 	input, ok := t.peerAcquisitionBoostInput(activePlaybackTorrents)
 	if !ok {
 		return

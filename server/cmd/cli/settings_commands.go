@@ -119,7 +119,7 @@ func cmdSettingsSetKeyValue(cli *apiClient, opts globalOptions, key, value strin
 	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
 	defer cancel()
 
-	current, err := readCurrentSettings(cli, ctx)
+	current, err := readCurrentSettings(ctx, cli)
 	if err != nil {
 		return err
 	}
@@ -140,7 +140,7 @@ func cmdSettingsSetKeyValue(cli *apiClient, opts globalOptions, key, value strin
 	return nil
 }
 
-func readCurrentSettings(cli *apiClient, ctx context.Context) (map[string]any, error) {
+func readCurrentSettings(ctx context.Context, cli *apiClient) (map[string]any, error) {
 	payload := map[string]any{"action": "get"}
 
 	var current map[string]any
