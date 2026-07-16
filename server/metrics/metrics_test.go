@@ -290,7 +290,7 @@ func TestRequestStrategyPressureSnapshotLow(t *testing.T) {
 		Misses:                  0,
 	}
 
-	got := requestStrategyPressureSnapshot(runtime, cacheStats)
+	got := requestStrategyPressureSnapshot(runtime, cacheStats, torrstor.RequestStrategyCapacityDiagnostics{})
 
 	assertStringMetric(t, got, "level", "low")
 	assertInt64Metric(t, got, "score", 103_176)
@@ -317,12 +317,38 @@ func TestRequestStrategyPressureSnapshotHigh(t *testing.T) {
 		ResidentPieces:          20_000,
 	}
 
-	got := requestStrategyPressureSnapshot(runtime, cacheStats)
+	got := requestStrategyPressureSnapshot(runtime, cacheStats, torrstor.RequestStrategyCapacityDiagnostics{})
 
 	assertStringMetric(t, got, "level", "high")
 	assertInt64Metric(t, got, "score", 3_600_000)
 	assertInt64Metric(t, got, "download_speed", 6144)
 	assertInt64Metric(t, got, "cache_overhead_percent", 25)
+}
+
+func TestRequestStrategyPressureSnapshotReportsMissingCapacityAsFault(t *testing.T) {
+	runtime := map[string]any{
+		"active_peers":   5,
+		"active_readers": 1,
+	}
+	cacheStats := torrstor.CacheStats{ResidentPieces: 8}
+	capacity := torrstor.RequestStrategyCapacityDiagnostics{
+		Status:         "fault_missing_capacity",
+		Interpretation: "active torrent storage is uncapped; request ordering can scan the full torrent",
+		ActiveCaches:   1,
+		UncappedCaches: 1,
+	}
+
+	got := requestStrategyPressureSnapshot(runtime, cacheStats, capacity)
+
+	assertStringMetric(t, got, "level", "fault")
+	assertStringMetric(t, got, "storage_capacity_status", "fault_missing_capacity")
+	assertIntMetric(t, got, "storage_uncapped_caches", 1)
+	assertStringMetric(
+		t,
+		got,
+		"interpretation",
+		"active torrent storage is uncapped; request ordering can scan the full torrent",
+	)
 }
 
 func TestStreamSessionSnapshotClassifiesExtraCacheReaders(t *testing.T) {

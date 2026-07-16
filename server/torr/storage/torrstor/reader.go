@@ -241,11 +241,12 @@ func (r *Reader) getOffsetRangeForReaders(activeReaders int) (int64, int64) {
 		readers = 1
 	}
 
-	perReaderWindow := r.cache.capacity / readers
+	capacity := r.cache.GetCapacity()
+	perReaderWindow := capacity / readers
 	backwardWindow := perReaderWindow * (100 - prc) / 100
 	forwardWindow := perReaderWindow * prc / 100
 
-	effectiveReadahead, readaheadClamped := r.effectiveRetentionReadahead()
+	effectiveReadahead, readaheadClamped := r.effectiveRetentionReadahead(capacity)
 	readaheadExpanded := effectiveReadahead > forwardWindow
 
 	if readaheadExpanded {
@@ -268,7 +269,7 @@ func (r *Reader) getOffsetRangeForReaders(activeReaders int) (int64, int64) {
 	return beginOffset, endOffset
 }
 
-func (r *Reader) effectiveRetentionReadahead() (int64, bool) {
+func (r *Reader) effectiveRetentionReadahead(capacity int64) (int64, bool) {
 	if r == nil {
 		return 0, false
 	}
@@ -278,11 +279,11 @@ func (r *Reader) effectiveRetentionReadahead() (int64, bool) {
 		return 0, false
 	}
 
-	if r.cache == nil || r.cache.capacity <= 0 || readahead <= r.cache.capacity {
+	if r.cache == nil || capacity <= 0 || readahead <= capacity {
 		return readahead, false
 	}
 
-	return r.cache.capacity, true
+	return capacity, true
 }
 
 func (r *Reader) checkReader(totalReaders int) {

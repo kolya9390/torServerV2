@@ -71,6 +71,7 @@ type streamDelivery struct {
 	lastReadSize        atomic.Int64
 	readWaitBuckets     [6]atomic.Int64
 	window              streamDeliveryWindowState
+	startup             streamStartupTimeline
 }
 
 type streamDeliveryWindowState struct {
@@ -93,48 +94,49 @@ type streamDeliverySnapshot struct {
 }
 
 type activeDeliverySnapshot struct {
-	TorrentID           uint64           `json:"torrent_id"`
-	ID                  uint64           `json:"id"`
-	ElapsedMS           int64            `json:"elapsed_ms"`
-	RequestedRange      bool             `json:"requested_range"`
-	InitialOffset       int64            `json:"initial_offset"`
-	CurrentOffset       int64            `json:"current_offset"`
-	FileSize            int64            `json:"file_size"`
-	RemainingBytes      int64            `json:"remaining_bytes"`
-	FirstByteMS         int64            `json:"first_byte_ms"`
-	SinceLastWriteMS    int64            `json:"since_last_write_ms"`
-	BytesWritten        int64            `json:"bytes_written"`
-	BytesPerSecond      int64            `json:"bytes_per_second"`
-	Last5sBytesPerSec   int64            `json:"last_5s_bytes_per_second"`
-	Min5sBytesPerSec    int64            `json:"min_5s_bytes_per_second"`
-	MediaDurationMS     *int64           `json:"media_duration_ms"`
-	RequiredBytesPerSec *int64           `json:"estimated_required_bytes_per_second"`
-	HeadroomRatio       *float64         `json:"delivery_headroom_ratio"`
-	HeadroomStatus      string           `json:"delivery_headroom_status"`
-	WriteCalls          int64            `json:"write_calls"`
-	LastWriteGapMS      int64            `json:"last_write_gap_ms"`
-	MaxWriteGapMS       int64            `json:"max_write_gap_ms"`
-	WriteGapsOver250MS  int64            `json:"write_gaps_over_250ms_total"`
-	WriteGapsOver500MS  int64            `json:"write_gaps_over_500ms_total"`
-	WriteGapsOver1000MS int64            `json:"write_gaps_over_1000ms_total"`
-	SlowWritesTotal     int64            `json:"slow_writes_total"`
-	WritesOver3sTotal   int64            `json:"writes_over_3s_total"`
-	WritesOver10sTotal  int64            `json:"writes_over_10s_total"`
-	MaxWriteMS          int64            `json:"max_write_ms"`
-	LastSlowWriteMS     int64            `json:"last_slow_write_ms"`
-	LastSlowWriteAgeMS  int64            `json:"last_slow_write_age_ms"`
-	LastSlowWriteOffset int64            `json:"last_slow_write_offset"`
-	LastSlowWriteSize   int64            `json:"last_slow_write_size"`
-	ReadWaitsTotal      int64            `json:"read_waits_total"`
-	ReadWaitTotalMS     int64            `json:"read_wait_total_ms"`
-	ReadWaitsOver3s     int64            `json:"read_waits_over_3s_total"`
-	ReadWaitsOver10s    int64            `json:"read_waits_over_10s_total"`
-	MaxReadWaitMS       int64            `json:"max_read_wait_ms"`
-	LastReadWaitMS      int64            `json:"last_read_wait_ms"`
-	LastReadWaitAgeMS   int64            `json:"last_read_wait_age_ms"`
-	LastReadOffset      int64            `json:"last_read_offset"`
-	LastReadSize        int64            `json:"last_read_size"`
-	ReadWaitMSBuckets   map[string]int64 `json:"read_wait_ms_buckets"`
+	TorrentID           uint64                `json:"torrent_id"`
+	ID                  uint64                `json:"id"`
+	ElapsedMS           int64                 `json:"elapsed_ms"`
+	RequestedRange      bool                  `json:"requested_range"`
+	InitialOffset       int64                 `json:"initial_offset"`
+	CurrentOffset       int64                 `json:"current_offset"`
+	FileSize            int64                 `json:"file_size"`
+	RemainingBytes      int64                 `json:"remaining_bytes"`
+	FirstByteMS         int64                 `json:"first_byte_ms"`
+	SinceLastWriteMS    int64                 `json:"since_last_write_ms"`
+	BytesWritten        int64                 `json:"bytes_written"`
+	BytesPerSecond      int64                 `json:"bytes_per_second"`
+	Last5sBytesPerSec   int64                 `json:"last_5s_bytes_per_second"`
+	Min5sBytesPerSec    int64                 `json:"min_5s_bytes_per_second"`
+	MediaDurationMS     *int64                `json:"media_duration_ms"`
+	RequiredBytesPerSec *int64                `json:"estimated_required_bytes_per_second"`
+	HeadroomRatio       *float64              `json:"delivery_headroom_ratio"`
+	HeadroomStatus      string                `json:"delivery_headroom_status"`
+	WriteCalls          int64                 `json:"write_calls"`
+	LastWriteGapMS      int64                 `json:"last_write_gap_ms"`
+	MaxWriteGapMS       int64                 `json:"max_write_gap_ms"`
+	WriteGapsOver250MS  int64                 `json:"write_gaps_over_250ms_total"`
+	WriteGapsOver500MS  int64                 `json:"write_gaps_over_500ms_total"`
+	WriteGapsOver1000MS int64                 `json:"write_gaps_over_1000ms_total"`
+	SlowWritesTotal     int64                 `json:"slow_writes_total"`
+	WritesOver3sTotal   int64                 `json:"writes_over_3s_total"`
+	WritesOver10sTotal  int64                 `json:"writes_over_10s_total"`
+	MaxWriteMS          int64                 `json:"max_write_ms"`
+	LastSlowWriteMS     int64                 `json:"last_slow_write_ms"`
+	LastSlowWriteAgeMS  int64                 `json:"last_slow_write_age_ms"`
+	LastSlowWriteOffset int64                 `json:"last_slow_write_offset"`
+	LastSlowWriteSize   int64                 `json:"last_slow_write_size"`
+	ReadWaitsTotal      int64                 `json:"read_waits_total"`
+	ReadWaitTotalMS     int64                 `json:"read_wait_total_ms"`
+	ReadWaitsOver3s     int64                 `json:"read_waits_over_3s_total"`
+	ReadWaitsOver10s    int64                 `json:"read_waits_over_10s_total"`
+	MaxReadWaitMS       int64                 `json:"max_read_wait_ms"`
+	LastReadWaitMS      int64                 `json:"last_read_wait_ms"`
+	LastReadWaitAgeMS   int64                 `json:"last_read_wait_age_ms"`
+	LastReadOffset      int64                 `json:"last_read_offset"`
+	LastReadSize        int64                 `json:"last_read_size"`
+	ReadWaitMSBuckets   map[string]int64      `json:"read_wait_ms_buckets"`
+	Startup             streamStartupSnapshot `json:"startup"`
 }
 
 type streamDeliveryMetadata struct {
@@ -142,6 +144,7 @@ type streamDeliveryMetadata struct {
 	fileSize       int64
 	requestedRange bool
 	mediaDuration  time.Duration
+	startupState   streamStartupStateProvider
 }
 
 type streamDeliveryHeadroom struct {
@@ -168,6 +171,7 @@ func registerStreamDeliveryWithMetadata(
 		fileSize:        maxInt64(metadata.fileSize, 0),
 		requestedRange:  metadata.requestedRange,
 		mediaDuration:   metadata.mediaDuration,
+		startup:         newStreamStartupTimeline(started, metadata.startupState),
 	}
 
 	streamDeliveries.mu.Lock()
@@ -304,6 +308,7 @@ func (d *streamDelivery) recordReadWait(wait time.Duration, offset int64, reques
 	}
 
 	recordDurationBucket(&d.readWaitBuckets, wait)
+	d.startup.recordFirstReadWait(wait, offset, requestedBytes)
 }
 
 func (d *streamDelivery) recordReadWaitLocation(wait time.Duration, offset int64, requestedBytes int) {
@@ -397,6 +402,7 @@ func (d *streamDelivery) snapshot(now time.Time) activeDeliverySnapshot {
 		LastReadOffset:      d.lastReadOffset.Load(),
 		LastReadSize:        d.lastReadSize.Load(),
 		ReadWaitMSBuckets:   snapshotBuckets(&d.readWaitBuckets),
+		Startup:             d.startup.getSnapshot(),
 	}
 }
 

@@ -1,5 +1,6 @@
-// Package e2e provides end-to-end integration tests for the TorrServer API.
-// Tests connect to a running server instance on localhost:8090.
+//go:build e2e
+
+// Package e2e provides opt-in black-box tests for an explicitly selected TorrServer instance.
 package e2e
 
 import (
@@ -8,19 +9,46 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
 
-const testServerURL = "http://127.0.0.1:8090"
+const (
+	testServerURLEnv = "TORRSERVER_E2E_URL"
+	testDebugEnv     = "TORRSERVER_E2E_DEBUG"
+)
+
+func testServerURL(t *testing.T) string {
+	t.Helper()
+
+	rawURL := strings.TrimSpace(os.Getenv(testServerURLEnv))
+	if rawURL == "" {
+		t.Skipf("set %s to run opt-in black-box tests", testServerURLEnv)
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		t.Fatalf("%s must be an absolute HTTP(S) URL, got %q", testServerURLEnv, rawURL)
+	}
+
+	return strings.TrimRight(rawURL, "/")
+}
+
+func testDebugEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv(testDebugEnv)), "true")
+}
 
 func skipIfServerNotRunning(t *testing.T) {
 	t.Helper()
 
-	resp, err := http.Get(testServerURL + "/echo")
+	baseURL := testServerURL(t)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(baseURL + "/echo")
 	if err != nil {
-		t.Skipf("Server not running on %s: %v", testServerURL, err)
+		t.Fatalf("selected E2E server is not reachable on %s: %v", baseURL, err)
 	}
 
 	func() { _ = resp.Body.Close() }()
@@ -29,7 +57,7 @@ func skipIfServerNotRunning(t *testing.T) {
 func TestEchoEndpoint(t *testing.T) {
 	skipIfServerNotRunning(t)
 
-	resp, err := http.Get(testServerURL + "/echo")
+	resp, err := http.Get(testServerURL(t) + "/echo")
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
@@ -45,15 +73,15 @@ func TestEchoEndpoint(t *testing.T) {
 		t.Fatalf("Failed to read response: %v", err)
 	}
 
-	if string(body) != "2.0.0" {
-		t.Errorf("Expected '2.0.0', got %q", string(body))
+	if string(body) != "1.0.0" {
+		t.Errorf("Expected compatibility version '1.0.0', got %q", string(body))
 	}
 }
 
 func TestHealthEndpoint(t *testing.T) {
 	skipIfServerNotRunning(t)
 
-	resp, err := http.Get(testServerURL + "/healthz")
+	resp, err := http.Get(testServerURL(t) + "/healthz")
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
@@ -77,7 +105,7 @@ func TestHealthEndpoint(t *testing.T) {
 func TestReadyzEndpoint(t *testing.T) {
 	skipIfServerNotRunning(t)
 
-	resp, err := http.Get(testServerURL + "/readyz")
+	resp, err := http.Get(testServerURL(t) + "/readyz")
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
@@ -101,7 +129,7 @@ func TestReadyzEndpoint(t *testing.T) {
 func TestListTorrents(t *testing.T) {
 	skipIfServerNotRunning(t)
 
-	url := testServerURL + "/torrents"
+	url := testServerURL(t) + "/torrents"
 	payload := `{"action":"list"}`
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(payload))
@@ -128,7 +156,7 @@ func TestListTorrents(t *testing.T) {
 func TestSettingsGet(t *testing.T) {
 	skipIfServerNotRunning(t)
 
-	url := testServerURL + "/settings"
+	url := testServerURL(t) + "/settings"
 	payload := `{"action":"get"}`
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(payload))
@@ -166,7 +194,7 @@ func TestStreamEndpointExists(t *testing.T) {
 	skipIfServerNotRunning(t)
 
 	// Test that /stream endpoint exists (will return 400 without proper params)
-	resp, err := http.Get(testServerURL + "/stream")
+	resp, err := http.Get(testServerURL(t) + "/stream")
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
@@ -182,7 +210,7 @@ func TestStreamEndpointExists(t *testing.T) {
 func TestViewedList(t *testing.T) {
 	skipIfServerNotRunning(t)
 
-	url := testServerURL + "/viewed"
+	url := testServerURL(t) + "/viewed"
 	payload := `{"action":"list"}`
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(payload))
@@ -203,12 +231,21 @@ func TestViewedList(t *testing.T) {
 
 	// Endpoint should exist, may return empty list
 	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", resp.StatusCode)
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
+		if readErr != nil {
+			t.Fatalf("Expected status 200, got %d; response read failed: %v", resp.StatusCode, readErr)
+		}
+
+		t.Errorf("Expected status 200, got %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 }
 
 func TestPprofEndpoints(t *testing.T) {
 	skipIfServerNotRunning(t)
+	expectedStatus := http.StatusNotFound
+	if testDebugEnabled() {
+		expectedStatus = http.StatusOK
+	}
 
 	endpoints := []string{
 		"/debug/pprof/",
@@ -218,15 +255,15 @@ func TestPprofEndpoints(t *testing.T) {
 
 	for _, ep := range endpoints {
 		t.Run(ep, func(t *testing.T) {
-			resp, err := http.Get(testServerURL + ep)
+			resp, err := http.Get(testServerURL(t) + ep)
 			if err != nil {
 				t.Fatalf("Failed to connect: %v", err)
 			}
 
 			defer func() { _ = resp.Body.Close() }()
 
-			if resp.StatusCode != http.StatusOK {
-				t.Errorf("Expected status 200 for %s, got %d", ep, resp.StatusCode)
+			if resp.StatusCode != expectedStatus {
+				t.Errorf("Expected status %d for %s, got %d", expectedStatus, ep, resp.StatusCode)
 			}
 		})
 	}
@@ -235,15 +272,23 @@ func TestPprofEndpoints(t *testing.T) {
 func TestVarsEndpoint(t *testing.T) {
 	skipIfServerNotRunning(t)
 
-	resp, err := http.Get(testServerURL + "/debug/vars")
+	resp, err := http.Get(testServerURL(t) + "/debug/vars")
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
+	if !testDebugEnabled() {
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("Expected status 404 with debug disabled, got %d", resp.StatusCode)
+		}
+
+		return
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", resp.StatusCode)
+		t.Fatalf("Expected status 200 with debug enabled, got %d", resp.StatusCode)
 	}
 
 	var vars map[string]any
@@ -263,7 +308,7 @@ func TestVarsEndpoint(t *testing.T) {
 func TestAPIVersionEndpoint(t *testing.T) {
 	skipIfServerNotRunning(t)
 
-	resp, err := http.Get(testServerURL + "/api/version")
+	resp, err := http.Get(testServerURL(t) + "/api/version")
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
@@ -281,7 +326,7 @@ func TestTorrentUploadEndpointExists(t *testing.T) {
 	// Test that upload endpoint exists (will return error without proper file)
 	body := bytes.NewBufferString("not-a-torrent")
 
-	req, err := http.NewRequest(http.MethodPost, testServerURL+"/torrent/upload", body)
+	req, err := http.NewRequest(http.MethodPost, testServerURL(t)+"/torrent/upload", body)
 	if err != nil {
 		t.Fatalf("Failed to create request: %v", err)
 	}
@@ -308,11 +353,13 @@ func TestConcurrentRequests(t *testing.T) {
 
 	// Test that server handles concurrent requests
 	const concurrent = 10
+	baseURL := testServerURL(t)
 	done := make(chan error, concurrent)
 
 	for i := range concurrent {
 		go func(id int) {
-			resp, err := http.Get(testServerURL + "/echo")
+			client := &http.Client{Timeout: 10 * time.Second}
+			resp, err := client.Get(baseURL + "/echo")
 			if err != nil {
 				done <- fmt.Errorf("request %d failed: %v", id, err)
 
@@ -335,10 +382,4 @@ func TestConcurrentRequests(t *testing.T) {
 			t.Error(err)
 		}
 	}
-}
-
-func TestMain(m *testing.M) {
-	// Run tests
-	code := m.Run()
-	os.Exit(code)
 }

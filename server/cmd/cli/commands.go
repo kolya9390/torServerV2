@@ -1,15 +1,13 @@
 package cli
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 )
 
 func cmdStatus(cli *apiClient, opts globalOptions) error {
-	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	ctx, cancel := opts.timeoutContext(opts.Timeout)
 	defer cancel()
 
 	version := map[string]any{}
@@ -25,37 +23,27 @@ func cmdStatus(cli *apiClient, opts globalOptions) error {
 	}
 
 	if opts.Output == "json" {
-		return printJSON(map[string]any{
-			"server":  cli.baseURL.String(),
+		return writeJSONSuccess(opts.stdoutWriter(), map[string]any{
+			"server":  redactURLCredentials(cli.baseURL.String()),
 			"version": version,
 			"ready":   ready,
 		})
 	}
 
-	fmt.Printf("Server: %s\n", cli.baseURL.String())
-
+	lines := []string{"Server: " + redactURLCredentials(cli.baseURL.String())}
 	if strings.TrimSpace(opts.Context) != "" {
-		fmt.Printf("Context: %s\n", opts.Context)
+		lines = append(lines, "Context: "+opts.Context)
 	}
 
-	fmt.Printf("Version: %v\n", version["current"])
-	fmt.Printf("Ready: %v\n", ready["status"])
-	fmt.Printf("HTTP: %v\n", ready["http"])
-	fmt.Printf("Torrent: %v\n", ready["torrent"])
+	lines = append(
+		lines,
+		fmt.Sprintf("Version: %v", version["current"]),
+		fmt.Sprintf("Ready: %v", ready["status"]),
+		fmt.Sprintf("HTTP: %v", ready["http"]),
+		fmt.Sprintf("Torrent: %v", ready["torrent"]),
+	)
 
-	return nil
-}
-
-func printJSON(v any) error {
-	data, err := json.MarshalIndent(v, "", "  ")
-
-	if err != nil {
-		return err
-	}
-
-	fmt.Println(string(data))
-
-	return nil
+	return writeTextLines(opts.stdoutWriter(), lines...)
 }
 
 func shortHash(hash string) string {

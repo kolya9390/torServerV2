@@ -1,31 +1,56 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	buildversion "server/version"
 )
 
 // Execute runs the CLI with the given arguments.
 func Execute() {
-	if err := newRootCmd().Execute(); err != nil {
-		os.Exit(1)
+	os.Exit(executeCLI(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func executeCLI(args []string, stdout, stderr io.Writer) int {
+	root := newRootCmd()
+	root.SetArgs(args)
+	root.SetOut(stdout)
+	root.SetErr(stderr)
+
+	if err := root.Execute(); err != nil {
+		if requestedJSONOutput(args) {
+			if encodeErr := writeJSONError(stderr, err); encodeErr != nil {
+				_, _ = fmt.Fprintf(stderr, "Error: %v\n", encodeErr)
+			}
+		} else {
+			_, _ = fmt.Fprintf(stderr, "Error: %v\n", err)
+		}
+
+		return 1
 	}
+
+	return 0
 }
 
 func newRootCmd() *cobra.Command {
+	return newRootCmdWithBuildInfo(buildversion.Current())
+}
+
+func newRootCmdWithBuildInfo(info buildversion.Info) *cobra.Command {
 	opts := &globalOptions{}
 
 	root := &cobra.Command{
 		Use:           "torrserver",
 		Short:         "TorrServer — торрент стриминг сервер и CLI",
 		SilenceUsage:  true,
-		SilenceErrors: false,
+		SilenceErrors: true,
 		Long:          "TorrServer — минималистичный сервер для стриминга торрентов.\n\nБез аргументов запускает сервер.\nС аргументами работает как CLI для управления.",
 		Example: strings.Join([]string{
 			"  torrserver                                        # Запуск сервера",
@@ -37,7 +62,9 @@ func newRootCmd() *cobra.Command {
 			"  torrserver settings get                           # Получить настройки",
 			"  torrserver settings set CacheSize 128MB           # Изменить кэш",
 		}, "\n"),
+		Version: conciseLocalVersion(info),
 	}
+	root.SetVersionTemplate("{{.Version}}\n")
 
 	root.PersistentFlags().StringVar(
 		&opts.Context,
@@ -48,24 +75,84 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&opts.Server, "server", "", "base server URL (overrides context)")
 	root.PersistentFlags().StringVar(&opts.User, "user", "", "basic auth username")
 	root.PersistentFlags().StringVar(&opts.Pass, "pass", "", "basic auth password")
-	root.PersistentFlags().StringVar(&opts.Token, "token", "", "shutdown token (for public shutdown mode)")
+	root.PersistentFlags().StringVar(&opts.Token, "token", "", "shutdown token (public shutdown or config set)")
 	root.PersistentFlags().DurationVar(&opts.Timeout, "timeout", defaultTimeout, "HTTP timeout, e.g. 15s")
 	root.PersistentFlags().BoolVar(&opts.Insecure, "insecure", false, "skip TLS certificate verification")
 	root.PersistentFlags().StringVar(&opts.Output, "output", defaultOutput, "output format: table|json")
 
-	root.AddCommand(newContextCmd())
+	root.AddCommand(newContextCmd(opts))
 	root.AddCommand(newCompletionCmd())
+	root.AddCommand(newVersionCmd(opts, info))
 	root.AddCommand(newStatusCmd(opts))
 	root.AddCommand(newTorrentsCmd(opts))
 	root.AddCommand(newURLCmd(opts))
 	root.AddCommand(newSettingsCmd(opts))
 	root.AddCommand(newAuthCmd(opts))
+	root.AddCommand(newConfigCmd(opts))
 	root.AddCommand(newShutdownCmd(opts))
 
 	return root
 }
 
-func newContextCmd() *cobra.Command {
+func newConfigCmd(opts *globalOptions) *cobra.Command {
+	configCmd := &cobra.Command{
+		Use:   "config",
+		Short: "Управление конфигурацией сервера",
+	}
+	tokenCmd := &cobra.Command{
+		Use:   "shutdown-token",
+		Short: "Управление токеном публичного shutdown",
+	}
+
+	tokenCmd.AddCommand(&cobra.Command{
+		Use:   "status",
+		Short: "Проверить наличие shutdown token",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runWithClient(cmd, opts, cmdShutdownTokenStatus)
+		},
+	})
+
+	var generateYes bool
+
+	generateCmd := &cobra.Command{
+		Use:   "generate",
+		Short: "Сгенерировать и сохранить новый shutdown token",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := confirmCommand(cmd, "Rotate the shutdown token", generateYes); err != nil {
+				return err
+			}
+
+			return runWithClient(cmd, opts, cmdGenerateShutdownToken)
+		},
+	}
+	generateCmd.Flags().BoolVar(&generateYes, "yes", false, "confirm token rotation without an interactive prompt")
+	tokenCmd.AddCommand(generateCmd)
+
+	var setYes bool
+
+	setCmd := &cobra.Command{
+		Use:   "set",
+		Short: "Сохранить TS_SHUTDOWN_TOKEN или global --token",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := confirmCommand(cmd, "Replace the shutdown token", setYes); err != nil {
+				return err
+			}
+
+			return runWithClient(cmd, opts, cmdSetShutdownToken)
+		},
+	}
+	setCmd.Flags().BoolVar(&setYes, "yes", false, "confirm token replacement without an interactive prompt")
+	tokenCmd.AddCommand(setCmd)
+
+	configCmd.AddCommand(tokenCmd)
+
+	return configCmd
+}
+
+func newContextCmd(opts *globalOptions) *cobra.Command {
 	contextCmd := &cobra.Command{
 		Use:   "context",
 		Short: "Управление контекстами (несколько серверов)",
@@ -74,26 +161,30 @@ func newContextCmd() *cobra.Command {
 	contextCmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "Показать все контексты",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadContextConfig()
 			if err != nil {
 				return err
 			}
 
-			return contextList(cfg)
+			return runWithOutput(cmd, opts, func(resolved globalOptions) error {
+				return contextList(cfg, resolved)
+			})
 		},
 	})
 
 	contextCmd.AddCommand(&cobra.Command{
 		Use:   "current",
 		Short: "Показать текущий контекст",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadContextConfig()
 			if err != nil {
 				return err
 			}
 
-			return contextCurrent(cfg)
+			return runWithOutput(cmd, opts, func(resolved globalOptions) error {
+				return contextCurrent(cfg, resolved)
+			})
 		},
 	})
 
@@ -109,23 +200,21 @@ func newContextCmd() *cobra.Command {
 	addCmd := &cobra.Command{
 		Use:   "add",
 		Short: "Добавить/обновить контекст",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadContextConfig()
 			if err != nil {
 				return err
 			}
 
-			return contextAdd(
-				cfg,
-				[]string{
-					"--name", addName,
-					"--server", addServer,
-					"--user", addUser,
-					"--pass", addPass,
-					"--token", addToken,
-					boolFlagArg("insecure", addInsecure),
-				},
-			)
+			return runWithOutput(cmd, opts, func(resolved globalOptions) error {
+				return contextAdd(cfg, resolved, addName, contextEntry{
+					Server:   addServer,
+					User:     addUser,
+					Pass:     addPass,
+					Token:    addToken,
+					Insecure: addInsecure,
+				})
+			})
 		},
 	}
 	addCmd.Flags().StringVar(&addName, "name", "", "context name")
@@ -143,13 +232,15 @@ func newContextCmd() *cobra.Command {
 	useCmd := &cobra.Command{
 		Use:   "use",
 		Short: "Сделать контекст текущим",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadContextConfig()
 			if err != nil {
 				return err
 			}
 
-			return contextUse(cfg, []string{"--name", useName})
+			return runWithOutput(cmd, opts, func(resolved globalOptions) error {
+				return contextUse(cfg, resolved, useName)
+			})
 		},
 	}
 	useCmd.Flags().StringVar(&useName, "name", "", "context name")
@@ -161,13 +252,15 @@ func newContextCmd() *cobra.Command {
 	removeCmd := &cobra.Command{
 		Use:   "remove",
 		Short: "Удалить контекст",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadContextConfig()
 			if err != nil {
 				return err
 			}
 
-			return contextRemove(cfg, []string{"--name", removeName})
+			return runWithOutput(cmd, opts, func(resolved globalOptions) error {
+				return contextRemove(cfg, resolved, removeName)
+			})
 		},
 	}
 	removeCmd.Flags().StringVar(&removeName, "name", "", "context name")
@@ -205,6 +298,8 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 		},
 	})
 
+	var getHash string
+
 	getCmd := &cobra.Command{
 		Use:   "get [INDEX|NAME|HASH]",
 		Short: "Получить статус торрента",
@@ -219,13 +314,16 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
   torrserver torrents get 1        # Первый торрент из списка
   torrserver torrents get "Beef"   # Поиск по названию
   torrserver torrents get ef9c...  # По хэшу`,
-		Args: cobra.ExactArgs(1),
+		Args: validateTorrentIdentifierArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			identifier := torrentIdentifierArg(args, getHash)
+
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
-				return cmdTorrentsGet(cli, resolved, args)
+				return cmdTorrentsGet(cli, resolved, identifier)
 			})
 		},
 	}
+	getCmd.Flags().StringVar(&getHash, "hash", "", "torrent hash, name, or index (compatibility flag)")
 	torrentsCmd.AddCommand(getCmd)
 
 	var (
@@ -280,6 +378,8 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 	addCmd.Flags().BoolVar(&addSave, "save", false, "save torrent to db")
 	torrentsCmd.AddCommand(addCmd)
 
+	var removeHash string
+
 	remCmd := &cobra.Command{
 		Use:   "rem [INDEX|NAME|HASH]",
 		Short: "Удалить торрент",
@@ -289,14 +389,19 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
   torrserver torrents rem 1           # По индексу
   torrserver torrents rem "Beef"      # По названию
   torrserver torrents rem ef9c...     # По хэшу`,
-		Args: cobra.ExactArgs(1),
+		Args: validateTorrentIdentifierArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			identifier := torrentIdentifierArg(args, removeHash)
+
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
-				return cmdTorrentsHashAction(cli, resolved, "rem", args)
+				return cmdTorrentsHashAction(cli, resolved, "rem", identifier)
 			})
 		},
 	}
+	remCmd.Flags().StringVar(&removeHash, "hash", "", "torrent hash, name, or index (compatibility flag)")
 	torrentsCmd.AddCommand(remCmd)
+
+	var dropHash string
 
 	dropCmd := &cobra.Command{
 		Use:   "drop [INDEX|NAME|HASH]",
@@ -306,26 +411,63 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 Примеры:
   torrserver torrents drop 1          # По индексу
   torrserver torrents drop "Beef"     # По названию`,
-		Args: cobra.ExactArgs(1),
+		Args: validateTorrentIdentifierArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			identifier := torrentIdentifierArg(args, dropHash)
+
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
-				return cmdTorrentsHashAction(cli, resolved, "drop", args)
+				return cmdTorrentsHashAction(cli, resolved, "drop", identifier)
 			})
 		},
 	}
+	dropCmd.Flags().StringVar(&dropHash, "hash", "", "torrent hash, name, or index (compatibility flag)")
 	torrentsCmd.AddCommand(dropCmd)
 
-	torrentsCmd.AddCommand(&cobra.Command{
+	var wipeYes bool
+
+	wipeCmd := &cobra.Command{
 		Use:   "wipe",
 		Short: "Удалить все торренты",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := confirmCommand(cmd, "Delete all torrents", wipeYes); err != nil {
+				return err
+			}
+
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
 				return cmdTorrentsWipe(cli, resolved)
 			})
 		},
-	})
+	}
+	wipeCmd.Flags().BoolVar(&wipeYes, "yes", false, "confirm deletion without an interactive prompt")
+	torrentsCmd.AddCommand(wipeCmd)
 
 	return torrentsCmd
+}
+
+func validateTorrentIdentifierArgs(cmd *cobra.Command, args []string) error {
+	hash, err := cmd.Flags().GetString("hash")
+	if err != nil {
+		return fmt.Errorf("read --hash: %w", err)
+	}
+
+	hasHash := strings.TrimSpace(hash) != ""
+	if hasHash && len(args) > 0 {
+		return errors.New("provide the torrent identifier either positionally or with --hash, not both")
+	}
+
+	if !hasHash {
+		return cobra.ExactArgs(1)(cmd, args)
+	}
+
+	return cobra.NoArgs(cmd, args)
+}
+
+func torrentIdentifierArg(args []string, hash string) string {
+	if strings.TrimSpace(hash) != "" {
+		return hash
+	}
+
+	return args[0]
 }
 
 func newSettingsCmd(opts *globalOptions) *cobra.Command {
@@ -370,9 +512,11 @@ func newSettingsCmd(opts *globalOptions) *cobra.Command {
   torrserver settings set FriendlyName "MyServer"
   torrserver settings set --json '{"CacheSize": 134217728}'
 
-Поддерживаемые суффиксы:
-  Размеры: KB, MB, GB (например 128MB → 134217728)
-  Время: s, m, h (например 30s → 30)`,
+Единицы применяются только к совместимым полям:
+  CacheSize: KB, MB, GB (например 128MB)
+  Поля времени: ms, s, m, h (например StreamQueueWaitSec 30s)
+
+EnableDebug и остальные debug-параметры задаются через config.yml и требуют перезапуска.`,
 		Args: validateSettingsSetArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
@@ -385,7 +529,7 @@ func newSettingsCmd(opts *globalOptions) *cobra.Command {
 						return err
 					}
 
-					ctx, cancel := context.WithTimeout(context.Background(), resolved.Timeout)
+					ctx, cancel := resolved.timeoutContext(resolved.Timeout)
 					defer cancel()
 
 					payload := map[string]any{
@@ -397,9 +541,11 @@ func newSettingsCmd(opts *globalOptions) *cobra.Command {
 						return err
 					}
 
-					fmt.Println("OK: settings updated")
-
-					return nil
+					return writeCommandResult(
+						resolved,
+						map[string]any{"action": "settings_updated", "settings": sets},
+						"OK: settings updated",
+					)
 				}
 
 				// New behavior: KEY VALUE positional arguments
@@ -416,17 +562,26 @@ func newSettingsCmd(opts *globalOptions) *cobra.Command {
 	}
 	setCmd.Flags().String("json", "", "raw JSON object with BTSets fields")
 	setCmd.Flags().String("file", "", "path to JSON file with BTSets fields")
+	setCmd.MarkFlagsMutuallyExclusive("json", "file")
 	settingsCmd.AddCommand(setCmd)
 
-	settingsCmd.AddCommand(&cobra.Command{
+	var defaultsYes bool
+
+	defaultsCmd := &cobra.Command{
 		Use:   "def",
 		Short: "Сбросить настройки по умолчанию",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := confirmCommand(cmd, "Reset all settings to defaults", defaultsYes); err != nil {
+				return err
+			}
+
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
 				return cmdSettingsDef(cli, resolved)
 			})
 		},
-	})
+	}
+	defaultsCmd.Flags().BoolVar(&defaultsYes, "yes", false, "confirm reset without an interactive prompt")
+	settingsCmd.AddCommand(defaultsCmd)
 
 	return settingsCmd
 }
@@ -452,10 +607,7 @@ func newShutdownCmd(opts *globalOptions) *cobra.Command {
 		Short: "Безопасно остановить сервер",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
-				return cmdShutdown(cli, resolved, []string{
-					"--mode", mode,
-					"--reason", defaultReason,
-				})
+				return cmdShutdown(cli, resolved, mode, defaultReason)
 			})
 		},
 	}
@@ -484,7 +636,7 @@ func newURLCmd(opts *globalOptions) *cobra.Command {
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
-				return cmdURLWithFlags(cli, resolved, args, listFiles, fileQuery)
+				return cmdURLWithFlags(cli, resolved, args[0], listFiles, fileQuery)
 			})
 		},
 	}
@@ -542,12 +694,12 @@ func newAuthCmd(opts *globalOptions) *cobra.Command {
 }
 
 // readPasswordInteractive prompts for password without echoing (SEC5).
-func readPasswordInteractive() (string, error) {
-	fmt.Print("Password: ")
+func readPasswordInteractive(output io.Writer) (string, error) {
+	_, _ = fmt.Fprint(output, "Password: ")
 
 	pass, err := term.ReadPassword(int(os.Stdin.Fd()))
 
-	fmt.Println()
+	_, _ = fmt.Fprintln(output)
 
 	if err != nil {
 		return "", fmt.Errorf("read password: %w", err)
@@ -557,35 +709,61 @@ func readPasswordInteractive() (string, error) {
 }
 
 func runWithClient(cmd *cobra.Command, opts *globalOptions, fn func(*apiClient, globalOptions) error) error {
+	return runWithOutput(cmd, opts, func(base globalOptions) error {
+		resolved, err := resolveClientOptions(cmd, base)
+		if err != nil {
+			return err
+		}
+
+		if isFlagChanged(cmd, "pass") && resolved.Output == outputTable {
+			_, _ = fmt.Fprintln(
+				resolved.stderrWriter(),
+				"Warning: --pass is visible in process list. Use "+envPassword+" env var for security.",
+			)
+		}
+
+		resolved, err = resolveClientPassword(
+			resolved,
+			resolved.isTerminal(),
+			func() (string, error) { return resolved.promptPassword(resolved.stderrWriter()) },
+		)
+		if err != nil {
+			return err
+		}
+
+		cli, err := newAPIClient(resolved)
+		if err != nil {
+			return err
+		}
+
+		return fn(cli, resolved)
+	})
+}
+
+func runWithOutput(cmd *cobra.Command, opts *globalOptions, fn func(globalOptions) error) error {
 	if opts == nil {
 		return errors.New("global options are not initialized")
 	}
 
-	// Warn if password is passed via command line (visible in ps)
-	if isFlagChanged(cmd, "pass") {
-		fmt.Fprintln(os.Stderr, "Warning: --pass is visible in process list. Use "+envPassword+" env var for security.")
+	resolved := *opts
+	resolved.Output = strings.ToLower(strings.TrimSpace(resolved.Output))
+	resolved.stdout = cmd.OutOrStdout()
+	resolved.stderr = cmd.ErrOrStderr()
+	resolved.ctx = cmd.Context()
+
+	if resolved.isTerminal == nil {
+		resolved.isTerminal = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 	}
 
-	resolved, err := resolveClientOptions(cmd, *opts)
-	if err != nil {
-		return err
+	if resolved.Output != outputTable && resolved.Output != outputJSON {
+		return fmt.Errorf(
+			"invalid --output value: %s (valid: %v)",
+			resolved.Output,
+			ValidOutputFormats(),
+		)
 	}
 
-	resolved, err = resolveClientPassword(
-		resolved,
-		term.IsTerminal(int(os.Stdin.Fd())),
-		readPasswordInteractive,
-	)
-	if err != nil {
-		return err
-	}
-
-	cli, err := newAPIClient(resolved)
-	if err != nil {
-		return err
-	}
-
-	return fn(cli, resolved)
+	return fn(resolved)
 }
 
 func resolveClientOptions(cmd *cobra.Command, opts globalOptions) (globalOptions, error) {
@@ -661,14 +839,6 @@ func isFlagChanged(cmd *cobra.Command, name string) bool {
 	return false
 }
 
-func boolFlagArg(name string, val bool) string {
-	if val {
-		return "--" + name
-	}
-
-	return "--" + name + "=false"
-}
-
 // newCompletionCmd creates a command to generate shell completions.
 func newCompletionCmd() *cobra.Command {
 	completionCmd := &cobra.Command{
@@ -701,15 +871,17 @@ PowerShell:
 		ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
 		Args:                  cobra.ExactValidArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			output := cmd.OutOrStdout()
+
 			switch args[0] {
 			case "bash":
-				return cmd.Root().GenBashCompletion(os.Stdout)
+				return cmd.Root().GenBashCompletion(output)
 			case "zsh":
-				return cmd.Root().GenZshCompletion(os.Stdout)
+				return cmd.Root().GenZshCompletion(output)
 			case "fish":
-				return cmd.Root().GenFishCompletion(os.Stdout, true)
+				return cmd.Root().GenFishCompletion(output, true)
 			case "powershell":
-				return cmd.Root().GenPowerShellCompletion(os.Stdout)
+				return cmd.Root().GenPowerShellCompletion(output)
 			}
 
 			return nil

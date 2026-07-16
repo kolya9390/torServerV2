@@ -1,9 +1,9 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"text/tabwriter"
@@ -13,7 +13,7 @@ import (
 
 // cmdAuthList lists all users on the server.
 func cmdAuthList(cli *apiClient, opts globalOptions) error {
-	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	ctx, cancel := opts.timeoutContext(opts.Timeout)
 	defer cancel()
 
 	var users map[string]string
@@ -21,13 +21,17 @@ func cmdAuthList(cli *apiClient, opts globalOptions) error {
 		return err
 	}
 
-	if len(users) == 0 {
-		fmt.Println("No users found")
-
-		return nil
+	if opts.Output == outputJSON {
+		return writeJSONSuccess(opts.stdoutWriter(), users)
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
+	if len(users) == 0 {
+		_, err := fmt.Fprintln(opts.stdoutWriter(), "No users found")
+
+		return err
+	}
+
+	w := tabwriter.NewWriter(opts.stdoutWriter(), 2, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "USERNAME\tCREATED_AT")
 
 	for name, createdAt := range users {
@@ -45,7 +49,7 @@ func cmdAuthAdd(cli *apiClient, opts globalOptions, username, password string) e
 
 	// If password is not provided, prompt for it
 	if password == "" {
-		pass, err := readPasswordInteractively()
+		pass, err := opts.promptNewPassword(opts.stderrWriter())
 		if err != nil {
 			return err
 		}
@@ -57,7 +61,7 @@ func cmdAuthAdd(cli *apiClient, opts globalOptions, username, password string) e
 		return errors.New("password must be at least 8 characters")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	ctx, cancel := opts.timeoutContext(opts.Timeout)
 	defer cancel()
 
 	payload := map[string]any{
@@ -70,9 +74,11 @@ func cmdAuthAdd(cli *apiClient, opts globalOptions, username, password string) e
 		return err
 	}
 
-	fmt.Printf("OK: user '%s' created\n", username)
-
-	return nil
+	return writeCommandResult(
+		opts,
+		map[string]any{"action": "user_created", "username": username},
+		fmt.Sprintf("OK: user %q created", username),
+	)
 }
 
 // cmdAuthRemove removes a user from the server.
@@ -81,7 +87,7 @@ func cmdAuthRemove(cli *apiClient, opts globalOptions, username string) error {
 		return errors.New("username is required")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	ctx, cancel := opts.timeoutContext(opts.Timeout)
 	defer cancel()
 
 	url := "/api/v1/auth/users/" + username
@@ -89,29 +95,31 @@ func cmdAuthRemove(cli *apiClient, opts globalOptions, username string) error {
 		return err
 	}
 
-	fmt.Printf("OK: user '%s' removed\n", username)
-
-	return nil
+	return writeCommandResult(
+		opts,
+		map[string]any{"action": "user_removed", "username": username},
+		fmt.Sprintf("OK: user %q removed", username),
+	)
 }
 
 // readPasswordInteractively prompts the user for a password without echoing input.
-func readPasswordInteractively() (string, error) {
-	fmt.Print("Enter new password: ")
+func readPasswordInteractively(output io.Writer) (string, error) {
+	_, _ = fmt.Fprint(output, "Enter new password: ")
 
 	pass, err := term.ReadPassword(int(os.Stdin.Fd()))
 	if err != nil {
 		return "", fmt.Errorf("read password: %w", err)
 	}
 
-	fmt.Println()
-	fmt.Print("Confirm password: ")
+	_, _ = fmt.Fprintln(output)
+	_, _ = fmt.Fprint(output, "Confirm password: ")
 
 	confirm, err := term.ReadPassword(int(os.Stdin.Fd()))
 	if err != nil {
 		return "", fmt.Errorf("read confirmation: %w", err)
 	}
 
-	fmt.Println()
+	_, _ = fmt.Fprintln(output)
 
 	if string(pass) != string(confirm) {
 		return "", errors.New("passwords do not match")

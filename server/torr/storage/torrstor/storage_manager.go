@@ -39,11 +39,18 @@ func (m *storageCacheManager) OpenTorrent(ctx context.Context, info *metainfo.In
 	ch := NewCache(m.capacity, m)
 	ch.Init(info, infoHash)
 	m.registry.Set(infoHash, ch)
+	capacityFn := ch.requestStrategyCapacity
 
-	return ts.TorrentImpl{
+	implementation := ts.TorrentImpl{
 		Piece: ch.Piece,
 		Close: ch.Close,
-	}, nil
+		// Capacity bounds anacrolix request-order traversal to the bytes this
+		// cache can retain; it is not only a memory-accounting value.
+		Capacity: &capacityFn,
+	}
+	ch.registerRequestStrategyCapacityDiagnostics(implementation.Capacity != nil)
+
+	return implementation, nil
 }
 
 func (m *storageCacheManager) CloseHash(hash metainfo.Hash) {

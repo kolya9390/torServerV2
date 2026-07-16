@@ -1,4 +1,4 @@
-.PHONY: build build-all test lint lint-fix e2e perf-config run-debug perf-capture docker docker-build docker-push clean help generate-mocks swagger
+.PHONY: build build-all test test-release lint lint-fix e2e perf-config run-debug perf-capture docker docker-build docker-push clean help generate-mocks swagger
 
 # Go parameters
 GOCMD=go
@@ -21,7 +21,15 @@ PERF_VARIANT?=low-cpu-candidate
 PERF_CONFIG_OUT_DIR?=artifacts/perf-configs
 
 # Build flags
-LDFLAGS=-ldflags '-w -s'
+export VERSION COMMIT BUILD_TIME DIRTY
+METADATA_SCRIPT=./.github/scripts/build-metadata.sh
+METADATA_LDFLAGS=$(shell $(METADATA_SCRIPT) ldflags)
+METADATA_VERSION=$(shell $(METADATA_SCRIPT) env | sed -n 's/^version=//p')
+METADATA_COMMIT=$(shell $(METADATA_SCRIPT) env | sed -n 's/^commit=//p')
+METADATA_BUILD_TIME=$(shell $(METADATA_SCRIPT) env | sed -n 's/^build_time=//p')
+METADATA_DIRTY=$(shell $(METADATA_SCRIPT) env | sed -n 's/^dirty=//p')
+LDFLAGS=-ldflags '-w -s $(METADATA_LDFLAGS)'
+DOCKER_BUILD_METADATA=--build-arg VERSION=$(METADATA_VERSION) --build-arg COMMIT=$(METADATA_COMMIT) --build-arg BUILD_TIME=$(METADATA_BUILD_TIME) --build-arg DIRTY=$(METADATA_DIRTY)
 
 all: build
 
@@ -40,6 +48,14 @@ swagger:
 	@echo "Generating Swagger docs..."
 	cd server && swag init -g cmd/main.go --parseDependency
 	@echo "Done! Open http://localhost:8090/swagger/index.html"
+
+## test-release: Validate the lean SemVer and release-asset helpers
+test-release:
+	@echo "Testing release helpers..."
+	@./.github/scripts/validate-release-tag_test.sh
+	@./.github/scripts/build-metadata_test.sh
+	@./.github/scripts/prepare-release-assets_test.sh
+	@./.github/scripts/extract-release-notes_test.sh
 
 ## test: Run tests
 test:
@@ -88,17 +104,17 @@ perf-capture:
 ## docker-build: Build Docker image for current platform
 docker-build:
 	@echo "Building Docker image..."
-	docker build -t $(BINARY_NAME):$(DOCKER_TAG) .
+	docker build $(DOCKER_BUILD_METADATA) -t $(BINARY_NAME):$(DOCKER_TAG) .
 
 ## docker-build-multiarch: Build Docker image for multiple architectures
 docker-build-multiarch:
 	@echo "Building multi-arch Docker image..."
-	docker buildx build --platform linux/amd64,linux/arm64 -t $(BINARY_NAME):$(DOCKER_TAG) .
+	docker buildx build $(DOCKER_BUILD_METADATA) --platform linux/amd64,linux/arm64 -t $(BINARY_NAME):$(DOCKER_TAG) .
 
 ## docker-push: Build and push multi-arch Docker image
 docker-push:
 	@echo "Building and pushing multi-arch Docker image..."
-	docker buildx build --platform linux/amd64,linux/arm64 -t $(BINARY_NAME):$(DOCKER_TAG) --push .
+	docker buildx build $(DOCKER_BUILD_METADATA) --platform linux/amd64,linux/arm64 -t $(BINARY_NAME):$(DOCKER_TAG) --push .
 
 ## docker-run: Run Docker container locally
 docker-run:

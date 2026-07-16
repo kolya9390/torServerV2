@@ -71,10 +71,12 @@ func (api realTorrentPriorityAPI) SetPiecePriority(id int, priority torrent.Piec
 }
 
 type cacheCleanupState struct {
-	removing    atomic.Bool
+	mu          sync.Mutex
+	cond        *sync.Cond
+	running     bool
+	pending     bool
 	queued      atomic.Bool
 	lastRunNano atomic.Int64
-	mu          sync.Mutex
 }
 
 type cacheMetricsState struct {
@@ -141,6 +143,7 @@ func NewCache(capacity int64, host cacheHost) *Cache {
 			pieces: make(map[int]torrent.PiecePriority),
 		},
 	}
+	ret.cleanup.cond = sync.NewCond(&ret.cleanup.mu)
 
 	return ret
 }

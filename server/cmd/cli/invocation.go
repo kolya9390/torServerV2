@@ -20,7 +20,7 @@ func IsInvocation(args []string) bool {
 
 	for idx := 0; idx < len(args); idx++ {
 		arg := args[idx]
-		if arg == "--insecure" {
+		if arg == "--insecure" || arg == "--version" {
 			cliFlagSeen = true
 
 			continue

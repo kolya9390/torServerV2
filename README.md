@@ -5,6 +5,11 @@
 
 > Надежный домашний torrent streaming backend для 1-2 heavy 4K streams, низкой нагрузки в release-режиме и удобного CLI-управления.
 
+Текущий release channel: **beta**. Первый публичный кандидат планируется как `v1.0.0-beta.1`; стабильная гарантия
+совместимости начинается только с `v1.0.0`. Правила версий и публичный контракт описаны в [VERSIONING.md](VERSIONING.md).
+
+Проектные документы: [Changelog](CHANGELOG.md) и [версионирование и release policy](VERSIONING.md).
+
 ---
 
 ## ℹ️ О проекте
@@ -108,8 +113,12 @@ docker run -d \
   -p 9080:9080 \
   -v ./config:/opt/ts/config \
   -v ./torrents:/opt/ts/torrents \
-  ghcr.io/kolya9390/torServerV2:latest
+  ghcr.io/kolya9390/torserverv2:1.0.0-beta.1
 ```
+
+Для воспроизводимой установки используйте точный тег опубликованной версии или digest. `latest` появится только у
+stable-релиза и никогда не указывает на alpha, beta или RC. Политика каналов и rollback описаны в
+[VERSIONING.md](VERSIONING.md).
 
 ### 3. Docker Compose
 
@@ -131,6 +140,54 @@ docker compose -f docker-compose.yml up -d
 ./torrserver status
 ./torrserver torrents list
 ```
+
+### JSON-контракт CLI
+
+Для автоматизации добавьте глобальный флаг `--output json`. Он поддерживается командами `context`, `status`,
+`torrents`, `url`, `settings`, `auth` и `shutdown`. Успешная команда печатает в `stdout` ровно один JSON-документ:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "url": "http://127.0.0.1:8090/streams/play?index=1&link=...",
+    "torrent_hash": "...",
+    "file_id": 1
+  }
+}
+```
+
+При ошибке `stdout` остаётся пустым, процесс возвращает ненулевой exit code, а `stderr` содержит один документ:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "validation_error",
+    "message": "invalid torrent link",
+    "status": 422,
+    "field": "link",
+    "request_id": "request-123"
+  }
+}
+```
+
+`status`, `field` и `request_id` присутствуют только когда их вернул API. Password, token, URL credentials и
+произвольное тело HTTP-ошибки не выводятся; error message очищается и ограничивается по длине. Progress, prompts и
+диагностика направляются в `stderr`, поэтому JSON в `stdout` можно безопасно передавать в `jq`.
+
+### Адрес сервера и TLS
+
+`--server` и сохраненные contexts принимают только `http://` или `https://` URL с host. Путь reverse proxy
+сохраняется: для `--server https://home.example/torrserver` API-команды обращаются к
+`https://home.example/torrserver/...`. CLI не следует HTTP redirects автоматически: указывайте конечный URL сервера,
+чтобы credentials и request body не были перенаправлены на неожиданный адрес. `--insecure` отключает проверку TLS
+certificate только по явному запросу и предназначен для контролируемых self-signed окружений.
+
+CLI contract suite запускается отдельно командой `make test-cli` и входит в обычный `make test` и CI. Baseline на
+2026-07-15: `64.9%` statements для `server/cmd/cli`; это индикатор регрессии покрытия, а не самостоятельная метрика
+качества. Gate проверяет routing, contexts, uploads, URL selection, settings, auth, shutdown, cancellation, bounded
+HTTP responses и machine-readable errors под race detector.
 
 ### Основные команды:
 
@@ -245,7 +302,14 @@ vlc "$(./torrserver url "Beef")"
 
 **Управление сервером:**
 ```bash
-# Статус сервера
+# Краткая версия локального бинарника (без подключения к серверу)
+./torrserver --version
+
+# Полная build-информация локального бинарника
+./torrserver version
+./torrserver version --output json
+
+# Статус и API version удалённого/запущенного сервера
 ./torrserver status
 
 # Безопасная остановка сервера
@@ -291,21 +355,27 @@ export TS_PASSWORD=MySecretPass123
 Приоритет параметров CLI: явные флаги, переменные окружения, выбранный context, затем значения по умолчанию.
 Для shutdown token используйте `TS_SHUTDOWN_TOKEN`; это безопаснее, чем передавать секрет через `--token`.
 
-> ⚠️ **Важно:** Не передавайте пароль через флаг `--pass` — он виден в списке процессов (`ps aux`). Используйте `TS_PASSWORD`.
+> ⚠️ **Важно:** Не передавайте password или token через `--pass`/`--token` — они видны в списке процессов
+> (`ps aux`). Используйте `TS_PASSWORD` и `TS_SHUTDOWN_TOKEN`.
 
 ### Shutdown Token
 
 Для защиты от случайного выключения сервера:
 ```bash
-# Сгенерировать и сохранить токен через authenticated API
-curl -u admin -X POST http://127.0.0.1:8090/api/v1/config/shutdown-token/generate
+# Проверить, настроен ли token; его значение сервер никогда не возвращает
+./torrserver config shutdown-token status
 
-# Сохранить полученный token для CLI-сессии
-export TS_SHUTDOWN_TOKEN='<полученный token>'
+# Сгенерировать, сохранить на сервере и сразу поместить единственный вывод в environment
+export TS_SHUTDOWN_TOKEN="$(./torrserver config shutdown-token generate --yes)"
 
 # Остановить сервер с токеном
 ./torrserver shutdown --mode public
 ```
+
+Для установки заранее подготовленного значения задайте `TS_SHUTDOWN_TOKEN` и выполните
+`./torrserver config shutdown-token set --yes`. Команды `generate` и `set` заменяют действующий token, поэтому без
+`--yes` требуют интерактивного подтверждения. Новый сгенерированный token выводится только один раз; `status` и `set`
+никогда его не печатают.
 
 ---
 

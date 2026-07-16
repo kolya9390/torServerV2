@@ -149,7 +149,7 @@ func (c *Cache) registerMetrics() {
 	}
 
 	globalCacheStats.activeCaches.Add(1)
-	globalCacheStats.configuredCapacityBytes.Add(c.capacity)
+	globalCacheStats.configuredCapacityBytes.Add(c.GetCapacity())
 	globalCacheStats.piecesCount.Add(int64(c.pieceCount))
 	globalCacheStats.residentPieces.Add(c.metrics.residentPieces.Load())
 }
@@ -167,7 +167,7 @@ func (c *Cache) unregisterMetrics() {
 
 	globalCacheStats.activeCaches.Add(-1)
 	globalCacheStats.activeReaders.Add(-int64(readers))
-	globalCacheStats.configuredCapacityBytes.Add(-c.capacity)
+	globalCacheStats.configuredCapacityBytes.Add(-c.GetCapacity())
 	globalCacheStats.piecesCount.Add(-int64(c.pieceCount))
 	globalCacheStats.residentPieces.Add(-residentPieces)
 	globalCacheStats.logicalFilledBytes.Add(-filled)

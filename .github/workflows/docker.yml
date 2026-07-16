@@ -1,68 +1,40 @@
-name: Docker
+name: Docker Release
 
 on:
-  push:
-    branches: [main, master]
-    tags:
-      - 'v*'
-
-permissions:
-  contents: read
-  packages: write
-
-env:
-  GHCR_IMAGE: ghcr.io/${{ github.repository }}
+  workflow_call:
+    inputs:
+      release_tag:
+        description: Validated SemVer release tag
+        required: true
+        type: string
+      release_sha:
+        description: Commit referenced by the release tag
+        required: true
+        type: string
+      prerelease:
+        description: Whether the release is an alpha, beta, or RC
+        required: true
+        type: boolean
 
 jobs:
-  test:
-    name: Tests
+  publish:
+    name: Publish release image
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - name: Checkout code
+      - name: Checkout release commit
         uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
-          cache: true
-          cache-dependency-path: server/go.sum
+          ref: ${{ inputs.release_sha }}
+          persist-credentials: false
 
-      - name: Run all tests with race detector
-        working-directory: server
-        run: go test -race ./...
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
-          cache: true
-          cache-dependency-path: server/go.sum
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.1
-          install-mode: goinstall
-          working-directory: server
-          args: --timeout=10m
-
-  docker:
-    name: Build and Push Docker Image
-    needs: [test, lint]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Resolve image name
+        id: image
+        shell: bash
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -70,33 +42,36 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GitHub Container Registry
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ github.token }}
 
-      - name: Extract metadata
+      - name: Resolve Docker tags
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.GHCR_IMAGE }}
+          images: ${{ steps.image.outputs.name }}
+          flavor: latest=false
           tags: |
-            # Latest tag for main branch
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
-            # Version tag for releases (v1.2.3 → 1.2.3)
-            type=semver,pattern={{version}}
-            # Major version tag (v1 → 1)
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}},value=${{ inputs.release_tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.release_tag }},enable=${{ inputs.prerelease == false }}
+            type=semver,pattern={{major}},value=${{ inputs.release_tag }},enable=${{ inputs.prerelease == false }}
+            type=raw,value=latest,enable=${{ inputs.prerelease == false }}
 
-      - name: Build and push
+      - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            VERSION=${{ inputs.release_tag }}
+            COMMIT=${{ inputs.release_sha }}
+            BUILD_TIME=unknown
+            DIRTY=clean
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

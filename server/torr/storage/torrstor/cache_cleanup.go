@@ -8,37 +8,61 @@ import (
 // CleanPieces frees cached pieces to make room for new data.
 // Called when a new piece buffer is allocated.
 func (c *Cache) CleanPieces() {
-	if c.cleanup.removing.Load() || c.isClosed.Load() {
-		return
-	}
-
-	c.mu.RLock()
-	curCapacity := c.capacity
-	c.mu.RUnlock()
-
-	filledNow := c.filled.Load()
-	if filledNow <= curCapacity {
+	if c == nil || c.isClosed.Load() || !c.needsCleanup() {
 		return
 	}
 
 	c.cleanup.mu.Lock()
-	if c.cleanup.removing.Load() {
+	if c.cleanup.running {
+		c.cleanup.pending = true
+		for c.cleanup.running && !c.isClosed.Load() {
+			c.cleanup.cond.Wait()
+		}
 		c.cleanup.mu.Unlock()
 
 		return
 	}
 
-	c.cleanup.removing.Store(true)
-	c.recordCleanupRun()
-
-	defer func() { c.cleanup.removing.Store(false) }()
+	c.cleanup.running = true
+	c.cleanup.pending = false
 	c.cleanup.mu.Unlock()
 
-	remPieces := c.getRemPieces()
-	beforeFilled := c.filled.Load()
+	for {
+		madeProgress := c.cleanPiecesPass()
 
-	if c.filled.Load() > curCapacity {
-		rems := (c.filled.Load()-curCapacity)/c.pieceLength + 1
+		c.cleanup.mu.Lock()
+
+		shouldContinue := madeProgress && c.cleanup.pending && c.needsCleanup()
+		if shouldContinue {
+			c.cleanup.pending = false
+			c.cleanup.mu.Unlock()
+
+			continue
+		}
+
+		c.cleanup.running = false
+		c.cleanup.pending = false
+		c.cleanup.cond.Broadcast()
+		c.cleanup.mu.Unlock()
+
+		return
+	}
+}
+
+func (c *Cache) cleanPiecesPass() bool {
+	curCapacity := c.GetCapacity()
+
+	filledNow := c.filled.Load()
+	if filledNow <= curCapacity {
+		return false
+	}
+
+	c.recordCleanupRun()
+	remPieces := c.getRemPieces()
+	beforeFilled := filledNow
+
+	if filledNow > curCapacity {
+		rems := (filledNow-curCapacity)/c.pieceLength + 1
 
 		sort.Slice(remPieces, func(i, j int) bool {
 			return remPieces[i].Accessed < remPieces[j].Accessed
@@ -49,14 +73,22 @@ func (c *Cache) CleanPieces() {
 
 			rems--
 			if rems <= 0 {
-				c.recordCleanedBytes(beforeFilled - c.filled.Load())
+				cleanedBytes := beforeFilled - c.filled.Load()
+				c.recordCleanedBytes(cleanedBytes)
 
-				return
+				return cleanedBytes > 0
 			}
 		}
 	}
 
-	c.recordCleanedBytes(beforeFilled - c.filled.Load())
+	cleanedBytes := beforeFilled - c.filled.Load()
+	c.recordCleanedBytes(cleanedBytes)
+
+	return cleanedBytes > 0
+}
+
+func (c *Cache) needsCleanup() bool {
+	return c != nil && !c.isClosed.Load() && c.filled.Load() > c.GetCapacity()
 }
 
 func (c *Cache) getRemPieces() []*Piece {

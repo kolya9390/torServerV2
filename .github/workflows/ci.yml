@@ -17,23 +17,22 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version-file: server/go.mod
           cache: true
           cache-dependency-path: server/go.sum
 
-      - name: Run all tests with race detector
-        working-directory: server
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Test release helpers
+        run: make test-release
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          file: server/coverage.out
-          flags: unittests
+      - name: Run tests with race detector
+        working-directory: server
+        run: go test -race ./...
 
   lint:
     name: Lint
@@ -46,8 +45,9 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version-file: server/go.mod
           cache: true
+          cache-dependency-path: server/go.sum
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
@@ -60,32 +60,27 @@ jobs:
   build:
     name: Build
     needs: [test, lint]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        arch: [amd64, arm64]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version-file: server/go.mod
           cache: true
+          cache-dependency-path: server/go.sum
 
-      - name: Build
-        working-directory: server
-        env:
-          GOOS: ${{ matrix.os == 'ubuntu-latest' && 'linux' || 'darwin' }}
-          GOARCH: ${{ matrix.arch }}
-        run: go build -ldflags '-w -s' -o ../dist/torrserver-${{ matrix.os }}-${{ matrix.arch }} ./cmd
+      - name: Build native binary
+        run: make build
 
-      - name: Upload artifact
+      - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: torrserver-${{ matrix.os }}-${{ matrix.arch }}
-          path: dist/torrserver-*
+          name: torrserver-linux-amd64
+          path: dist/torrserver
           retention-days: 7

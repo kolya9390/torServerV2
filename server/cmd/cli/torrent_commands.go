@@ -2,8 +2,8 @@ package cli
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
-	"flag"
 	"fmt"
 	"net/url"
 	"os"
@@ -45,7 +45,7 @@ type torrentAddOptions struct {
 }
 
 func cmdTorrentsList(cli *apiClient, opts globalOptions) error {
-	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	ctx, cancel := opts.timeoutContext(opts.Timeout)
 	defer cancel()
 
 	payload := map[string]any{"action": "list"}
@@ -57,10 +57,10 @@ func cmdTorrentsList(cli *apiClient, opts globalOptions) error {
 	}
 
 	if opts.Output == "json" {
-		return printJSON(out)
+		return writeJSONSuccess(opts.stdoutWriter(), out)
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(opts.stdoutWriter(), 2, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "#\tHASH\tSTATE\tPEERS\tDOWN\tUP\tTITLE")
 
 	for i, t := range out {
@@ -86,14 +86,14 @@ func cmdTorrentsList(cli *apiClient, opts globalOptions) error {
 //   - Numeric index (1-based, from `torrents list`)
 //   - Partial title/name (case-insensitive substring match)
 //   - Full 40-char hex hash (direct passthrough)
-func resolveTorrentID(cli *apiClient, timeout time.Duration, identifier string) (string, error) {
+func resolveTorrentID(parent context.Context, cli *apiClient, timeout time.Duration, identifier string) (string, error) {
 	identifier = strings.TrimSpace(identifier)
 
 	if identifier == "" {
 		return "", errors.New("torrent identifier is required")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	var torrents []torrentStatus
@@ -108,14 +108,14 @@ func resolveTorrentID(cli *apiClient, timeout time.Duration, identifier string) 
 			return "", fmt.Errorf("index %d out of range (1-%d)", idx, len(torrents))
 		}
 
-		return torrents[idx-1].Hash, nil
+		return canonicalTorrentHash(torrents[idx-1].Hash)
 	}
 
 	// Try as full hash (40 hex chars)
 	if len(identifier) == 40 {
 		for _, t := range torrents {
 			if strings.EqualFold(t.Hash, identifier) {
-				return t.Hash, nil
+				return canonicalTorrentHash(t.Hash)
 			}
 		}
 	}
@@ -148,37 +148,35 @@ func resolveTorrentID(cli *apiClient, timeout time.Duration, identifier string) 
 		return "", fmt.Errorf("ambiguous identifier %q matches multiple torrents:\n  - %s\nTry using the full hash or index number", identifier, strings.Join(names, "\n  - "))
 	}
 
-	return matches[0].Hash, nil
+	return canonicalTorrentHash(matches[0].Hash)
 }
 
-func cmdTorrentsGet(cli *apiClient, opts globalOptions, args []string) error {
-	// Support positional argument or --hash for backward compatibility
-	fs := flag.NewFlagSet("torrents get", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-
-	hash := fs.String("hash", "", "torrent hash, name, or index")
-
-	if err := fs.Parse(args); err != nil {
-		return err
+func canonicalTorrentHash(value string) (string, error) {
+	if len(value) != 40 {
+		return "", errors.New("server returned a torrent hash with invalid length")
 	}
 
-	identifier := strings.TrimSpace(*hash)
-
-	if identifier == "" && len(fs.Args()) > 0 {
-		identifier = strings.TrimSpace(fs.Arg(0))
+	decoded, err := hex.DecodeString(value)
+	if err != nil {
+		return "", errors.New("server returned a non-hex torrent hash")
 	}
 
+	return hex.EncodeToString(decoded), nil
+}
+
+func cmdTorrentsGet(cli *apiClient, opts globalOptions, identifier string) error {
+	identifier = strings.TrimSpace(identifier)
 	if identifier == "" {
 		return errors.New("torrents get requires a torrent hash, name, or index")
 	}
 
-	resolvedHash, err := resolveTorrentID(cli, opts.Timeout, identifier)
+	resolvedHash, err := resolveTorrentID(opts.commandContext(), cli, opts.Timeout, identifier)
 
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	ctx, cancel := opts.timeoutContext(opts.Timeout)
 	defer cancel()
 
 	payload := map[string]any{
@@ -192,11 +190,15 @@ func cmdTorrentsGet(cli *apiClient, opts globalOptions, args []string) error {
 		return err
 	}
 
-	return printJSON(out)
+	if opts.Output == outputJSON {
+		return writeJSONSuccess(opts.stdoutWriter(), out)
+	}
+
+	return writeJSON(opts.stdoutWriter(), out)
 }
 
 func cmdTorrentsAdd(cli *apiClient, opts globalOptions, addOpts torrentAddOptions) error {
-	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	ctx, cancel := opts.timeoutContext(opts.Timeout)
 	defer cancel()
 
 	if addOpts.File != "" {
@@ -359,12 +361,10 @@ func uploadTorrentFile(ctx context.Context, cli *apiClient, opts globalOptions, 
 
 func printTorrentAdded(out map[string]any, opts globalOptions) error {
 	if opts.Output == outputJSON {
-		return printJSON(out)
+		return writeJSONSuccess(opts.stdoutWriter(), out)
 	}
 
-	fmt.Println(torrentAddedMessage(out, opts))
-
-	return nil
+	return writeTextLines(opts.stdoutWriter(), strings.Split(torrentAddedMessage(out, opts), "\n")...)
 }
 
 func torrentAddedMessage(out map[string]any, opts globalOptions) string {
@@ -411,34 +411,22 @@ func streamURLCommand(opts globalOptions, hash string) string {
 	return "torrserver url " + hash
 }
 
-func cmdTorrentsHashAction(cli *apiClient, opts globalOptions, action string, args []string) error {
-	// Support positional argument or --hash for backward compatibility
-	fs := flag.NewFlagSet("torrents "+action, flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-
-	hash := fs.String("hash", "", "torrent hash, name, or index")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	identifier := strings.TrimSpace(*hash)
-
-	if identifier == "" && len(fs.Args()) > 0 {
-		identifier = strings.TrimSpace(fs.Arg(0))
-	}
-
+func cmdTorrentsHashAction(cli *apiClient, opts globalOptions, action, identifier string) error {
+	identifier = strings.TrimSpace(identifier)
 	if identifier == "" {
 		return fmt.Errorf("torrents %s requires a torrent hash, name, or index", action)
 	}
 
-	resolvedHash, err := resolveTorrentID(cli, opts.Timeout, identifier)
+	resolvedHash, err := resolveTorrentID(opts.commandContext(), cli, opts.Timeout, identifier)
 
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	//nolint:gosec // resolvedHash is canonical lowercase hex returned by canonicalTorrentHash.
+	_, _ = fmt.Fprintln(opts.stderrWriter(), "Resolved torrent target:", resolvedHash)
+
+	ctx, cancel := opts.timeoutContext(opts.Timeout)
 	defer cancel()
 
 	payload := map[string]any{
@@ -450,13 +438,15 @@ func cmdTorrentsHashAction(cli *apiClient, opts globalOptions, action string, ar
 		return err
 	}
 
-	fmt.Printf("OK: %s %s\n", action, shortHash(resolvedHash))
-
-	return nil
+	return writeCommandResult(
+		opts,
+		map[string]any{"action": action, "hash": resolvedHash},
+		fmt.Sprintf("OK: %s %s", action, shortHash(resolvedHash)),
+	)
 }
 
 func cmdTorrentsWipe(cli *apiClient, opts globalOptions) error {
-	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	ctx, cancel := opts.timeoutContext(opts.Timeout)
 	defer cancel()
 
 	payload := map[string]any{"action": "wipe"}
@@ -465,7 +455,9 @@ func cmdTorrentsWipe(cli *apiClient, opts globalOptions) error {
 		return err
 	}
 
-	fmt.Println("OK: wipe completed")
-
-	return nil
+	return writeCommandResult(
+		opts,
+		map[string]any{"action": "torrents_wiped"},
+		"OK: wipe completed",
+	)
 }

@@ -69,20 +69,31 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 
 	setStreamHeaders(resp, file, t, streamTimeout, req)
 
+	deliveryMetadata := streamDeliveryMetadata{
+		initialOffset:  reader.Offset(),
+		fileSize:       file.Length(),
+		requestedRange: req.Header.Get("Range") != "",
+	}
+	if debugEnabled {
+		deliveryMetadata.startupState = streamStartupStateProviderFor(t.cache, reader)
+	}
+
 	instrumentation := startStreamInstrumentation(
 		req,
 		resp,
 		debugEnabled,
 		torrentID,
-		streamDeliveryMetadata{
-			initialOffset:  reader.Offset(),
-			fileSize:       file.Length(),
-			requestedRange: req.Header.Get("Range") != "",
-		},
+		deliveryMetadata,
 	)
 	defer instrumentation.release()
 
-	if err := t.warmupPlaybackStartup(req, reader, file.Length(), debugEnabled); err != nil {
+	if err := t.warmupPlaybackStartup(
+		req,
+		reader,
+		file.Length(),
+		debugEnabled,
+		instrumentation.writer.delivery,
+	); err != nil {
 		return err
 	}
 

@@ -102,6 +102,9 @@ func registerCacheMetrics() {
 	expvar.Publish("cache_reader_lifecycle", expvar.Func(func() any {
 		return torrstor.SnapshotReaderLifecycleStats()
 	}))
+	expvar.Publish("request_strategy_storage", expvar.Func(func() any {
+		return torrstor.SnapshotRequestStrategyCapacityDiagnostics()
+	}))
 }
 
 func registerRuntimeMetrics(resolved Deps) {
@@ -153,6 +156,7 @@ func registerRuntimeMetrics(resolved Deps) {
 		return requestStrategyPressureSnapshot(
 			torrentRuntimeSnapshot(resolved.TorrentBackend),
 			torrstor.SnapshotCacheStats(),
+			torrstor.SnapshotRequestStrategyCapacityDiagnostics(),
 		)
 	}))
 	expvar.Publish("stream_health", expvar.Func(func() any {
@@ -546,7 +550,11 @@ func streamSessionInterpretation(helperReaders, deliveryStreams, cacheReaders in
 	}
 }
 
-func requestStrategyPressureSnapshot(runtime map[string]any, cacheStats torrstor.CacheStats) map[string]any {
+func requestStrategyPressureSnapshot(
+	runtime map[string]any,
+	cacheStats torrstor.CacheStats,
+	capacity torrstor.RequestStrategyCapacityDiagnostics,
+) map[string]any {
 	activePeers := intMetric(runtime, "active_peers")
 	totalPeers := intMetric(runtime, "total_peers")
 	activeReaders := intMetric(runtime, "active_readers")
@@ -556,6 +564,12 @@ func requestStrategyPressureSnapshot(runtime map[string]any, cacheStats torrstor
 	cacheOverheadPct := percent(cacheStats.LogicalOverheadBytes, cacheStats.ConfiguredCapacityBytes)
 	score := requestStrategyPressureScore(activePeers, activeReaders, cacheStats.ResidentPieces)
 	level := requestStrategyPressureLevel(activePeers, activeReaders, cacheStats.ResidentPieces)
+	interpretation := requestStrategyPressureInterpretation(level)
+
+	if capacity.UncappedCaches > 0 || capacity.InvalidCaches > 0 {
+		level = "fault"
+		interpretation = capacity.Interpretation
+	}
 
 	return map[string]any{
 		"level":                      level,
@@ -572,7 +586,12 @@ func requestStrategyPressureSnapshot(runtime map[string]any, cacheStats torrstor
 		"cache_fill_percent":         cacheFillPct,
 		"cache_overhead_percent":     cacheOverheadPct,
 		"cache_misses":               cacheStats.Misses,
-		"interpretation":             requestStrategyPressureInterpretation(level),
+		"storage_capacity_status":    capacity.Status,
+		"storage_capped_caches":      capacity.CappedCaches,
+		"storage_uncapped_caches":    capacity.UncappedCaches,
+		"storage_invalid_caches":     capacity.InvalidCaches,
+		"bounded_requestable_pieces": capacity.BoundedRequestablePieceEstimate,
+		"interpretation":             interpretation,
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -139,6 +140,161 @@ func TestNewCache(t *testing.T) {
 
 	if cache.capacity != 32*1024*1024 {
 		t.Errorf("cache capacity = %d, want %d", cache.capacity, 32*1024*1024)
+	}
+}
+
+func TestRequestStrategyCapacityTracksCacheLifecycle(t *testing.T) {
+	const initialCapacity = int64(64 << 20)
+
+	cache := NewCache(initialCapacity, testCacheHost{sets: &settings.BTSets{}})
+	capacityFn := cache.requestStrategyCapacity
+
+	assertRequestStrategyCapacity(t, capacityFn, initialCapacity)
+
+	cache.SetCapacity(96 << 20)
+	assertRequestStrategyCapacity(t, capacityFn, 96<<20)
+
+	cache.SetCapacity(32 << 20)
+	assertRequestStrategyCapacity(t, capacityFn, 32<<20)
+
+	if err := cache.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	assertRequestStrategyCapacity(t, capacityFn, 0)
+}
+
+func TestRequestStrategyCapacityNilCacheIsCapped(t *testing.T) {
+	var cache *Cache
+
+	assertRequestStrategyCapacity(t, cache.requestStrategyCapacity, 0)
+}
+
+func TestRequestStrategyCapacityUsesInitializedFallback(t *testing.T) {
+	const pieceLength = int64(16 << 10)
+
+	cache := NewCache(0, testCacheHost{sets: &settings.BTSets{}})
+	cache.Init(&metainfo.Info{
+		Name:        "capacity-test",
+		PieceLength: pieceLength,
+		Pieces:      make([]byte, 20),
+		Length:      pieceLength,
+	}, metainfo.Hash{})
+
+	t.Cleanup(func() {
+		if err := cache.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+
+	assertRequestStrategyCapacity(t, cache.requestStrategyCapacity, pieceLength*4)
+}
+
+func TestRequestStrategyCapacityConcurrentResize(t *testing.T) {
+	cache := NewCache(64<<20, testCacheHost{sets: &settings.BTSets{}})
+	capacityFn := cache.requestStrategyCapacity
+
+	const iterations = 2_000
+
+	var invalid atomic.Bool
+
+	var waitGroup sync.WaitGroup
+
+	for range 4 {
+		waitGroup.Go(func() {
+			for range iterations {
+				capacity, capped := capacityFn()
+				if !capped || capacity < 32<<20 || capacity > 96<<20 {
+					invalid.Store(true)
+				}
+			}
+		})
+	}
+
+	waitGroup.Go(func() {
+		for index := range iterations {
+			if index%2 == 0 {
+				cache.SetCapacity(32 << 20)
+
+				continue
+			}
+
+			cache.SetCapacity(96 << 20)
+		}
+	})
+
+	waitGroup.Wait()
+
+	if invalid.Load() {
+		t.Fatal("request strategy capacity returned an uncapped or out-of-range value during resize")
+	}
+}
+
+func TestReaderRetentionWindowConcurrentCacheResize(t *testing.T) {
+	const (
+		lowCapacity  = int64(32 << 20)
+		highCapacity = int64(96 << 20)
+		iterations   = 2_000
+	)
+
+	cache := NewCache(lowCapacity, testCacheHost{sets: &settings.BTSets{ReaderReadAHead: 95}})
+	reader := &Reader{cache: cache}
+	reader.offset.Store(128 << 20)
+	reader.readahead.Store(16 << 20)
+
+	expectedLowWindow := retentionWindowSize(lowCapacity, 95)
+	expectedHighWindow := retentionWindowSize(highCapacity, 95)
+
+	var invalid atomic.Bool
+
+	var waitGroup sync.WaitGroup
+
+	for range 4 {
+		waitGroup.Go(func() {
+			for range iterations {
+				start, end := reader.getOffsetRangeForReaders(1)
+				window := end - start
+
+				if start < 0 || end <= start || window != expectedLowWindow && window != expectedHighWindow {
+					invalid.Store(true)
+				}
+			}
+		})
+	}
+
+	waitGroup.Go(func() {
+		for index := range iterations {
+			if index%2 == 0 {
+				cache.SetCapacity(lowCapacity)
+
+				continue
+			}
+
+			cache.SetCapacity(highCapacity)
+		}
+	})
+
+	waitGroup.Wait()
+
+	if invalid.Load() {
+		t.Fatal("reader retention calculation mixed capacities or returned invalid bounds during resize")
+	}
+}
+
+func retentionWindowSize(capacity int64, readAheadPct int64) int64 {
+	return capacity*(100-readAheadPct)/100 + capacity*readAheadPct/100
+}
+
+func assertRequestStrategyCapacity(t *testing.T, capacityFn func() (int64, bool), want int64) {
+	t.Helper()
+
+	got, capped := capacityFn()
+	if !capped {
+		t.Fatal("request strategy capacity reported uncapped storage")
+	}
+
+	if got != want {
+		t.Fatalf("request strategy capacity = %d, want %d", got, want)
 	}
 }
 

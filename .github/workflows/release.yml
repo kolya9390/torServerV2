@@ -6,41 +6,78 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
+  validate:
+    name: Validate tag and release notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test release helpers
+        run: make test-release
+
+      - name: Validate release tag
+        id: tag
+        run: ./.github/scripts/validate-release-tag.sh "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release notes
+        run: >-
+          ./.github/scripts/extract-release-notes.sh CHANGELOG.md
+          "${{ steps.tag.outputs.version }}" /tmp/release-notes.md
+
   test:
     name: Tests
+    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout code
+      - name: Checkout tagged commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version-file: server/go.mod
           cache: true
           cache-dependency-path: server/go.sum
 
-      - name: Run all tests with race detector
+      - name: Run tests with race detector
         working-directory: server
         run: go test -race ./...
 
   lint:
     name: Lint
+    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout code
+      - name: Checkout tagged commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version-file: server/go.mod
           cache: true
           cache-dependency-path: server/go.sum
 
@@ -53,129 +90,121 @@ jobs:
           args: --timeout=10m
 
   build:
-    name: Build ${{ matrix.os }} ${{ matrix.arch }}
-    needs: [test, lint]
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: [validate, test, lint]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: linux
-            arch: amd64
-            binary: torrserver
-            ext: ""
-          - os: linux
-            arch: arm64
-            binary: torrserver
-            ext: ""
-          - os: darwin
-            arch: amd64
-            binary: torrserver
-            ext: ""
-          - os: darwin
-            arch: arm64
-            binary: torrserver
-            ext: ""
-          - os: windows
-            arch: amd64
-            binary: torrserver
-            ext: ".exe"
-
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
     steps:
-      - name: Checkout code
+      - name: Checkout tagged commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version-file: server/go.mod
           cache: true
           cache-dependency-path: server/go.sum
 
-      - name: Build binary
-        working-directory: server
+      - name: Build release binary
         env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
-          CGO_ENABLED: 0
-        run: |
-          go build -ldflags '-w -s -X server/version.version=${{ github.ref_name }}' \
-            -o ../dist/torrserver-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: >-
+          ./.github/scripts/build-release-binary.sh . dist "$RELEASE_VERSION"
+          "${{ github.sha }}" "${{ matrix.goos }}" "${{ matrix.goarch }}"
 
-      - name: Create checksum
-        working-directory: dist
-        run: sha256sum torrserver-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} > torrserver-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}.sha256
-
-      - name: Upload binary artifact
+      - name: Upload release binary
         uses: actions/upload-artifact@v4
         with:
-          name: torrserver-${{ matrix.os }}-${{ matrix.arch }}
-          path: dist/torrserver-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
-          retention-days: 1
-
-      - name: Upload checksum artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: torrserver-${{ matrix.os }}-${{ matrix.arch }}.sha256
-          path: dist/torrserver-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}.sha256
+          name: release-binary-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/torrserver-${{ needs.validate.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}*
           retention-days: 1
 
   release:
-    name: Create GitHub Release
+    name: Create GitHub prerelease or release
+    needs: [validate, build]
     runs-on: ubuntu-latest
-    needs: build
+    timeout-minutes: 15
+    permissions:
+      contents: write
     steps:
-      - name: Checkout code
+      - name: Checkout tagged commit
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
-      - name: Download all artifacts
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache: false
+
+      - name: Download release binaries
         uses: actions/download-artifact@v4
         with:
+          pattern: release-binary-*
           path: artifacts
 
-      - name: Prepare release assets
-        run: |
-          mkdir release
-          for dir in artifacts/torrserver-*; do
-            if [[ -d "$dir" ]]; then
-              cp "$dir"/* release/
-            fi
-          done
-          ls -la release/
+      - name: Prepare checksummed release assets
+        run: >-
+          ./.github/scripts/prepare-release-assets.sh artifacts release
+          "${{ needs.validate.outputs.version }}"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: release/*
-          name: Release ${{ github.ref_name }}
-          body: |
-            ## TorrServer ${{ github.ref_name }}
+      - name: Verify embedded build metadata
+        run: >-
+          ./.github/scripts/verify-release-binaries.sh release
+          "${{ needs.validate.outputs.version }}" "${{ github.sha }}"
 
-            ### Binaries
-            | Platform | Architecture |
-            |----------|--------------|
-            | Linux | amd64, arm64 |
-            | macOS | amd64, arm64 |
-            | Windows | amd64 |
+      - name: Prepare release notes
+        run: >-
+          ./.github/scripts/extract-release-notes.sh CHANGELOG.md
+          "${{ needs.validate.outputs.version }}" release-notes.md
 
-            ### Docker (GitHub Packages)
-            ```bash
-            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ```
-
-            ### Installation
-            ```bash
-            # Linux
-            ./torrserver-linux-amd64
-
-            # macOS
-            ./torrserver-darwin-arm64
-
-            # Windows
-            .\torrserver-windows-amd64.exe
-            ```
-          draft: false
-          prerelease: false
+      - name: Create GitHub release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          flags=()
+          if [[ "$PRERELEASE" == "true" ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" \
+            --verify-tag \
+            --title "Release $RELEASE_TAG" \
+            --notes-file release-notes.md \
+            "${flags[@]}" \
+            release/*
+
+  docker:
+    name: Publish release container
+    needs: [validate, release]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker.yml
+    with:
+      release_tag: ${{ needs.validate.outputs.tag }}
+      release_sha: ${{ github.sha }}
+      prerelease: ${{ needs.validate.outputs.prerelease == 'true' }}

@@ -6,12 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
-	"unicode"
 )
 
 const torrentMetadataPollInterval = 250 * time.Millisecond
@@ -95,15 +93,14 @@ func selectFileFromTorrent(files []torrentFileInfo, fileQuery string) (*torrentF
 	return nil, fmt.Errorf("no file matching %q found", fileQuery)
 }
 
-func cmdURLWithFlags(cli *apiClient, opts globalOptions, args []string, listFiles bool, fileQuery string) error {
-	if len(args) == 0 {
+func cmdURLWithFlags(cli *apiClient, opts globalOptions, identifier string, listFiles bool, fileQuery string) error {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
 		return errors.New("url requires a torrent identifier (index, name, or hash)")
 	}
 
-	identifier := strings.TrimSpace(args[0])
-
 	// Resolve torrent identifier to a hash
-	hash, err := resolveTorrentID(cli, opts.Timeout, identifier)
+	hash, err := resolveTorrentID(opts.commandContext(), cli, opts.Timeout, identifier)
 
 	if err != nil {
 		return err
@@ -111,13 +108,11 @@ func cmdURLWithFlags(cli *apiClient, opts globalOptions, args []string, listFile
 
 	if !listFiles {
 		if fileID, parseErr := strconv.Atoi(fileQuery); parseErr == nil && fileID > 0 {
-			fmt.Println(buildStreamURL(cli.baseURL.String(), hash, fileID))
-
-			return nil
+			return writeStreamURL(opts, cli.baseURL.String(), hash, fileID)
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	ctx, cancel := opts.timeoutContext(opts.Timeout)
 	defer cancel()
 
 	files, err := waitForTorrentFiles(ctx, cli, hash)
@@ -144,7 +139,11 @@ func cmdURLWithFlags(cli *apiClient, opts globalOptions, args []string, listFile
 
 	// Handle --list flag
 	if listFiles {
-		w := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
+		if opts.Output == outputJSON {
+			return writeJSONSuccess(opts.stdoutWriter(), files)
+		}
+
+		w := tabwriter.NewWriter(opts.stdoutWriter(), 2, 4, 2, ' ', 0)
 		_, _ = fmt.Fprintln(w, "ID\tSIZE\tNAME")
 
 		for _, f := range files {
@@ -173,20 +172,20 @@ func cmdURLWithFlags(cli *apiClient, opts globalOptions, args []string, listFile
 	}
 
 	// Build streaming URL
-	streamURL := buildStreamURL(cli.baseURL.String(), hash, selectedFile.ID)
-	fmt.Println(streamURL)
-
-	return nil
+	return writeStreamURL(opts, cli.baseURL.String(), hash, selectedFile.ID)
 }
 
-func sanitizeTerminalText(value string) string {
-	return strings.Map(func(char rune) rune {
-		if unicode.IsControl(char) {
-			return '?'
-		}
+func writeStreamURL(opts globalOptions, baseURL, hash string, fileID int) error {
+	streamURL := redactURLCredentials(buildStreamURL(baseURL, hash, fileID))
+	if opts.Output == outputJSON {
+		return writeJSONSuccess(opts.stdoutWriter(), map[string]any{
+			"url":          streamURL,
+			"torrent_hash": hash,
+			"file_id":      fileID,
+		})
+	}
 
-		return char
-	}, value)
+	return writeTextLine(opts.stdoutWriter(), streamURL)
 }
 
 func waitForTorrentFiles(ctx context.Context, cli *apiClient, hash string) ([]torrentFileInfo, error) {

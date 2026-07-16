@@ -12,16 +12,24 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 )
 
+const (
+	defaultMaxCLIResponseBytes      int64 = 16 << 20
+	defaultMaxCLIErrorResponseBytes int64 = 64 << 10
+)
+
 type apiClient struct {
-	baseURL *url.URL
-	http    *http.Client
-	user    string
-	pass    string
+	baseURL          *url.URL
+	http             *http.Client
+	user             string
+	pass             string
+	maxResponse      int64
+	maxErrorResponse int64
 }
 
 type apiErrorBody struct {
@@ -34,19 +42,44 @@ type apiErrorBody struct {
 	RequestID string `json:"request_id,omitempty"`
 }
 
+type apiResponseError struct {
+	StatusCode int
+	Type       string
+	Message    string
+	Field      string
+	RequestID  string
+}
+
+type responseLimitError struct {
+	Limit int64
+}
+
+func (err *responseLimitError) Error() string {
+	return fmt.Sprintf("response body exceeds the %d-byte CLI limit", err.Limit)
+}
+
+func (err *apiResponseError) Error() string {
+	message := sanitizeErrorText(err.Message)
+	if field := sanitizeErrorField(err.Field); field != "" {
+		message = field + ": " + message
+	}
+
+	if requestID := sanitizeErrorField(err.RequestID); requestID != "" {
+		message += " (request_id=" + requestID + ")"
+	}
+
+	return fmt.Sprintf(
+		"api error: status=%d type=%s message=%s",
+		err.StatusCode,
+		sanitizeErrorCode(err.Type),
+		message,
+	)
+}
+
 func newAPIClient(opts globalOptions) (*apiClient, error) {
-	rawBase := strings.TrimSpace(opts.Server)
-	if rawBase == "" {
-		rawBase = "http://127.0.0.1:8090"
-	}
-
-	if !strings.Contains(rawBase, "://") {
-		rawBase = "http://" + rawBase
-	}
-
-	parsed, err := url.Parse(strings.TrimRight(rawBase, "/"))
+	parsed, err := normalizeServerURL(opts.Server)
 	if err != nil {
-		return nil, fmt.Errorf("invalid --server value: %w", err)
+		return nil, err
 	}
 
 	timeout := opts.Timeout
@@ -54,17 +87,77 @@ func newAPIClient(opts globalOptions) (*apiClient, error) {
 		timeout = 15 * time.Second
 	}
 
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, errors.New("default HTTP transport has an unsupported implementation")
+	}
+
+	transport := defaultTransport.Clone()
+	transport.TLSClientConfig = &tls.Config{ //nolint:gosec // InsecureSkipVerify is an explicit CLI opt-in.
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: opts.Insecure,
+	}
+
 	return &apiClient{
 		baseURL: parsed,
 		http: &http.Client{
-			Timeout: timeout,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: opts.Insecure}, //nolint:gosec // explicit CLI option
-			},
+			Timeout:       timeout,
+			Transport:     transport,
+			CheckRedirect: rejectRedirect,
 		},
-		user: opts.User,
-		pass: opts.Pass,
+		user:             opts.User,
+		pass:             opts.Pass,
+		maxResponse:      defaultMaxCLIResponseBytes,
+		maxErrorResponse: defaultMaxCLIErrorResponseBytes,
 	}, nil
+}
+
+func normalizeServerURL(value string) (*url.URL, error) {
+	rawBase := strings.TrimSpace(value)
+	if rawBase == "" {
+		rawBase = defaultServerURL
+	}
+
+	if !strings.Contains(rawBase, "://") {
+		rawBase = "http://" + rawBase
+	}
+
+	parsed, err := url.Parse(rawBase)
+	if err != nil {
+		return nil, fmt.Errorf("invalid --server value: %w", err)
+	}
+
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("invalid --server scheme %q: use http or https", parsed.Scheme)
+	}
+
+	if parsed.Hostname() == "" {
+		return nil, errors.New("invalid --server value: host is required")
+	}
+
+	if parsed.User != nil {
+		return nil, errors.New("invalid --server value: URL credentials are not allowed; use --user and TS_PASSWORD")
+	}
+
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, errors.New("invalid --server value: query and fragment are not allowed")
+	}
+
+	cleanPath := path.Clean("/" + strings.TrimPrefix(parsed.Path, "/"))
+	if cleanPath == "." || cleanPath == "/" {
+		parsed.Path = "/"
+	} else {
+		parsed.Path = strings.TrimRight(cleanPath, "/") + "/"
+	}
+
+	parsed.RawPath = ""
+
+	return parsed, nil
+}
+
+func rejectRedirect(_ *http.Request, _ []*http.Request) error {
+	return errors.New("HTTP redirect rejected: configure --server with the final endpoint URL")
 }
 
 func (c *apiClient) doJSON(ctx context.Context, method, path string, requestBody any, responseBody any, headers map[string]string) error {
@@ -101,11 +194,7 @@ func (c *apiClient) doJSON(ctx context.Context, method, path string, requestBody
 		return fmt.Errorf("request failed: %w", err)
 	}
 
-	data, err := io.ReadAll(resp.Body)
-	if closeErr := resp.Body.Close(); closeErr != nil {
-		err = errors.Join(err, fmt.Errorf("close response: %w", closeErr))
-	}
-
+	data, err := c.readAndCloseResponse(resp)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}
@@ -145,11 +234,7 @@ func (c *apiClient) doMultipartFile(
 
 	req, err := c.newRequest(ctx, http.MethodPost, path, reader)
 	if err != nil {
-		_ = reader.CloseWithError(err)
-
-		<-writeErr
-
-		return err
+		return errors.Join(err, finishMultipartUpload(reader, err, writeErr))
 	}
 
 	req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
@@ -157,27 +242,20 @@ func (c *apiClient) doMultipartFile(
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		_ = reader.CloseWithError(err)
+		requestErr := fmt.Errorf("request failed: %w", err)
 
-		<-writeErr
-
-		return fmt.Errorf("request failed: %w", err)
+		return errors.Join(requestErr, finishMultipartUpload(reader, requestErr, writeErr))
 	}
 
-	data, readErr := io.ReadAll(resp.Body)
-	if closeErr := resp.Body.Close(); closeErr != nil {
-		readErr = errors.Join(readErr, fmt.Errorf("close response: %w", closeErr))
-	}
-
-	_ = reader.Close()
-	uploadErr := <-writeErr
+	data, readErr := c.readAndCloseResponse(resp)
+	uploadErr := finishMultipartUpload(reader, nil, writeErr)
 
 	if readErr != nil {
-		return fmt.Errorf("read response: %w", readErr)
+		return errors.Join(fmt.Errorf("read response: %w", readErr), uploadErr)
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
-		return parseAPIError(resp.StatusCode, data)
+		return errors.Join(parseAPIError(resp.StatusCode, data), uploadErr)
 	}
 
 	if uploadErr != nil {
@@ -243,7 +321,7 @@ func writeMultipartContent(file *os.File, fileName string, fields map[string]str
 }
 
 func (c *apiClient) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
-	fullURL, err := c.baseURL.Parse(path)
+	fullURL, err := c.resolveEndpoint(path)
 	if err != nil {
 		return nil, fmt.Errorf("build request url: %w", err)
 	}
@@ -260,28 +338,124 @@ func (c *apiClient) newRequest(ctx context.Context, method, path string, body io
 	return req, nil
 }
 
+func (c *apiClient) resolveEndpoint(endpoint string) (*url.URL, error) {
+	if c == nil || c.baseURL == nil {
+		return nil, errors.New("API client base URL is not configured")
+	}
+
+	relative, err := url.Parse(strings.TrimLeft(strings.TrimSpace(endpoint), "/"))
+	if err != nil {
+		return nil, err
+	}
+
+	if relative.IsAbs() || relative.Host != "" {
+		return nil, errors.New("API endpoint must be a relative path")
+	}
+
+	if relative.Path == "" {
+		return nil, errors.New("API endpoint path is required")
+	}
+
+	if relative.Path == ".." || strings.HasPrefix(relative.Path, "../") {
+		return nil, errors.New("API endpoint must not escape the configured base path")
+	}
+
+	return c.baseURL.ResolveReference(relative), nil
+}
+
+func (c *apiClient) readAndCloseResponse(response *http.Response) ([]byte, error) {
+	if response == nil || response.Body == nil {
+		return nil, errors.New("HTTP response body is missing")
+	}
+
+	limit := c.responseLimit(response.StatusCode)
+	data, readErr := readBounded(response.Body, limit)
+
+	if closeErr := response.Body.Close(); closeErr != nil {
+		readErr = errors.Join(readErr, fmt.Errorf("close response: %w", closeErr))
+	}
+
+	return data, readErr
+}
+
+func (c *apiClient) responseLimit(statusCode int) int64 {
+	if statusCode >= http.StatusBadRequest {
+		if c.maxErrorResponse > 0 {
+			return c.maxErrorResponse
+		}
+
+		return defaultMaxCLIErrorResponseBytes
+	}
+
+	if c.maxResponse > 0 {
+		return c.maxResponse
+	}
+
+	return defaultMaxCLIResponseBytes
+}
+
+func readBounded(reader io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+
+	if int64(len(data)) > limit {
+		return nil, &responseLimitError{Limit: limit}
+	}
+
+	return data, nil
+}
+
+func finishMultipartUpload(reader *io.PipeReader, cause error, result <-chan error) error {
+	var closeErr error
+	if cause != nil {
+		closeErr = reader.CloseWithError(cause)
+	} else {
+		closeErr = reader.Close()
+	}
+
+	if closeErr != nil && !errors.Is(closeErr, io.ErrClosedPipe) {
+		closeErr = fmt.Errorf("close upload reader: %w", closeErr)
+	} else {
+		closeErr = nil
+	}
+
+	return errors.Join(closeErr, <-result)
+}
+
 func parseAPIError(statusCode int, data []byte) error {
 	if len(data) == 0 {
-		return fmt.Errorf("api error: status=%d", statusCode)
+		return &apiResponseError{
+			StatusCode: statusCode,
+			Type:       "api_error",
+			Message:    http.StatusText(statusCode),
+		}
 	}
 
 	var apiErr apiErrorBody
 	if err := json.Unmarshal(data, &apiErr); err != nil {
-		return fmt.Errorf("api error: status=%d body=%s", statusCode, strings.TrimSpace(string(data)))
+		return &apiResponseError{
+			StatusCode: statusCode,
+			Type:       "api_error",
+			Message:    "server returned a non-JSON error response",
+		}
 	}
 
 	if apiErr.Error.Message == "" {
-		return fmt.Errorf("api error: status=%d body=%s", statusCode, strings.TrimSpace(string(data)))
+		return &apiResponseError{
+			StatusCode: statusCode,
+			Type:       "api_error",
+			Message:    "server returned an error without a message",
+			RequestID:  apiErr.RequestID,
+		}
 	}
 
-	msg := apiErr.Error.Message
-	if apiErr.Error.Field != "" {
-		msg = fmt.Sprintf("%s: %s", apiErr.Error.Field, apiErr.Error.Message)
+	return &apiResponseError{
+		StatusCode: statusCode,
+		Type:       firstNonEmpty(apiErr.Error.Type, "api_error"),
+		Message:    apiErr.Error.Message,
+		Field:      apiErr.Error.Field,
+		RequestID:  apiErr.RequestID,
 	}
-
-	if apiErr.RequestID != "" {
-		msg = fmt.Sprintf("%s (request_id=%s)", msg, apiErr.RequestID)
-	}
-
-	return fmt.Errorf("api error: status=%d type=%s message=%s", statusCode, apiErr.Error.Type, msg)
 }

@@ -448,9 +448,10 @@ func TestPlaybackStartupWarmupTargetBytes(t *testing.T) {
 		{name: "caps to max warmup bytes", fileSize: 128 << 20, cacheCap: 256 << 20, want: 8 << 20},
 		{name: "uses cache fraction for small cache", fileSize: 128 << 20, cacheCap: 32 << 20, want: 4 << 20},
 		{name: "falls back to max without cache", fileSize: 128 << 20, want: 8 << 20},
-		{name: "keeps default cache warmup for heavy file", fileSize: 100 << 30, cacheCap: 64 << 20, want: 8 << 20},
-		{name: "scales heavy file warmup with intermediate cache", fileSize: 100 << 30, cacheCap: 128 << 20, want: 16 << 20},
+		{name: "uses bounded heavy warmup for release cache", fileSize: 100 << 30, cacheCap: 64 << 20, want: 32 << 20},
+		{name: "caps heavy warmup for intermediate cache", fileSize: 100 << 30, cacheCap: 128 << 20, want: 32 << 20},
 		{name: "caps heavy file warmup for home 4k cache", fileSize: 100 << 30, cacheCap: 512 << 20, want: 32 << 20},
+		{name: "uses half of a small cache for heavy file", fileSize: 100 << 30, cacheCap: 32 << 20, want: 16 << 20},
 		{name: "caps to remaining file bytes", fileSize: 10 << 20, startOffset: 6 << 20, cacheCap: 256 << 20, want: 4 << 20},
 		{name: "caps heavy file warmup to remaining bytes", fileSize: 100 << 30, startOffset: 100<<30 - 20<<20, cacheCap: 512 << 20, want: 20 << 20},
 		{name: "zero when offset reaches end", fileSize: 10 << 20, startOffset: 10 << 20, cacheCap: 256 << 20},
@@ -971,10 +972,16 @@ func TestStartStreamInstrumentationSkipsDeliveryDiagnosticsWhenDebugDisabled(t *
 	req.RemoteAddr = "192.168.1.133:12345"
 	rec := httptest.NewRecorder()
 
+	stateCalls := 0
 	instrumentation := startStreamInstrumentation(req, rec, false, 77, streamDeliveryMetadata{
 		initialOffset:  4096,
 		fileSize:       8192,
 		requestedRange: true,
+		startupState: func() streamStartupCacheSnapshot {
+			stateCalls++
+
+			return streamStartupCacheSnapshot{}
+		},
 	})
 
 	if instrumentation.writer.delivery != nil {
@@ -998,6 +1005,10 @@ func TestStartStreamInstrumentationSkipsDeliveryDiagnosticsWhenDebugDisabled(t *
 
 	if got := SnapshotStreamHealth().RequestsTotal; got != 0 {
 		t.Fatalf("stream health RequestsTotal = %d, want 0", got)
+	}
+
+	if stateCalls != 0 {
+		t.Fatalf("startup state provider calls = %d, want 0", stateCalls)
 	}
 }
 

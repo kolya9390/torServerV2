@@ -2,33 +2,54 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
-	"os"
 	"strings"
 	"text/tabwriter"
 )
 
-func contextList(cfg *contextConfig) error {
+type contextView struct {
+	Name            string `json:"name"`
+	Server          string `json:"server"`
+	User            string `json:"user,omitempty"`
+	Current         bool   `json:"current"`
+	Insecure        bool   `json:"insecure"`
+	TokenConfigured bool   `json:"token_configured"`
+}
+
+func contextList(cfg *contextConfig, opts globalOptions) error {
 	if cfg == nil {
 		return errors.New("context config is nil")
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "CURRENT\tNAME\tSERVER\tUSER\tINSECURE\tTOKEN")
+	contexts := make([]contextView, 0, len(cfg.Contexts))
 
 	for _, name := range cfg.contextNames() {
 		ctx := cfg.Contexts[name]
+		contexts = append(contexts, contextView{
+			Name:            name,
+			Server:          redactURLCredentials(ctx.Server),
+			User:            ctx.User,
+			Current:         cfg.Current == name,
+			Insecure:        ctx.Insecure,
+			TokenConfigured: strings.TrimSpace(ctx.Token) != "",
+		})
+	}
 
+	if opts.Output == outputJSON {
+		return writeJSONSuccess(opts.stdoutWriter(), contexts)
+	}
+
+	w := tabwriter.NewWriter(opts.stdoutWriter(), 2, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(w, "CURRENT\tNAME\tSERVER\tUSER\tINSECURE\tTOKEN")
+
+	for _, ctx := range contexts {
 		current := ""
-
-		if cfg.Current == name {
+		if ctx.Current {
 			current = "*"
 		}
 
 		tokenSet := "no"
-
-		if strings.TrimSpace(ctx.Token) != "" {
+		if ctx.TokenConfigured {
 			tokenSet = "yes"
 		}
 
@@ -36,7 +57,7 @@ func contextList(cfg *contextConfig) error {
 			w,
 			"%s\t%s\t%s\t%s\t%v\t%s\n",
 			current,
-			name,
+			ctx.Name,
 			ctx.Server,
 			ctx.User,
 			ctx.Insecure,
@@ -47,7 +68,7 @@ func contextList(cfg *contextConfig) error {
 	return w.Flush()
 }
 
-func contextCurrent(cfg *contextConfig) error {
+func contextCurrent(cfg *contextConfig, opts globalOptions) error {
 	if cfg == nil {
 		return errors.New("context config is nil")
 	}
@@ -58,41 +79,43 @@ func contextCurrent(cfg *contextConfig) error {
 		return fmt.Errorf("current context %q is not configured", cfg.Current)
 	}
 
-	fmt.Printf("Current context: %s\n", cfg.Current)
-	fmt.Printf("Server: %s\n", ctx.Server)
-
-	if strings.TrimSpace(ctx.User) != "" {
-		fmt.Printf("User: %s\n", ctx.User)
+	view := contextView{
+		Name:            cfg.Current,
+		Server:          redactURLCredentials(ctx.Server),
+		User:            ctx.User,
+		Current:         true,
+		Insecure:        ctx.Insecure,
+		TokenConfigured: strings.TrimSpace(ctx.Token) != "",
+	}
+	if opts.Output == outputJSON {
+		return writeJSONSuccess(opts.stdoutWriter(), view)
 	}
 
-	fmt.Printf("Insecure TLS: %v\n", ctx.Insecure)
-	fmt.Printf("Token configured: %v\n", strings.TrimSpace(ctx.Token) != "")
+	lines := []string{
+		"Current context: " + cfg.Current,
+		"Server: " + view.Server,
+	}
+	if strings.TrimSpace(ctx.User) != "" {
+		lines = append(lines, "User: "+ctx.User)
+	}
 
-	return nil
+	lines = append(
+		lines,
+		fmt.Sprintf("Insecure TLS: %v", ctx.Insecure),
+		fmt.Sprintf("Token configured: %v", view.TokenConfigured),
+	)
+
+	return writeTextLines(opts.stdoutWriter(), lines...)
 }
 
-func contextAdd(cfg *contextConfig, args []string) error {
-	fs := flag.NewFlagSet("context add", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-
-	name := fs.String("name", "", "context name")
-	server := fs.String("server", "", "server URL")
-	user := fs.String("user", "", "basic auth user")
-	pass := fs.String("pass", "", "basic auth password")
-	token := fs.String("token", "", "shutdown token")
-	insecure := fs.Bool("insecure", false, "skip TLS verification")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	ctxName := normalizeContextName(*name)
+func contextAdd(cfg *contextConfig, opts globalOptions, name string, entry contextEntry) error {
+	ctxName := normalizeContextName(name)
 
 	if ctxName == "" {
 		return errors.New("context add requires --name")
 	}
 
-	serverURL := strings.TrimSpace(*server)
+	serverURL := strings.TrimSpace(entry.Server)
 
 	if serverURL == "" {
 		return errors.New("context add requires --server")
@@ -100,10 +123,10 @@ func contextAdd(cfg *contextConfig, args []string) error {
 
 	cfg.Contexts[ctxName] = contextEntry{
 		Server:   serverURL,
-		User:     strings.TrimSpace(*user),
-		Pass:     strings.TrimSpace(*pass),
-		Token:    strings.TrimSpace(*token),
-		Insecure: *insecure,
+		User:     strings.TrimSpace(entry.User),
+		Pass:     strings.TrimSpace(entry.Pass),
+		Token:    strings.TrimSpace(entry.Token),
+		Insecure: entry.Insecure,
 	}
 
 	if strings.TrimSpace(cfg.Current) == "" {
@@ -114,22 +137,15 @@ func contextAdd(cfg *contextConfig, args []string) error {
 		return err
 	}
 
-	fmt.Printf("OK: context %q saved\n", ctxName)
-
-	return nil
+	return writeCommandResult(
+		opts,
+		map[string]any{"action": "context_saved", "name": ctxName},
+		fmt.Sprintf("OK: context %q saved", ctxName),
+	)
 }
 
-func contextUse(cfg *contextConfig, args []string) error {
-	fs := flag.NewFlagSet("context use", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-
-	name := fs.String("name", "", "context name")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	ctxName := normalizeContextName(*name)
+func contextUse(cfg *contextConfig, opts globalOptions, name string) error {
+	ctxName := normalizeContextName(name)
 
 	if ctxName == "" {
 		return errors.New("context use requires --name")
@@ -145,22 +161,15 @@ func contextUse(cfg *contextConfig, args []string) error {
 		return err
 	}
 
-	fmt.Printf("OK: current context -> %s\n", ctxName)
-
-	return nil
+	return writeCommandResult(
+		opts,
+		map[string]any{"action": "context_selected", "name": ctxName},
+		"OK: current context -> "+ctxName,
+	)
 }
 
-func contextRemove(cfg *contextConfig, args []string) error {
-	fs := flag.NewFlagSet("context remove", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-
-	name := fs.String("name", "", "context name")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	ctxName := normalizeContextName(*name)
+func contextRemove(cfg *contextConfig, opts globalOptions, name string) error {
+	ctxName := normalizeContextName(name)
 
 	if ctxName == "" {
 		return errors.New("context remove requires --name")
@@ -184,9 +193,11 @@ func contextRemove(cfg *contextConfig, args []string) error {
 		return err
 	}
 
-	fmt.Printf("OK: context %q removed\n", ctxName)
-
-	return nil
+	return writeCommandResult(
+		opts,
+		map[string]any{"action": "context_removed", "name": ctxName},
+		fmt.Sprintf("OK: context %q removed", ctxName),
+	)
 }
 
 func normalizeContextName(name string) string {

@@ -87,6 +87,22 @@ func (c *Cache) GetCapacity() int64 {
 	return c.capacity
 }
 
+// requestStrategyCapacity reports the live storage bound used by the torrent
+// request scheduler. A nil or closed cache remains capped at zero so it cannot
+// accidentally become an unlimited request source.
+func (c *Cache) requestStrategyCapacity() (int64, bool) {
+	if c == nil || c.isClosed.Load() {
+		return 0, true
+	}
+
+	capacity := c.GetCapacity()
+	if capacity < 0 || c.isClosed.Load() {
+		return 0, true
+	}
+
+	return capacity, true
+}
+
 // Filled returns current cached bytes without constructing a full CacheState snapshot.
 func (c *Cache) Filled() int64 {
 	if c == nil {
@@ -94,6 +110,16 @@ func (c *Cache) Filled() int64 {
 	}
 
 	return c.filled.Load()
+}
+
+// ResidentPieces returns the current number of pieces retained by this cache.
+// The atomic load keeps debug diagnostics off the cache mutex hot path.
+func (c *Cache) ResidentPieces() int64 {
+	if c == nil {
+		return 0
+	}
+
+	return c.metrics.residentPieces.Load()
 }
 
 // RecordHit records a cache hit for metrics.

@@ -30,6 +30,7 @@ const (
 	startupWarmupHeavyFileThreshold     = int64(80 << 30)
 	startupWarmupHeavyFileMaxBytes      = int64(32 << 20)
 	startupWarmupCacheShareRatio        = int64(8)
+	startupWarmupHeavyCacheShareRatio   = int64(2)
 	startupWarmupMaxInitialOffset       = int64(16 << 20)
 	startupWarmupTimeout                = 3 * time.Second
 )
@@ -52,6 +53,19 @@ type playbackStartupWarmupState struct {
 	preloadTargetBytes int64
 	preloadedBytes     int64
 	cacheCapacityBytes int64
+}
+
+type playbackStartupWarmupDecision struct {
+	eligible    bool
+	targetBytes int64
+	skipReason  string
+}
+
+type playbackStartupWarmupResult struct {
+	readBytes      int64
+	elapsed        time.Duration
+	outcome        string
+	offsetRestored bool
 }
 
 type playbackStartupWarmupReader interface {
@@ -212,24 +226,41 @@ func shouldWarmupPlaybackStartup(
 	fileSize int64,
 	state playbackStartupWarmupState,
 ) bool {
-	if req == nil || req.Method != http.MethodGet {
-		return false
+	return decidePlaybackStartupWarmup(req, startOffset, fileSize, state).eligible
+}
+
+func decidePlaybackStartupWarmup(
+	req *http.Request,
+	startOffset int64,
+	fileSize int64,
+	state playbackStartupWarmupState,
+) playbackStartupWarmupDecision {
+	if req == nil {
+		return playbackStartupWarmupDecision{skipReason: "invalid_request"}
+	}
+
+	if req.Method != http.MethodGet {
+		return playbackStartupWarmupDecision{skipReason: "not_get"}
 	}
 
 	if !isPlaybackStreamRequest(req) {
-		return false
+		return playbackStartupWarmupDecision{skipReason: "not_playback"}
 	}
 
 	if startOffset < 0 || startOffset > startupWarmupMaxInitialOffset {
-		return false
+		return playbackStartupWarmupDecision{skipReason: "outside_startup_window"}
 	}
 
 	targetBytes := playbackStartupWarmupTargetBytes(fileSize, startOffset, state.cacheCapacityBytes)
 	if targetBytes <= 0 {
-		return false
+		return playbackStartupWarmupDecision{skipReason: "no_target"}
 	}
 
-	return state.preloadTargetBytes < targetBytes || state.preloadedBytes < targetBytes
+	if state.preloadTargetBytes >= targetBytes && state.preloadedBytes >= targetBytes {
+		return playbackStartupWarmupDecision{targetBytes: targetBytes, skipReason: "preload_satisfied"}
+	}
+
+	return playbackStartupWarmupDecision{eligible: true, targetBytes: targetBytes}
 }
 
 func isPlaybackStreamRequest(req *http.Request) bool {
@@ -253,13 +284,15 @@ func playbackStartupWarmupTargetBytes(fileSize, startOffset, cacheCapacity int64
 	}
 
 	target := startupWarmupDefaultMaxBytes
+	cacheShareRatio := startupWarmupCacheShareRatio
 
 	if cacheCapacity > 0 {
 		if fileSize >= startupWarmupHeavyFileThreshold {
 			target = startupWarmupHeavyFileMaxBytes
+			cacheShareRatio = startupWarmupHeavyCacheShareRatio
 		}
 
-		cacheTarget := cacheCapacity / startupWarmupCacheShareRatio
+		cacheTarget := cacheCapacity / cacheShareRatio
 		if cacheTarget <= 0 {
 			cacheTarget = cacheCapacity
 		}
@@ -422,21 +455,44 @@ func (t *Torrent) warmupPlaybackStartup(
 	reader playbackStartupWarmupReader,
 	fileSize int64,
 	debugEnabled bool,
+	delivery *streamDelivery,
 ) error {
 	if reader == nil {
+		if delivery != nil {
+			delivery.startup.recordSkipped("reader_unavailable", 0)
+		}
+
 		return nil
 	}
 
 	startOffset := reader.Offset()
 	state := t.playbackStartupWarmupState()
+	decision := decidePlaybackStartupWarmup(req, startOffset, fileSize, state)
 
-	if !shouldWarmupPlaybackStartup(req, startOffset, fileSize, state) {
+	if !decision.eligible {
+		if delivery != nil {
+			delivery.startup.recordSkipped(decision.skipReason, decision.targetBytes)
+		}
+
 		return nil
 	}
 
-	targetBytes := playbackStartupWarmupTargetBytes(fileSize, startOffset, state.cacheCapacityBytes)
+	if delivery != nil {
+		delivery.startup.recordWarmupStarted(decision.targetBytes)
+	}
 
-	return warmupPlaybackStartupReader(req, reader, startOffset, targetBytes, debugEnabled)
+	result, err := runPlaybackStartupWarmupReader(
+		req,
+		reader,
+		startOffset,
+		decision.targetBytes,
+		debugEnabled,
+	)
+	if delivery != nil {
+		delivery.startup.recordWarmupCompleted(result)
+	}
+
+	return err
 }
 
 func (t *Torrent) playbackStartupWarmupState() playbackStartupWarmupState {
@@ -467,11 +523,25 @@ func warmupPlaybackStartupReader(
 	targetBytes int64,
 	debugEnabled bool,
 ) error {
+	_, err := runPlaybackStartupWarmupReader(req, reader, startOffset, targetBytes, debugEnabled)
+
+	return err
+}
+
+func runPlaybackStartupWarmupReader(
+	req *http.Request,
+	reader playbackStartupWarmupReader,
+	startOffset int64,
+	targetBytes int64,
+	debugEnabled bool,
+) (playbackStartupWarmupResult, error) {
+	result := playbackStartupWarmupResult{outcome: "skipped"}
 	if req == nil || reader == nil || targetBytes <= 0 {
-		return nil
+		return result, nil
 	}
 
 	started := time.Now()
+	result.outcome = "running"
 	reqCtx := req.Context()
 
 	warmupCtx, cancel := context.WithTimeout(reqCtx, startupWarmupTimeout)
@@ -481,27 +551,53 @@ func warmupPlaybackStartupReader(
 	readBytes, readErr := readPlaybackStartupWarmup(reader, targetBytes)
 	reader.SetContext(reqCtx)
 
+	result.readBytes = readBytes
+
 	if _, err := reader.Seek(startOffset, io.SeekStart); err != nil {
-		return fmt.Errorf("restore stream reader after startup warmup: %w", err)
+		result.elapsed = time.Since(started)
+		result.outcome = "restore_failed"
+
+		return result, fmt.Errorf("restore stream reader after startup warmup: %w", err)
 	}
+
+	result.elapsed = time.Since(started)
+	result.offsetRestored = reader.Offset() == startOffset
 
 	if debugEnabled {
 		log.Debug(
 			"stream startup warmup",
 			"target_bytes", targetBytes,
 			"read_bytes", readBytes,
-			"elapsed_ms", time.Since(started).Milliseconds(),
+			"elapsed_ms", result.elapsed.Milliseconds(),
 			"error", readErr,
 		)
 	}
 
 	switch {
 	case reqCtx.Err() != nil:
-		return reqCtx.Err()
-	case readErr == nil || errors.Is(readErr, io.EOF) || errors.Is(readErr, context.DeadlineExceeded):
-		return nil
+		result.outcome = "request_canceled"
+
+		return result, reqCtx.Err()
+	case errors.Is(readErr, context.DeadlineExceeded):
+		result.outcome = "timeout"
+
+		return result, nil
+	case errors.Is(readErr, io.EOF):
+		result.outcome = "eof"
+
+		return result, nil
+	case readErr == nil && readBytes >= targetBytes:
+		result.outcome = "success"
+
+		return result, nil
+	case readErr == nil:
+		result.outcome = "short_read"
+
+		return result, nil
 	default:
-		return fmt.Errorf("stream startup warmup: %w", readErr)
+		result.outcome = "read_error"
+
+		return result, fmt.Errorf("stream startup warmup: %w", readErr)
 	}
 }
 

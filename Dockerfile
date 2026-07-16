@@ -17,8 +17,17 @@ RUN go mod download
 COPY server/ ./
 
 ARG TARGETOS TARGETARCH
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_TIME=unknown
+ARG DIRTY=unknown
 RUN GOOS=$TARGETOS GOARCH=$TARGETARCH CGO_ENABLED=0 \
-    go build -ldflags '-w -s' -o /torrserver ./cmd
+    go build -ldflags "-w -s \
+      -X=server/version.version=$VERSION \
+      -X=server/version.commit=$COMMIT \
+      -X=server/version.buildTime=$BUILD_TIME \
+      -X=server/version.dirtyState=$DIRTY" \
+      -o /torrserver ./cmd
 
 
 ### Runtime stage

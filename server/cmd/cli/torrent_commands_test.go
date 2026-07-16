@@ -16,6 +16,21 @@ import (
 
 const testTorrentHash = "0123456789abcdef0123456789abcdef01234567"
 
+func TestCanonicalTorrentHash(t *testing.T) {
+	t.Parallel()
+
+	upper := strings.ToUpper(testTorrentHash)
+	if got, err := canonicalTorrentHash(upper); err != nil || got != testTorrentHash {
+		t.Fatalf("canonicalTorrentHash(%q) = (%q, %v)", upper, got, err)
+	}
+
+	for _, invalid := range []string{"short", strings.Repeat("z", 40)} {
+		if _, err := canonicalTorrentHash(invalid); err == nil {
+			t.Fatalf("canonicalTorrentHash(%q) unexpectedly succeeded", invalid)
+		}
+	}
+}
+
 func TestResolveTorrentAddOptions(t *testing.T) {
 	t.Parallel()
 
@@ -364,7 +379,7 @@ func TestTorrentCLIHappyPathListUploadAndStreamURL(t *testing.T) {
 		t.Fatalf("list after add: %v", err)
 	}
 
-	if err := cmdURLWithFlags(client, opts, []string{"1"}, false, ""); err != nil {
+	if err := cmdURLWithFlags(client, opts, "1", false, ""); err != nil {
 		t.Fatalf("build stream URL: %v", err)
 	}
 

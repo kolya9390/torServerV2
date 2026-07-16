@@ -94,6 +94,7 @@ func (c *Cache) Close() error {
 	}
 
 	c.releaseInMemoryPieces()
+	c.unregisterRequestStrategyCapacityDiagnostics()
 	c.unregisterMetrics()
 
 	cacheCfg := c.currentCacheConfig()

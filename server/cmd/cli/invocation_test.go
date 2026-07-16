@@ -20,6 +20,7 @@ func TestIsInvocation(t *testing.T) {
 		{name: "cli equals flag before command", args: []string{"--output=json", "torrents", "list"}, want: true},
 		{name: "multiple cli flags", args: []string{"--context", "home", "--timeout", "5s", "url", "1"}, want: true},
 		{name: "cli boolean flag", args: []string{"--insecure", "status"}, want: true},
+		{name: "standard version flag", args: []string{"--version"}, want: true},
 		{name: "missing cli flag value", args: []string{"--server"}, want: true},
 		{name: "cli flags without command", args: []string{"--server", "http://localhost:8090"}, want: true},
 		{name: "unknown leading flag stays server", args: []string{"--unknown", "status"}, want: false},

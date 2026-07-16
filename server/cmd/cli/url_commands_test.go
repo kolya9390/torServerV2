@@ -241,7 +241,7 @@ func TestURLWithNumericFileBuildsLinkWithoutMetadataRequest(t *testing.T) {
 
 	client := newTestAPIClient(t, server.URL, "", "")
 	opts := globalOptions{Server: server.URL, Timeout: time.Second}
-	if err := cmdURLWithFlags(client, opts, []string{"1"}, false, "3"); err != nil {
+	if err := cmdURLWithFlags(client, opts, "1", false, "3"); err != nil {
 		t.Fatalf("build URL for numeric file: %v", err)
 	}
 }
