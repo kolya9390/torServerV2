@@ -10,6 +10,20 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Security
+
+### Deprecated
+
+### Removed
+
+## [1.0.0-beta.3] - 2026-07-16
+
+### Added
+
 - Добавлен единый CLI-сценарий для просмотра списка торрентов, добавления magnet или `.torrent` файла и получения
   stream URL в human-readable и JSON-форматах.
 - Добавлены проверяемые build metadata и aggregate SHA-256 checksums для release binaries.
@@ -47,4 +61,5 @@
 - Playback зависит от sustained bitrate, swarm health, WAN/LAN и клиента; слабая раздача не может быть исправлена
   только серверным scheduling.
 
-[Unreleased]: https://github.com/kolya9390/torServerV2/commits/main
+[Unreleased]: https://github.com/kolya9390/torServerV2/compare/v1.0.0-beta.3...HEAD
+[1.0.0-beta.3]: https://github.com/kolya9390/torServerV2/compare/v1.0.0-beta.2...v1.0.0-beta.3
