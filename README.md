@@ -5,8 +5,8 @@
 
 > Надежный домашний torrent streaming backend для 1-2 heavy 4K streams, низкой нагрузки в release-режиме и удобного CLI-управления.
 
-Текущий release channel: **beta**. Первый публичный кандидат планируется как `v1.0.0-beta.1`; стабильная гарантия
-совместимости начинается только с `v1.0.0`. Правила версий и публичный контракт описаны в [VERSIONING.md](VERSIONING.md).
+Текущий release channel: **beta**. Стабильная гарантия совместимости начинается только с `v1.0.0`. Правила версий и
+публичный контракт описаны в [VERSIONING.md](VERSIONING.md).
 
 Проектные документы: [Changelog](CHANGELOG.md) и [версионирование и release policy](VERSIONING.md).
 
@@ -35,21 +35,22 @@ NAS или домашнем Linux-сервере, подключили ТВ/пл
 
 ## 📖 Что это?
 
-**TorrServerV2** — один бинарник, который содержит сервер и CLI для управления. Сервер скачивает torrent
-on-demand, кэширует нужные части и отдает медиапоток клиентам через HTTP/DLNA.
+**TorrServerV2** состоит из двух небольших программ с разными обязанностями. `torrserver` — долгоживущий daemon,
+который запускает torrent engine, HTTP API и DLNA. `torrctl` — короткоживущий HTTP-клиент для локального или удалённого
+управления daemon. Сервер скачивает torrent on-demand, кэширует нужные части и отдаёт медиапоток через HTTP/DLNA.
 
 **Философия:**
 - ✅ **Стабильность** — основной target: 1 heavy 4K stream; recommended target: 2 heavy 4K streams при подходящих ресурсах.
 - ✅ **Низкий release overhead** — debug endpoints, pprof и тяжелые diagnostics выключены по умолчанию.
 - ✅ **Предсказуемость** — streaming profiles, безопасный shutdown/drop и понятная диагностика проблем.
-- ✅ **Управляемость** — встроенный CLI для локального и удаленного управления сервером.
+- ✅ **Управляемость** — отдельный `torrctl` для локального и удалённого управления без запуска torrent engine.
 
 **Что умеет:**
 - Стриминг торрентов через HTTP
 - DLNA сервер для TV (Kodi, VLC, WebOS, Tizen)
 - M3U плейлисты
 - HTTP API для автоматизации
-- CLI для управления сервером
+- CLI-клиент `torrctl` для управления сервером
 - Управление пользователями (авторизация)
 
 ---
@@ -90,61 +91,161 @@ delivery throughput сервера, качество torrent swarm и путь �
 
 ## 🚀 Быстрый старт
 
-### 1. Бинарный файл (Linux / macOS / Windows)
+### Platform bundle (Linux / macOS)
 
-Скачайте файл с [страницы релизов](https://github.com/kolya9390/torServerV2/releases):
+Каждый platform bundle содержит `torrserver`, `torrctl` и release-safe `config.example.yml`. Выберите точную
+опубликованную версию и платформу на [странице релизов](https://github.com/kolya9390/torServerV2/releases), затем
+скачайте bundle и общий checksum manifest:
 
 ```bash
-# Запуск сервера
-./torrserver
+version="${TORRSERVER_VERSION:?set published version without v prefix}"
+platform="darwin-arm64"  # linux-amd64, linux-arm64, darwin-amd64 или darwin-arm64
+bundle="TorrServerV2-v${version}-${platform}.tar.gz"
+base="https://github.com/kolya9390/torServerV2/releases/download/v${version}"
 
-# С настройками
-./torrserver --port 8090 --path ./config --torrentsdir ./torrents
+curl -fLO "${base}/${bundle}"
+curl -fLO "${base}/torrserver-${version}-SHA256SUMS"
+grep "  ${bundle}$" "torrserver-${version}-SHA256SUMS" | shasum -a 256 --check -
+tar -xzf "${bundle}"
+cd "TorrServerV2-v${version}-${platform}"
 ```
 
-*(Для Windows используйте `torrserver.exe`)*
+На Linux вместо `shasum -a 256 --check -` можно использовать `sha256sum --check -`. Для Windows скачайте `.zip`,
+проверьте SHA-256 через PowerShell и используйте `torrserver.exe`/`torrctl.exe`; полный пример приведён в
+[VERSIONING.md](VERSIONING.md#установка-из-platform-bundle).
 
-### 2. Docker
+Скопируйте пример конфигурации, создайте runtime-директории и запустите daemon в foreground:
 
 ```bash
+cp config.example.yml config.yml
+mkdir -p state logs
+TS_CONFIG="$PWD/config.yml" ./torrserver serve --path "$PWD/state" --logpath "$PWD/logs"
+```
+
+Оставьте daemon в первом терминале. Во втором терминале выполните полный management/stream URL workflow:
+
+```bash
+./torrctl status
+./torrctl torrents add "magnet:?xt=urn:btih:<INFO_HASH>" --title "Movie" --save
+./torrctl torrents list
+./torrctl url 1 --list
+./torrctl url 1 --file 1
+./torrctl shutdown
+```
+
+Локальный `.torrent` можно загрузить вместо magnet: `./torrctl torrents add ./movie.torrent --save`. Команда
+`url` ограниченно ждёт metadata; для медленного swarm увеличьте только клиентский timeout, например
+`./torrctl --timeout 45s url 1 --list`.
+
+### Docker
+
+Docker image содержит и запускает только daemon:
+
+```bash
+cp config.example.yml config.yml
+
 docker run -d \
   --name torrserver \
   -p 8090:8090 \
   -p 9080:9080 \
-  -v ./config:/opt/ts/config \
-  -v ./torrents:/opt/ts/torrents \
-  ghcr.io/kolya9390/torserverv2:1.0.0-beta.1
+  -e TS_CONFIG=/opt/ts/config/config.yml \
+  -v torrserver-data:/opt/ts \
+  -v "$PWD/config.yml:/opt/ts/config/config.yml:ro" \
+  ghcr.io/kolya9390/torserverv2:1.0.0-beta.3 \
+  --path /opt/ts/config --logpath /opt/ts/log
 ```
 
-Для воспроизводимой установки используйте точный тег опубликованной версии или digest. `latest` появится только у
-stable-релиза и никогда не указывает на alpha, beta или RC. Политика каналов и rollback описаны в
-[VERSIONING.md](VERSIONING.md).
-
-### 3. Docker Compose
+`torrctl` не нужен внутри container. Управляйте daemon с host-бинарника:
 
 ```bash
-docker compose -f docker-compose.yml up -d
+./torrctl --server http://127.0.0.1:8090 status
 ```
+
+Lampa, TorrServe и обычные HTTP/DLNA-клиенты подключаются напрямую к daemon и не зависят от `torrctl`. Для
+воспроизводимой установки используйте точный image tag или digest. `latest` предназначен только для stable-релиза.
+Чтобы сохранять `.torrent` и disk cache отдельно от runtime state, задайте в YAML путь
+`cache.torrents_save_path: /opt/ts/torrents` и используйте отдельный volume; пустое значение сохраняет memory-only
+поведение.
 
 ---
 
-## 💻 CLI (встроен в сервер)
+## 💻 Daemon и CLI
 
-Один бинарник — два режима. Без аргументов запускает сервер, с аргументами работает как CLI:
+`torrserver` и `torrctl` намеренно разделены:
+
+| Программа | Lifecycle | Ответственность |
+|-----------|-----------|-----------------|
+| `torrserver` | Долгоживущий foreground process | Torrent engine, cache, HTTP API, streaming, DLNA и graceful shutdown |
+| `torrctl` | Один короткий process на команду | HTTP management client; не запускает и не supervises OS process daemon |
+
+Канонический запуск — `torrserver serve`. `torrctl` по умолчанию обращается к `http://127.0.0.1:8090`, поэтому для
+локального сервера достаточно `torrctl status`. Для удалённого сервера используйте глобальный `--server` или context.
+
+### Основные команды
 
 ```bash
-# Запуск сервера (без аргументов)
-./torrserver
+# Локальная build-информация; сеть не используется
+./torrserver --version
+./torrctl --version
+./torrctl version --output json
 
-# CLI команды (с аргументами)
-./torrserver status
-./torrserver torrents list
+# Torrent workflow
+./torrctl status
+./torrctl torrents list
+./torrctl torrents add "magnet:?xt=urn:btih:<INFO_HASH>" --save
+./torrctl torrents add ./movie.torrent --title "Movie" --save
+./torrctl torrents get 1
+./torrctl url 1 --list
+./torrctl url 1 --file 3
+
+# Полученную ссылку можно передать внешнему плееру
+mpv "$(./torrctl url 1 --file 3)"
+
+# Settings и lifecycle
+./torrctl settings get
+./torrctl settings set CacheSize 128MB
+./torrctl shutdown
 ```
 
-### JSON-контракт CLI
+Идентификатор торрента может быть индексом из `torrents list`, названием или hash. Для `url` без `--file` выбирается
+самый большой файл. `--file` принимает ID или часть имени. У сохранённого, но неактивного торрента metadata может ещё
+не быть в базе: повторно добавьте hash с `--save` и дождитесь metadata либо передайте уже известный file ID.
 
-Для автоматизации добавьте глобальный флаг `--output json`. Он поддерживается командами `context`, `status`,
-`torrents`, `url`, `settings`, `auth` и `shutdown`. Успешная команда печатает в `stdout` ровно один JSON-документ:
+### Удалённые серверы и contexts
+
+Одноразовый вызов не изменяет конфигурацию `torrctl`:
+
+```bash
+./torrctl --server http://192.168.1.50:8090 status
+```
+
+Для повторного использования создайте именованный context:
+
+```bash
+./torrctl context add --name home --server http://192.168.1.50:8090
+./torrctl --context home torrents list
+./torrctl context use --name home
+./torrctl status
+./torrctl context use --name local
+```
+
+Локальный `.torrent` читается на машине с `torrctl` и загружается на выбранный remote server через multipart API.
+Приоритет настроек клиента: явные флаги, environment, выбранный context, затем `local` default.
+
+### Конфигурация daemon и клиента
+
+Это два независимых конфигурационных контура:
+
+- `torrserver` читает YAML из `TS_CONFIG` либо ищет `config.yml` в документированных стандартных путях. `--path`,
+  `--logpath` и другие daemon flags задают runtime state/lifecycle и не являются настройками `torrctl`.
+- `torrctl` не читает server YAML. Contexts хранят URL и необязательные credentials в пользовательском
+  `tsctl/config.json` с правами `0600`; путь можно переопределить через `TSCTL_CONFIG`.
+- `TSCTL_CONTEXT`, `TS_USER`, `TS_PASSWORD` и `TS_SHUTDOWN_TOKEN` позволяют задавать client state без записи секрета
+  в context. Для automation это предпочтительнее command-line flags, видимых в process list и shell history.
+
+### JSON-контракт
+
+Для автоматизации используйте глобальный `--output json`. Успешная команда печатает в `stdout` один JSON-документ:
 
 ```json
 {
@@ -157,7 +258,7 @@ docker compose -f docker-compose.yml up -d
 }
 ```
 
-При ошибке `stdout` остаётся пустым, процесс возвращает ненулевой exit code, а `stderr` содержит один документ:
+При ошибке `stdout` остаётся пустым, exit code ненулевой, а `stderr` содержит один JSON-документ:
 
 ```json
 {
@@ -172,252 +273,53 @@ docker compose -f docker-compose.yml up -d
 }
 ```
 
-`status`, `field` и `request_id` присутствуют только когда их вернул API. Password, token, URL credentials и
-произвольное тело HTTP-ошибки не выводятся; error message очищается и ограничивается по длине. Progress, prompts и
-диагностика направляются в `stderr`, поэтому JSON в `stdout` можно безопасно передавать в `jq`.
+Password, token, URL credentials и произвольное HTTP error body не выводятся. Progress, prompts и диагностика идут в
+`stderr`, поэтому успешный JSON в `stdout` можно передавать в `jq`.
 
-### Адрес сервера и TLS
+### TLS, authentication и shutdown token
 
-`--server` и сохраненные contexts принимают только `http://` или `https://` URL с host. Путь reverse proxy
-сохраняется: для `--server https://home.example/torrserver` API-команды обращаются к
-`https://home.example/torrserver/...`. CLI не следует HTTP redirects автоматически: указывайте конечный URL сервера,
-чтобы credentials и request body не были перенаправлены на неожиданный адрес. `--insecure` отключает проверку TLS
-certificate только по явному запросу и предназначен для контролируемых self-signed окружений.
+`--server` и contexts принимают абсолютные `http://` или `https://` URL. Reverse-proxy path сохраняется, redirects не
+проходятся автоматически. `--insecure` отключает проверку TLS certificate и допустим только для контролируемой сети с
+self-signed certificate.
 
-CLI contract suite запускается отдельно командой `make test-cli` и входит в обычный `make test` и CI. Baseline на
-2026-07-15: `64.9%` statements для CLI-пакета (теперь `server/internal/cliapp`); это индикатор регрессии покрытия, а не самостоятельная метрика
-качества. Gate проверяет routing, contexts, uploads, URL selection, settings, auth, shutdown, cancellation, bounded
-HTTP responses и machine-readable errors под race detector.
+Для HTTP Basic Auth включите `server.http_auth: true` в YAML или запустите daemon с `--httpauth`, затем создайте
+пользователя через `torrctl auth add admin`. Если указан `--user`, но password отсутствует, интерактивный `torrctl`
+безопасно запросит его. Для automation используйте environment:
 
-### Основные команды:
-
-**Торренты:**
-```bash
-# Список торрентов (обратите внимание на колонку # — это индекс торрента)
-./torrserver torrents list
-
-# Добавить magnet-ссылку и сохранить торрент в базе
-./torrserver torrents add "magnet:?xt=urn:btih:..." --title "Movie" --save
-
-# Загрузить локальный .torrent-файл на сервер и сохранить его в базе
-./torrserver torrents add ./movie.torrent --save
-
-# Явная форма того же file upload
-./torrserver torrents add --file ./movie.torrent --save
-
-# Получить детали торрента (по индексу из списка, названию или хэшу)
-./torrserver torrents get 1
-./torrserver torrents get "Beef"
-./torrserver torrents get ef9c7cd53234...
-
-# Удалить торрент
-./torrserver torrents rem 1
-./torrserver torrents rem "Beef"
-
-# Выгрузить из памяти (без удаления из БД)
-./torrserver torrents drop "Beef"
-
-# Удалить все торренты
-./torrserver torrents wipe
-```
-
-**Стриминг (ссылки):**
-```bash
-# 1. Посмотрите список торрентов, чтобы узнать индекс
-./torrserver torrents list
-# Вывод:
-# #  HASH          STATE  PEERS  DOWN  UP  TITLE
-# 1  ef9c7cd5...   ...    ...    ...   ... Грызня (Beef) Сезон 1
-
-# 2. Получите ссылку на стрим (используя индекс, имя или хэш торрента)
-# Пример с индексом (цифра 1 из колонки # выше)
-./torrserver url 1
-# Вывод: http://127.0.0.1:8090/streams/play?link=ef9c7cd5...&index=1
-
-# Пример с названием
-./torrserver url "Beef"
-
-# 3. Выбор конкретного файла внутри торрента
-
-# Показать список файлов в торренте #1
-./torrserver url 1 --list
-# Вывод:
-# ID  SIZE   NAME
-# 1   2.3GB  Грызня - Beef S01 E01 ...
-# 2   2.0GB  Грызня - Beef S01 E02 ...
-
-# Получить ссылку на файл по ID (цифра из колонки ID в списке файлов)
-./torrserver url 1 --file 3
-
-# Получить ссылку на файл по части названия (удобно для выбора серии)
-./torrserver url 1 --file "E05"
-./torrserver url "Beef" --file "S01 E10"
-
-# 4. Открыть в плеере
-mpv "$(./torrserver url 1)"
-vlc "$(./torrserver url "Beef")"
-```
-
-Команда `url` ограниченно ждёт, пока torrent engine получит metadata и список файлов. Если у раздачи нет доступных
-пиров, команда завершится по `--timeout` с понятной ошибкой; увеличьте ожидание, например:
-
-```bash
-./torrserver --timeout 45s url 1
-```
-
-У старого сохранённого, но неактивного торрента список файлов может отсутствовать в базе. Если ID файла уже известен,
-ссылку можно получить без активации движка: `./torrserver url 1 --file 1`. Иначе повторно добавьте его hash с `--save`,
-дождитесь metadata и вызовите `url` ещё раз.
-
-**Управление пользователями:**
-```bash
-# Показать список пользователей
-./torrserver auth list
-
-# Добавить нового пользователя (запросит пароль интерактивно)
-./torrserver auth add admin
-
-# Добавить пользователя с указанием пароля (для скриптов)
-./torrserver auth add admin --password MySecretPass123
-
-# Удалить пользователя
-./torrserver auth remove admin
-```
-
-**Настройки:**
-```bash
-# Показать все настройки
-./torrserver settings get
-
-# Получить конкретную настройку
-./torrserver settings get CacheSize
-
-# Изменить настройку (поддержка суффиксов MB, GB и т.д.)
-./torrserver settings set CacheSize 128MB
-./torrserver settings set ConnectionsLimit 50
-
-# Сбросить настройки
-./torrserver settings def
-```
-
-**Управление сервером:**
-```bash
-# Краткая версия локального бинарника (без подключения к серверу)
-./torrserver --version
-
-# Полная build-информация локального бинарника
-./torrserver version
-./torrserver version --output json
-
-# Статус и API version удалённого/запущенного сервера
-./torrserver status
-
-# Безопасная остановка сервера
-./torrserver shutdown
-
-# Остановка удалённого сервера (с токеном)
-./torrserver shutdown --mode public --token my_secret_token
-```
-
----
-
-## 🔒 Безопасность и авторизация
-
-### Включение защиты паролем
-
-Запустите сервер с флагом `--httpauth`:
-```bash
-./torrserver --httpauth
-```
-
-Первый пользователь создаётся через CLI:
-```bash
-./torrserver auth add admin
-# Введите пароль (будет запрошен скрытно)
-```
-
-### Авторизация при обращении к серверу
-
-CLI автоматически запросит пароль, если вы указали `--user`, но не указали `--pass`:
-```bash
-./torrserver --user admin torrents list
-# Password: <ввод скрыт>
-```
-
-**Для скриптов и CI/CD** используйте переменные окружения:
 ```bash
 export TS_USER=admin
-export TS_PASSWORD=MySecretPass123
-
-./torrserver torrents list  # Без запроса пароля
+export TS_PASSWORD='<PASSWORD>'
+./torrctl torrents list
 ```
 
-Приоритет параметров CLI: явные флаги, переменные окружения, выбранный context, затем значения по умолчанию.
-Для shutdown token используйте `TS_SHUTDOWN_TOKEN`; это безопаснее, чем передавать секрет через `--token`.
-
-> ⚠️ **Важно:** Не передавайте password или token через `--pass`/`--token` — они видны в списке процессов
-> (`ps aux`). Используйте `TS_PASSWORD` и `TS_SHUTDOWN_TOKEN`.
-
-### Shutdown Token
-
-Для защиты от случайного выключения сервера:
-```bash
-# Проверить, настроен ли token; его значение сервер никогда не возвращает
-./torrserver config shutdown-token status
-
-# Сгенерировать, сохранить на сервере и сразу поместить единственный вывод в environment
-export TS_SHUTDOWN_TOKEN="$(./torrserver config shutdown-token generate --yes)"
-
-# Остановить сервер с токеном
-./torrserver shutdown --mode public
-```
-
-Для установки заранее подготовленного значения задайте `TS_SHUTDOWN_TOKEN` и выполните
-`./torrserver config shutdown-token set --yes`. Команды `generate` и `set` заменяют действующий token, поэтому без
-`--yes` требуют интерактивного подтверждения. Новый сгенерированный token выводится только один раз; `status` и `set`
-никогда его не печатают.
-
----
-
-## 🌐 Работа с несколькими серверами (Контексты)
-
-Вы можете управлять несколькими серверами TorrServer (локальным и удаленными) с одного компьютера.
-
-### 1. Добавление сервера
-Дайте серверу имя и укажите его адрес:
-```bash
-./torrserver context add --name home --server http://192.168.1.50:8090
-```
-
-### 2. Использование
-Вы можете выполнить команду для конкретного сервера, используя флаг `--context`:
-
-**Добавить торрент на удаленный сервер:**
-```bash
-./torrserver --context home torrents add "magnet:?xt=urn:btih:..." --title "Movie" --save
-
-# Файл читается на машине с CLI и загружается на сервер из контекста home
-./torrserver --context home torrents add ./movie.torrent --save
-```
-
-**Получить ссылку на стрим с удаленного сервера:**
-```bash
-./torrserver --context home url "Movie" --file "1080p"
-```
-
-### 3. Переключение по умолчанию
-Если вы хотите, чтобы все команды выполнялись на удаленном сервере без постоянного указания флага, переключите контекст:
+Публичный shutdown требует `server.shutdown_mode: public` в daemon YAML и token не короче 16 символов:
 
 ```bash
-# Переключиться на сервер 'home'
-./torrserver context use --name home
-
-# Теперь эта команда сработает на 192.168.1.50
-./torrserver torrents list
-
-# Вернуться на локальный сервер
-./torrserver context use --name local
+export TS_SHUTDOWN_TOKEN="$(./torrctl config shutdown-token generate --yes)"
+./torrctl config shutdown-token status
+./torrctl shutdown --mode public
 ```
+
+Не передавайте password/token через `--pass` или `--token` в обычной работе: значения могут попасть в process list и
+shell history. Не публикуйте API в интернет без TLS, authentication и ограничений reverse proxy. В release config
+оставляйте `debug.enabled: false`, иначе становятся доступны чувствительные profiling endpoints.
+
+### Миграция с прежнего mixed binary
+
+В prerelease-версиях management и daemon находились в одном `torrserver`. Новый контракт явный:
+
+| Прежняя команда | Новая команда |
+|-----------------|---------------|
+| `torrserver` или `torrserver --port 8090` | `torrserver serve` или `torrserver serve --port 8090` |
+| `torrserver status` | `torrctl status` |
+| `torrserver torrents list` | `torrctl torrents list` |
+| `torrserver torrents add ...` | `torrctl torrents add ...` |
+| `torrserver url 1` | `torrctl url 1` |
+| `torrserver settings get` | `torrctl settings get` |
+| `torrserver shutdown` | `torrctl shutdown` |
+
+`torrserver` временно возвращает ограниченную подсказку для старых management-команд, но не выполняет их внутри
+daemon. Это prerelease migration aid, а не обещание бессрочной совместимости alias.
 
 ---
 
@@ -436,7 +338,7 @@ export TS_SHUTDOWN_TOKEN="$(./torrserver config shutdown-token generate --yes)"
 ## 🛠️ Сборка
 
 ```bash
-make build          # Бинарник
+make build          # torrserver и torrctl
 make test           # Тесты
 make generate-mocks # Моки через mockgen
 make swagger        # Обновить документацию API
@@ -454,23 +356,25 @@ docker build -t torrserver .  # Docker
 | Флаг | По умолчанию | Описание |
 |------|--------------|----------|
 | `--port` | `8090` | Порт API |
-| `--path` | `./` | Путь к конфигурации (`config.yml` и БД) |
-| `--torrentsdir` | `./` | Папка для торрент-файлов и кэша |
+| `--ip` | все интерфейсы | Адрес привязки HTTP server |
+| `--path` | текущая директория | Runtime data/state directory |
 | `--logpath` | `./` | Путь для логов |
 | `--httpauth` | `false` | Включить защиту паролем |
+| `--shutdownmode` | `local` | Режим shutdown: `local` или `public` |
 
-### Переменные окружения (Docker)
+Полный список daemon flags доступен через `torrserver serve --help`. Путь к YAML задаётся отдельно через
+`TS_CONFIG`; каталог torrent/disk cache задаётся полями `cache.torrents_save_path` и `disk_cache` в YAML.
 
-| Переменная | По умолчанию | Описание |
-|------------|--------------|----------|
-| `TS_PORT` | `8090` | HTTP порт |
-| `TS_DLN` | `1` | DLNA (1/0) |
-| `TS_CONF_PATH` | `/opt/ts/config` | Путь к конфигу |
-| `TS_TORR_DIR` | `/opt/ts/torrents` | Путь к торрентам |
-| `TS_CACHE_SIZE` | `67108864` | Кэш (64 MB) |
-| `TS_USER` | `` | Логин для авторизации |
-| `TS_PASSWORD` | `` | Пароль для авторизации |
-| `TS_SHUTDOWN_TOKEN` | `` | Токен для shutdown (public mode) |
+### Переменные окружения
+
+| Переменная | Владелец | Описание |
+|------------|----------|----------|
+| `TS_CONFIG` | `torrserver` | Точный путь к daemon YAML |
+| `TSCTL_CONFIG` | `torrctl` | Точный путь к client context JSON |
+| `TSCTL_CONTEXT` | `torrctl` | Context для текущего вызова |
+| `TS_USER` | `torrctl` | HTTP Basic Auth user |
+| `TS_PASSWORD` | `torrctl` | HTTP Basic Auth password |
+| `TS_SHUTDOWN_TOKEN` | daemon и client | Token для public shutdown |
 
 ### Streaming profiles
 

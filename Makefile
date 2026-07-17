@@ -59,7 +59,7 @@ build-all:
 ## swagger: Generate Swagger API documentation
 swagger:
 	@echo "Generating Swagger docs..."
-	cd server && swag init -g cmd/main.go --parseDependency
+	cd server && swag init -g cmd/torrserver/main.go --parseDependency
 	@echo "Done! Open http://localhost:8090/swagger/index.html"
 
 ## test-release: Validate the lean SemVer and release-asset helpers

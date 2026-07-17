@@ -51,13 +51,16 @@ func newSplitScenario(t *testing.T) *splitScenario {
 	cliWorkDir := filepath.Join(root, "cli-work")
 	cliHome := filepath.Join(root, "cli-home")
 	cliTmp := filepath.Join(root, "cli-tmp")
+	probeBin := filepath.Join(root, "probe-bin")
 	contextPath := filepath.Join(root, "cli-config", "contexts.json")
-	for _, path := range []string{cliWorkDir, cliHome, cliTmp} {
+	for _, path := range []string{cliWorkDir, cliHome, cliTmp, probeBin} {
 		mustMkdirAll(t, path)
 	}
+	writeFFProbeSentinel(t, probeBin)
 
 	cliEnv := withEnv(os.Environ(), map[string]string{
 		"HOME":              cliHome,
+		"PATH":              probeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
 		"TMPDIR":            cliTmp,
 		"TSCTL_CONFIG":      contextPath,
 		"TS_CONTEXT":        "",
@@ -385,6 +388,12 @@ func (scenario *splitScenario) verifySettingsAndShutdown() {
 func (scenario *splitScenario) verifyFilesystemBoundary() {
 	scenario.t.Helper()
 
+	daemonState := filepath.Join(scenario.root, "daemon-state")
+	daemonWork := filepath.Join(scenario.root, "daemon-work")
+	assertDirectoryEmpty(scenario.t, daemonWork)
+	assertRegularFile(scenario.t, filepath.Join(daemonState, "config.db"))
+	assertRegularFile(scenario.t, filepath.Join(daemonState, "settings.json"))
+
 	assertTopLevelEntries(
 		scenario.t,
 		scenario.root,
@@ -399,6 +408,7 @@ func (scenario *splitScenario) verifyFilesystemBoundary() {
 		"daemon-tmp",
 		"daemon-work",
 		"fixture.torrent",
+		"probe-bin",
 		"release-config.yml",
 		"server-command-side-effects",
 	)

@@ -157,6 +157,22 @@ func TestDedicatedCommandPackagesContainOnlyMain(t *testing.T) {
 	}
 }
 
+func TestCommandRootContainsNoMixedExecutable(t *testing.T) {
+	cmdRoot := filepath.Join(projectRoot(t), "cmd")
+	files := collectGoFiles(t, cmdRoot, func(path string) bool {
+		return productionGoFile(path) && filepath.Dir(path) == cmdRoot
+	})
+
+	if len(files) != 0 {
+		relativeFiles := make([]string, 0, len(files))
+		for _, path := range files {
+			relativeFiles = append(relativeFiles, relativePath(t, cmdRoot, path))
+		}
+
+		t.Fatalf("cmd root must not contain a mixed executable, found %v", relativeFiles)
+	}
+}
+
 func TestFindBoundaryViolationsReportsDeterministicImportChain(t *testing.T) {
 	tests := []struct {
 		name       string

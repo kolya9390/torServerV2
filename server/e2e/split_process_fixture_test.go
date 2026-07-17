@@ -57,6 +57,19 @@ type streamURLView struct {
 	FileID      int    `json:"file_id"`
 }
 
+func writeFFProbeSentinel(t *testing.T, directory string) {
+	t.Helper()
+
+	// DLNA disables probing in this scenario, but its upstream package resolves
+	// ffprobe during init. Keep the process test independent of the host image and
+	// fail loudly if the disabled probe is ever invoked.
+	contents := "#!/bin/sh\necho 'unexpected ffprobe invocation in split-process E2E' >&2\nexit 127\n"
+	path := filepath.Join(directory, "ffprobe")
+	if err := os.WriteFile(path, []byte(contents), 0o700); err != nil {
+		t.Fatalf("write ffprobe sentinel: %v", err)
+	}
+}
+
 func writeTorrentFixture(t *testing.T, path string) string {
 	t.Helper()
 
@@ -227,6 +240,19 @@ func assertDirectoryEmpty(t *testing.T, path string) {
 		}
 
 		t.Fatalf("unexpected filesystem side effects in %s: %v", path, names)
+	}
+}
+
+func assertRegularFile(t *testing.T, path string) {
+	t.Helper()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat required file %s: %v", path, err)
+	}
+
+	if !info.Mode().IsRegular() {
+		t.Fatalf("required path %s has mode %s, want regular file", path, info.Mode())
 	}
 }
 

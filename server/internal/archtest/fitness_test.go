@@ -645,28 +645,6 @@ func TestOsExitOnlyInMain(t *testing.T) {
 	}
 }
 
-func TestMainDoesNotOwnDaemonLifecycle(t *testing.T) {
-	mainPath := filepath.Join(projectRoot(t), "cmd", "main.go")
-	file := parseFile(t, mainPath)
-	for _, imp := range file.Imports {
-		pkg := importPath(t, mainPath, imp)
-		switch pkg {
-		case "server/bootstrap", "server/config", "server/internal/apiclient", "server/internal/cliapp",
-			"server/log", "server/settings", "os/signal", "syscall", "github.com/spf13/cobra":
-			t.Errorf("cmd/main.go must delegate daemon lifecycle instead of importing %q", pkg)
-		}
-	}
-
-	content, err := os.ReadFile(mainPath)
-	if err != nil {
-		t.Fatalf("read %s: %v", mainPath, err)
-	}
-
-	if strings.Contains(string(content), "IsInvocation") {
-		t.Error("cmd/main.go must not guess between daemon and CLI modes")
-	}
-}
-
 func TestTorrctlMainIsThinCompositionRoot(t *testing.T) {
 	mainPath := filepath.Join(projectRoot(t), "cmd", "torrctl", "main.go")
 	file := parseFile(t, mainPath)

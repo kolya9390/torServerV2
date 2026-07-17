@@ -24,6 +24,9 @@
 
 ### Removed
 
+- Удалён прежний mixed entry point `server/cmd/main.go`; daemon запускается только через `torrserver`, а management
+  выполняется через отдельный `torrctl`.
+
 ## [1.0.0-beta.3] - 2026-07-16
 
 ### Added

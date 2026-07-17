@@ -79,6 +79,7 @@ func (r *serverRuntime) Start() error {
 	}
 
 	r.applyConfigToArgs(args)
+	r.applyRuntimePath(args.Path)
 
 	if r.deps.setShutdown != nil {
 		r.deps.setShutdown(r.Stop)
@@ -105,6 +106,7 @@ func (r *serverRuntime) Start() error {
 	log.TLogln("Check web port", args.Port)
 
 	r.deps.updateRuntime(func(runtime *settings.RuntimeState) {
+		runtime.Path = args.Path
 		runtime.IP = args.IP
 		runtime.Port = args.Port
 		runtime.Ssl = args.Ssl
@@ -125,6 +127,12 @@ func (r *serverRuntime) Start() error {
 	}
 
 	return nil
+}
+
+func (r *serverRuntime) applyRuntimePath(path string) {
+	r.deps.updateRuntime(func(runtime *settings.RuntimeState) {
+		runtime.Path = path
+	})
 }
 
 func (r *serverRuntime) applyConfigToArgs(args *settings.ExecArgs) {

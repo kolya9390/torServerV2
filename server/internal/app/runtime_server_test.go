@@ -226,6 +226,53 @@ func TestServerRuntimeStartPropagatesInitError(t *testing.T) {
 	}
 }
 
+func TestServerRuntimeStartAppliesStoragePathBeforeSettingsInit(t *testing.T) {
+	testCases := []struct {
+		name      string
+		initial   string
+		requested string
+	}{
+		{name: "requested path", initial: "stale-state", requested: "isolated-state"},
+		{name: "current directory fallback", initial: "stale-state"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			initErr := errors.New("stop after observing storage path")
+			runtime := settings.RuntimeState{Path: testCase.initial}
+			args := &settings.ExecArgs{Path: testCase.requested}
+			observedPath := ""
+
+			deps := serverRuntimeDeps{
+				argsProvider: runtimeTestArgsProvider{args: args},
+				updateRuntime: func(update func(*settings.RuntimeState)) {
+					update(&runtime)
+				},
+				initSettings: func(readOnly, searchWA bool) error {
+					observedPath = runtime.Path
+
+					return initErr
+				},
+				setShutdown: func(func()) {},
+			}
+
+			rt := newServerRuntime(deps, nil)
+			err := rt.Start()
+			if !errors.Is(err, initErr) {
+				t.Fatalf("Start() error = %v, want %v", err, initErr)
+			}
+
+			if observedPath != testCase.requested {
+				t.Fatalf("path observed by settings init = %q, want %q", observedPath, testCase.requested)
+			}
+
+			if runtime.Path != testCase.requested {
+				t.Fatalf("runtime path after failed init = %q, want %q", runtime.Path, testCase.requested)
+			}
+		})
+	}
+}
+
 func TestServerRuntimeStartPropagatesPrepareError(t *testing.T) {
 	restoreArgs := settings.ReplaceArgsForTests(&settings.ExecArgs{})
 	t.Cleanup(restoreArgs)
@@ -248,6 +295,7 @@ func TestServerRuntimeStartPropagatesPrepareError(t *testing.T) {
 func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *testing.T) {
 	restore := settings.ReplaceSettingsForTests(&settings.BTSets{})
 	args := &settings.ExecArgs{
+		Path:     "runtime-state",
 		Port:     "18090",
 		Ssl:      true,
 		SslPort:  "18443",
@@ -297,6 +345,10 @@ func TestServerRuntimeStartAppliesRuntimeSettingsAndPropagatesWebStartError(t *t
 
 	if runtime.Port != "18090" || runtime.SslPort != "18443" || runtime.IP != "127.0.0.1" {
 		t.Fatalf("runtime settings were not applied: port=%s ssl=%s ip=%s", runtime.Port, runtime.SslPort, runtime.IP)
+	}
+
+	if runtime.Path != "runtime-state" {
+		t.Fatalf("runtime storage path = %q, want runtime-state", runtime.Path)
 	}
 
 	if !runtime.HTTPAuth {
