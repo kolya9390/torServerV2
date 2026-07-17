@@ -34,6 +34,9 @@ jobs:
         working-directory: server
         run: go test -race ./...
 
+      - name: Run split-process smoke test
+        run: make e2e
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -78,9 +81,12 @@ jobs:
       - name: Build native binary
         run: make build
 
-      - name: Upload binary
+      - name: Upload native binaries
         uses: actions/upload-artifact@v4
         with:
-          name: torrserver-linux-amd64
-          path: dist/torrserver
+          name: torrserver-torrctl-linux-amd64
+          path: |
+            dist/torrserver
+            dist/torrctl
+          if-no-files-found: error
           retention-days: 7

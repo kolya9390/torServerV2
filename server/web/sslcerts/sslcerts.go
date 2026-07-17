@@ -173,6 +173,7 @@ func VerifyCertKeyFiles(certFile, keyFile, port string) error {
 			log.TLogln("error closing tls listener:", cerr)
 		}
 	}()
+
 	log.TLogln("Certificate and key are valid.")
 
 	return nil

@@ -27,7 +27,7 @@ RUN GOOS=$TARGETOS GOARCH=$TARGETARCH CGO_ENABLED=0 \
       -X=server/version.commit=$COMMIT \
       -X=server/version.buildTime=$BUILD_TIME \
       -X=server/version.dirtyState=$DIRTY" \
-      -o /torrserver ./cmd
+      -o /torrserver ./cmd/torrserver
 
 
 ### Runtime stage
@@ -65,4 +65,4 @@ HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
 
 # Run as non-root user with tini for signal handling
 USER torrserver
-ENTRYPOINT ["/sbin/tini", "--", "/usr/bin/torrserver"]
+ENTRYPOINT ["/sbin/tini", "--", "/usr/bin/torrserver", "serve"]

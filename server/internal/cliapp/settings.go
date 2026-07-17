@@ -428,8 +428,8 @@ func formatByteSize(value int64) string {
 }
 
 func printSettingsTable(writer io.Writer, settings map[string]any) error {
-	w := tabwriter.NewWriter(writer, 2, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "KEY\tVALUE\tTYPE\tUNIT\tACCESS\tDESCRIPTION")
+	table := tabwriter.NewWriter(writer, 2, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(table, "KEY\tVALUE\tTYPE\tUNIT\tACCESS\tDESCRIPTION")
 
 	known := make(map[string]struct{}, len(knownSettingsFields))
 
@@ -443,7 +443,7 @@ func printSettingsTable(writer io.Writer, settings map[string]any) error {
 		}
 
 		_, _ = fmt.Fprintf(
-			w,
+			table,
 			"%s\t%s\t%s\t%s\t%s\t%s\n",
 			field.Key,
 			formatSettingValue(field, value),
@@ -465,8 +465,8 @@ func printSettingsTable(writer io.Writer, settings map[string]any) error {
 	sort.Strings(unknown)
 
 	for _, key := range unknown {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t?\t\tunknown\t\n", key, formatSettingValue(nil, settings[key]))
+		_, _ = fmt.Fprintf(table, "%s\t%s\t?\t\tunknown\t\n", key, formatSettingValue(nil, settings[key]))
 	}
 
-	return w.Flush()
+	return table.Flush()
 }

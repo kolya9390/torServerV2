@@ -40,24 +40,31 @@ func newRuntimeDeps(dependencies Dependencies) runtimeDeps {
 	if dependencies.Getenv == nil {
 		dependencies.Getenv = defaults.Getenv
 	}
+
 	if dependencies.ParseArgs == nil {
 		dependencies.ParseArgs = defaults.ParseArgs
 	}
+
 	if dependencies.LoadConfig == nil {
 		dependencies.LoadConfig = defaults.LoadConfig
 	}
+
 	if dependencies.SetStaticConfig == nil {
 		dependencies.SetStaticConfig = defaults.SetStaticConfig
 	}
+
 	if dependencies.NewLifecycle == nil {
 		dependencies.NewLifecycle = defaults.NewLifecycle
 	}
+
 	if dependencies.Logger == nil {
 		dependencies.Logger = defaults.Logger
 	}
+
 	if dependencies.SubscribeSignals == nil {
 		dependencies.SubscribeSignals = defaults.SubscribeSignals
 	}
+
 	if dependencies.StopTimeout <= 0 {
 		dependencies.StopTimeout = defaults.StopTimeout
 	}

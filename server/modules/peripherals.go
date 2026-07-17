@@ -36,6 +36,7 @@ func RestartDLNAWithProviders(enable bool, provider settings.SettingsProvider, a
 func StopDLNA() {
 	dlnaMu.Lock()
 	defer dlnaMu.Unlock()
+
 	safeStop("dlna", dlna.Stop)
 }
 
@@ -55,6 +56,7 @@ func StartFUSEWithProviders(provider settings.SettingsProvider, argsProvider set
 func StopFUSE() {
 	fuseMu.Lock()
 	defer fuseMu.Unlock()
+
 	safeStop("fuse", fuse.FuseCleanup)
 }
 

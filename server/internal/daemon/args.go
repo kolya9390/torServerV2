@@ -68,7 +68,7 @@ func (err *invalidArgumentsError) Error() string {
 	return err.UserMessage()
 }
 
-func (err *invalidArgumentsError) UserMessage() string {
+func (*invalidArgumentsError) UserMessage() string {
 	return "torrserver: invalid daemon arguments; usage: torrserver serve [flags]; " +
 		"run `torrserver serve --help`"
 }

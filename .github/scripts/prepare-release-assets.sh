@@ -21,6 +21,11 @@ expected=(
   "torrserver-$version-darwin-amd64"
   "torrserver-$version-darwin-arm64"
   "torrserver-$version-windows-amd64.exe"
+  "torrctl-$version-linux-amd64"
+  "torrctl-$version-linux-arm64"
+  "torrctl-$version-darwin-amd64"
+  "torrctl-$version-darwin-arm64"
+  "torrctl-$version-windows-amd64.exe"
 )
 
 discovered_count="$(find "$artifacts_dir" -type f -print | wc -l | tr -d ' ')"

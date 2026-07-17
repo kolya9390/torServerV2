@@ -39,8 +39,8 @@ func contextList(cfg *contextConfig, opts globalOptions) error {
 		return writeJSONSuccess(opts.stdoutWriter(), contexts)
 	}
 
-	w := tabwriter.NewWriter(opts.stdoutWriter(), 2, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "CURRENT\tNAME\tSERVER\tUSER\tINSECURE\tTOKEN")
+	table := tabwriter.NewWriter(opts.stdoutWriter(), 2, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(table, "CURRENT\tNAME\tSERVER\tUSER\tINSECURE\tTOKEN")
 
 	for _, ctx := range contexts {
 		current := ""
@@ -54,7 +54,7 @@ func contextList(cfg *contextConfig, opts globalOptions) error {
 		}
 
 		_, _ = fmt.Fprintf(
-			w,
+			table,
 			"%s\t%s\t%s\t%s\t%v\t%s\n",
 			current,
 			ctx.Name,
@@ -65,7 +65,7 @@ func contextList(cfg *contextConfig, opts globalOptions) error {
 		)
 	}
 
-	return w.Flush()
+	return table.Flush()
 }
 
 func contextCurrent(cfg *contextConfig, opts globalOptions) error {

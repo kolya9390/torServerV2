@@ -40,7 +40,6 @@ func readSettingsPayload(fileSystem FileSystem, jsonRaw, filePath string) (map[s
 		data = []byte(jsonRaw)
 	default:
 		data, err = fileSystem.ReadFile(filePath)
-
 		if err != nil {
 			return nil, fmt.Errorf("read settings file: %w", err)
 		}
@@ -148,7 +147,6 @@ func cmdSettingsSetKeyValue(cli settingsAPI, opts globalOptions, key, value stri
 	}
 
 	parsed, err := parseSettingValue(*field, value)
-
 	if err != nil {
 		return fmt.Errorf("invalid value for %s: %w", field.Key, err)
 	}

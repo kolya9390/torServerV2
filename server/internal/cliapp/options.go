@@ -11,7 +11,7 @@ import (
 type globalOptions struct {
 	Server           string
 	User             string
-	Pass             string
+	Pass             string //nolint:gosec // Runtime-only Basic Auth input; never serialized or logged.
 	Token            string
 	Context          string
 	Timeout          time.Duration

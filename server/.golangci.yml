@@ -25,7 +25,7 @@ linters:
     - nestif
     - misspell
     - whitespace
-    - wsl
+    - wsl_v5
     - nlreturn
     - gomoddirectives
     - godox
@@ -160,6 +160,11 @@ linters:
       range-loops: true
       for-loops: true
 
+    wsl_v5:
+      allow-first-in-block: true
+      allow-whole-block: false
+      branch-max-lines: 2
+
   exclusions:
     generated: lax
     presets:
@@ -169,30 +174,11 @@ linters:
       - std-error-handling
 
     rules:
-      # Exclude CLI code from strict checks
-      - path: cmd/cli/
-        linters:
-          - funlen
-          - varnamelen
-        text: "Function.*is too long|variable name.*is too short|has too many statements"
-
       # Exclude CLI settings parser from gocognit (switch-based parser is naturally complex)
-      - path: cmd/cli/settings.go
+      - path: internal/cliapp/settings.go
         linters:
           - gocognit
         text: "cognitive complexity.*parseSettingValue"
-
-      # Exclude CLI code from gosec (client-side code, no SSRF risk)
-      - path: cmd/cli/
-        linters:
-          - gosec
-        text: "G704|G117"
-
-      # Exclude MarkFlagRequired errcheck in CLI (always safe)
-      - path: cmd/cli/
-        linters:
-          - errcheck
-        text: "MarkFlagRequired|GetString"
 
       # Exclude test files from style linters
       - path: _test.go
@@ -292,16 +278,15 @@ linters:
         text: "Function 'stream' has too many statements"
         path: web/api/stream.go
 
-      # Exclude wsl for test files
+      # Exclude whitespace grouping checks for test files.
       - path: _test.go
         linters:
-          - wsl
-        text: "only one cuddle assignment"
+          - wsl_v5
 
       # Exclude wsl for shutdown_control.go
       - path: web/api/shutdown_control.go
         linters:
-          - wsl
+          - wsl_v5
         text: "only one cuddle assignment"
 
       # Exclude godot for shutdown_control.go
@@ -313,14 +298,14 @@ linters:
       # Exclude wsl for runtime_server.go
       - path: internal/app/runtime_server.go
         linters:
-          - wsl
+          - wsl_v5
         text: "if statements should only be cuddled"
 
       # Exclude gosec for test files
       - path: _test.go
         linters:
           - gosec
-        text: "G306|G304|G302|G703|G704|G702|G701"
+        text: "G101|G306|G304|G302|G703|G704|G702|G701"
 
       # Exclude gosec SSRF false positives
       - linters:

@@ -59,6 +59,7 @@ func (client *Client) Version(ctx context.Context) (Version, error) {
 // Readiness returns server component readiness.
 func (client *Client) Readiness(ctx context.Context) (Readiness, error) {
 	var response Readiness
+
 	err := client.doJSON(ctx, http.MethodGet, "/readyz", nil, &response, nil)
 
 	return response, err
@@ -67,6 +68,7 @@ func (client *Client) Readiness(ctx context.Context) (Readiness, error) {
 // ListTorrents returns all server torrent statuses.
 func (client *Client) ListTorrents(ctx context.Context) ([]Torrent, error) {
 	var response []Torrent
+
 	err := client.doJSON(
 		ctx,
 		http.MethodPost,
@@ -82,6 +84,7 @@ func (client *Client) ListTorrents(ctx context.Context) ([]Torrent, error) {
 // GetTorrent returns one torrent status by canonical hash.
 func (client *Client) GetTorrent(ctx context.Context, hash string) (Torrent, error) {
 	var response Torrent
+
 	err := client.doJSON(
 		ctx,
 		http.MethodPost,
@@ -97,6 +100,7 @@ func (client *Client) GetTorrent(ctx context.Context, hash string) (Torrent, err
 // AddTorrent adds a magnet, hash, or link to the server.
 func (client *Client) AddTorrent(ctx context.Context, input AddTorrentRequest) (Torrent, error) {
 	var response Torrent
+
 	err := client.doJSON(ctx, http.MethodPost, torrentsPath, torrentRequest{
 		Action:   "add",
 		Link:     input.Link,
@@ -123,6 +127,7 @@ func (client *Client) UploadTorrent(ctx context.Context, input UploadTorrentRequ
 	}
 
 	var response Torrent
+
 	err := client.doMultipartFile(ctx, torrentUploadPath, input.FilePath, fields, &response)
 
 	return response, err
@@ -164,6 +169,7 @@ func (client *Client) torrentHashAction(ctx context.Context, action, hash string
 // GetSettings returns the current dynamic server settings document.
 func (client *Client) GetSettings(ctx context.Context) (Settings, error) {
 	var response Settings
+
 	err := client.doJSON(
 		ctx,
 		http.MethodPost,
@@ -203,6 +209,7 @@ func (client *Client) ResetSettings(ctx context.Context) error {
 // ListUsers returns usernames and creation timestamps without password data.
 func (client *Client) ListUsers(ctx context.Context) (Users, error) {
 	var response Users
+
 	err := client.doJSON(ctx, http.MethodGet, authUsersPath, nil, &response, nil)
 
 	return response, err
@@ -235,6 +242,7 @@ func (client *Client) RemoveUser(ctx context.Context, username string) error {
 // ShutdownTokenStatus reports whether a shutdown token is configured.
 func (client *Client) ShutdownTokenStatus(ctx context.Context) (ShutdownTokenStatus, error) {
 	var response ShutdownTokenStatus
+
 	err := client.doJSON(ctx, http.MethodGet, shutdownTokenPath, nil, &response, nil)
 
 	return response, err
@@ -243,6 +251,7 @@ func (client *Client) ShutdownTokenStatus(ctx context.Context) (ShutdownTokenSta
 // GenerateShutdownToken generates and stores a new shutdown token.
 func (client *Client) GenerateShutdownToken(ctx context.Context) (GeneratedShutdownToken, error) {
 	var response GeneratedShutdownToken
+
 	err := client.doJSON(ctx, http.MethodPost, shutdownTokenGenerateURL, nil, &response, nil)
 
 	return response, err

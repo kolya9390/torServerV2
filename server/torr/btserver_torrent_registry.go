@@ -100,6 +100,7 @@ func (r *btTorrentRegistry) Snapshot() []*Torrent {
 	for _, torr := range r.items {
 		torrents = append(torrents, torr)
 	}
+
 	r.mu.RUnlock()
 
 	return torrents

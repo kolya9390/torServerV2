@@ -140,15 +140,18 @@ func (b *Bootstrap) stopCleanupWorker(ctx context.Context) {
 	}
 
 	done := make(chan struct{})
+
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				log.TLogln("bootstrap stop cleanup goroutine panic recovered", "panic", r)
 			}
 		}()
+
 		b.cleanupWG.Wait()
 		close(done)
 	}()
+
 	select {
 	case <-done:
 	case <-ctx.Done():

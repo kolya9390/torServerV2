@@ -177,9 +177,20 @@ func newContextCmd(opts *globalOptions) *cobra.Command {
 		Short: "Управление контекстами (несколько серверов)",
 	}
 
-	contextCmd.AddCommand(&cobra.Command{
+	contextCmd.AddCommand(newContextListCmd(opts))
+	contextCmd.AddCommand(newContextCurrentCmd(opts))
+	contextCmd.AddCommand(newContextAddCmd(opts))
+	contextCmd.AddCommand(newContextUseCmd(opts))
+	contextCmd.AddCommand(newContextRemoveCmd(opts))
+
+	return contextCmd
+}
+
+func newContextListCmd(opts *globalOptions) *cobra.Command {
+	return &cobra.Command{
 		Use:   "list",
 		Short: "Показать все контексты",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := opts.runtime.contextStore.Load()
 			if err != nil {
@@ -190,11 +201,14 @@ func newContextCmd(opts *globalOptions) *cobra.Command {
 				return contextList(cfg, resolved)
 			})
 		},
-	})
+	}
+}
 
-	contextCmd.AddCommand(&cobra.Command{
+func newContextCurrentCmd(opts *globalOptions) *cobra.Command {
+	return &cobra.Command{
 		Use:   "current",
 		Short: "Показать текущий контекст",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := opts.runtime.contextStore.Load()
 			if err != nil {
@@ -205,8 +219,10 @@ func newContextCmd(opts *globalOptions) *cobra.Command {
 				return contextCurrent(cfg, resolved)
 			})
 		},
-	})
+	}
+}
 
+func newContextAddCmd(opts *globalOptions) *cobra.Command {
 	var (
 		addName     string
 		addServer   string
@@ -219,6 +235,10 @@ func newContextCmd(opts *globalOptions) *cobra.Command {
 	addCmd := &cobra.Command{
 		Use:   "add",
 		Short: "Добавить/обновить контекст",
+		Args: requireContextFlags(
+			requiredContextFlag{name: "name", value: &addName},
+			requiredContextFlag{name: "server", value: &addServer},
+		),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := opts.runtime.contextStore.Load()
 			if err != nil {
@@ -242,15 +262,17 @@ func newContextCmd(opts *globalOptions) *cobra.Command {
 	addCmd.Flags().StringVar(&addPass, "pass", "", "basic auth password")
 	addCmd.Flags().StringVar(&addToken, "token", "", "shutdown token")
 	addCmd.Flags().BoolVar(&addInsecure, "insecure", false, "skip TLS verification")
-	_ = addCmd.MarkFlagRequired("name")
-	_ = addCmd.MarkFlagRequired("server")
-	contextCmd.AddCommand(addCmd)
 
+	return addCmd
+}
+
+func newContextUseCmd(opts *globalOptions) *cobra.Command {
 	var useName string
 
 	useCmd := &cobra.Command{
 		Use:   "use",
 		Short: "Сделать контекст текущим",
+		Args:  requireContextFlags(requiredContextFlag{name: "name", value: &useName}),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := opts.runtime.contextStore.Load()
 			if err != nil {
@@ -263,14 +285,17 @@ func newContextCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	useCmd.Flags().StringVar(&useName, "name", "", "context name")
-	_ = useCmd.MarkFlagRequired("name")
-	contextCmd.AddCommand(useCmd)
 
+	return useCmd
+}
+
+func newContextRemoveCmd(opts *globalOptions) *cobra.Command {
 	var removeName string
 
 	removeCmd := &cobra.Command{
 		Use:   "remove",
 		Short: "Удалить контекст",
+		Args:  requireContextFlags(requiredContextFlag{name: "name", value: &removeName}),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := opts.runtime.contextStore.Load()
 			if err != nil {
@@ -283,10 +308,29 @@ func newContextCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	removeCmd.Flags().StringVar(&removeName, "name", "", "context name")
-	_ = removeCmd.MarkFlagRequired("name")
-	contextCmd.AddCommand(removeCmd)
 
-	return contextCmd
+	return removeCmd
+}
+
+type requiredContextFlag struct {
+	name  string
+	value *string
+}
+
+func requireContextFlags(flags ...requiredContextFlag) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := cobra.NoArgs(cmd, args); err != nil {
+			return err
+		}
+
+		for _, flag := range flags {
+			if flag.value == nil || strings.TrimSpace(*flag.value) == "" {
+				return fmt.Errorf("required flag --%s is not set", flag.name)
+			}
+		}
+
+		return nil
+	}
 }
 
 func newStatusCmd(opts *globalOptions) *cobra.Command {
@@ -307,16 +351,30 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 		Short: "Операции с торрентами",
 	}
 
-	torrentsCmd.AddCommand(&cobra.Command{
+	torrentsCmd.AddCommand(newTorrentsListCmd(opts))
+	torrentsCmd.AddCommand(newTorrentsGetCmd(opts))
+	torrentsCmd.AddCommand(newTorrentsAddCmd(opts))
+	torrentsCmd.AddCommand(newTorrentsRemoveCmd(opts))
+	torrentsCmd.AddCommand(newTorrentsDropCmd(opts))
+	torrentsCmd.AddCommand(newTorrentsWipeCmd(opts))
+
+	return torrentsCmd
+}
+
+func newTorrentsListCmd(opts *globalOptions) *cobra.Command {
+	return &cobra.Command{
 		Use:   "list",
 		Short: "Список торрентов (с индексом для поиска)",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
 				return cmdTorrentsList(cli, resolved)
 			})
 		},
-	})
+	}
+}
 
+func newTorrentsGetCmd(opts *globalOptions) *cobra.Command {
 	var getHash string
 
 	getCmd := &cobra.Command{
@@ -343,8 +401,11 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	getCmd.Flags().StringVar(&getHash, "hash", "", "torrent hash, name, or index (compatibility flag)")
-	torrentsCmd.AddCommand(getCmd)
 
+	return getCmd
+}
+
+func newTorrentsAddCmd(opts *globalOptions) *cobra.Command {
 	var (
 		addLink     string
 		addFile     string
@@ -396,8 +457,11 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 	addCmd.Flags().StringVar(&addCategory, "category", "", "category")
 	addCmd.Flags().StringVar(&addData, "data", "", "custom data")
 	addCmd.Flags().BoolVar(&addSave, "save", false, "save torrent to db")
-	torrentsCmd.AddCommand(addCmd)
 
+	return addCmd
+}
+
+func newTorrentsRemoveCmd(opts *globalOptions) *cobra.Command {
 	var removeHash string
 
 	remCmd := &cobra.Command{
@@ -419,8 +483,11 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	remCmd.Flags().StringVar(&removeHash, "hash", "", "torrent hash, name, or index (compatibility flag)")
-	torrentsCmd.AddCommand(remCmd)
 
+	return remCmd
+}
+
+func newTorrentsDropCmd(opts *globalOptions) *cobra.Command {
 	var dropHash string
 
 	dropCmd := &cobra.Command{
@@ -441,8 +508,11 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	dropCmd.Flags().StringVar(&dropHash, "hash", "", "torrent hash, name, or index (compatibility flag)")
-	torrentsCmd.AddCommand(dropCmd)
 
+	return dropCmd
+}
+
+func newTorrentsWipeCmd(opts *globalOptions) *cobra.Command {
 	var wipeYes bool
 
 	wipeCmd := &cobra.Command{
@@ -459,9 +529,8 @@ func newTorrentsCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	wipeCmd.Flags().BoolVar(&wipeYes, "yes", false, "confirm deletion without an interactive prompt")
-	torrentsCmd.AddCommand(wipeCmd)
 
-	return torrentsCmd
+	return wipeCmd
 }
 
 func validateTorrentIdentifierArgs(cmd *cobra.Command, args []string) error {
@@ -496,7 +565,15 @@ func newSettingsCmd(opts *globalOptions) *cobra.Command {
 		Short: "Операции с настройками",
 	}
 
-	settingsCmd.AddCommand(&cobra.Command{
+	settingsCmd.AddCommand(newSettingsGetCmd(opts))
+	settingsCmd.AddCommand(newSettingsSetCmd(opts))
+	settingsCmd.AddCommand(newSettingsDefaultsCmd(opts))
+
+	return settingsCmd
+}
+
+func newSettingsGetCmd(opts *globalOptions) *cobra.Command {
+	return &cobra.Command{
 		Use:   "get [KEY]",
 		Short: "Получить настройки (все или конкретный ключ)",
 		Long: `Получить настройки сервера.
@@ -518,8 +595,10 @@ func newSettingsCmd(opts *globalOptions) *cobra.Command {
 				return cmdSettingsGet(cli, resolved, key)
 			})
 		},
-	})
+	}
+}
 
+func newSettingsSetCmd(opts *globalOptions) *cobra.Command {
 	setCmd := &cobra.Command{
 		Use:   "set KEY VALUE",
 		Short: "Обновить настройку (KEY VALUE или --json/--file)",
@@ -540,9 +619,11 @@ EnableDebug и остальные debug-параметры задаются че
 		Args: validateSettingsSetArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWithClient(cmd, opts, func(cli *apiClient, resolved globalOptions) error {
-				// If --json or --file flags are used, fall back to JSON-based update
-				jsonRaw, _ := cmd.Flags().GetString("json")
-				filePath, _ := cmd.Flags().GetString("file")
+				jsonRaw, filePath, err := settingsPayloadFlags(cmd)
+				if err != nil {
+					return err
+				}
+
 				if jsonRaw != "" || filePath != "" {
 					sets, err := readSettingsPayload(opts.runtime.fileSystem, jsonRaw, filePath)
 					if err != nil {
@@ -563,7 +644,6 @@ EnableDebug и остальные debug-параметры задаются че
 					)
 				}
 
-				// New behavior: KEY VALUE positional arguments
 				if len(args) < 2 {
 					return errors.New("settings set requires KEY and VALUE (e.g., CacheSize 128MB)")
 				}
@@ -578,8 +658,11 @@ EnableDebug и остальные debug-параметры задаются че
 	setCmd.Flags().String("json", "", "raw JSON object with BTSets fields")
 	setCmd.Flags().String("file", "", "path to JSON file with BTSets fields")
 	setCmd.MarkFlagsMutuallyExclusive("json", "file")
-	settingsCmd.AddCommand(setCmd)
 
+	return setCmd
+}
+
+func newSettingsDefaultsCmd(opts *globalOptions) *cobra.Command {
 	var defaultsYes bool
 
 	defaultsCmd := &cobra.Command{
@@ -596,20 +679,35 @@ EnableDebug и остальные debug-параметры задаются че
 		},
 	}
 	defaultsCmd.Flags().BoolVar(&defaultsYes, "yes", false, "confirm reset without an interactive prompt")
-	settingsCmd.AddCommand(defaultsCmd)
 
-	return settingsCmd
+	return defaultsCmd
 }
 
 func validateSettingsSetArgs(cmd *cobra.Command, args []string) error {
-	jsonRaw, _ := cmd.Flags().GetString("json")
-	filePath, _ := cmd.Flags().GetString("file")
+	jsonRaw, filePath, err := settingsPayloadFlags(cmd)
+	if err != nil {
+		return err
+	}
 
 	if strings.TrimSpace(jsonRaw) != "" || strings.TrimSpace(filePath) != "" {
 		return cobra.MaximumNArgs(0)(cmd, args)
 	}
 
 	return cobra.MinimumNArgs(1)(cmd, args)
+}
+
+func settingsPayloadFlags(cmd *cobra.Command) (string, string, error) {
+	jsonRaw, err := cmd.Flags().GetString("json")
+	if err != nil {
+		return "", "", fmt.Errorf("read --json: %w", err)
+	}
+
+	filePath, err := cmd.Flags().GetString("file")
+	if err != nil {
+		return "", "", fmt.Errorf("read --file: %w", err)
+	}
+
+	return jsonRaw, filePath, nil
 }
 
 func newShutdownCmd(opts *globalOptions) *cobra.Command {
@@ -776,6 +874,7 @@ func runWithOutput(cmd *cobra.Command, opts *globalOptions, fn func(globalOption
 	resolved.stdout = cmd.OutOrStdout()
 	resolved.stderr = cmd.ErrOrStderr()
 	resolved.stdin = cmd.InOrStdin()
+
 	resolved.ctx = cmd.Context()
 	if resolved.runtime == nil {
 		resolved.runtime = newRuntimeDeps(DefaultDependencies())

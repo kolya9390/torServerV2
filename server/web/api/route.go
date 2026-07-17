@@ -27,6 +27,7 @@ func SetupRouteWithServices(
 	if err != nil {
 		return fmt.Errorf("api services are not configured: %w", err)
 	}
+
 	if strings.TrimSpace(applicationVersion) == "" {
 		return errors.New("api application version is not configured")
 	}

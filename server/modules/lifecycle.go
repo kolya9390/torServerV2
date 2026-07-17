@@ -74,5 +74,6 @@ func safeStop(name string, stop func()) {
 			log.TLogln("module stop panic recovered", name, r)
 		}
 	}()
+
 	stop()
 }

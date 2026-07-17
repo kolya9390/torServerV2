@@ -30,7 +30,7 @@ const (
 type Options struct {
 	BaseURL  string
 	User     string
-	Password string
+	Password string //nolint:gosec // Explicit Basic Auth input; Options is never serialized or logged.
 	Timeout  time.Duration
 	Insecure bool
 }
@@ -186,7 +186,9 @@ func (client *Client) doJSON(
 		}
 	}
 
-	response, err := client.http.Do(request)
+	// The operator-supplied base URL is constrained to HTTP(S), stripped of credentials,
+	// and redirects are rejected by New before a request reaches this boundary.
+	response, err := client.http.Do(request) //nolint:gosec // G704: validated remote-management endpoint.
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
@@ -237,7 +239,8 @@ func (client *Client) doMultipartFile(
 	request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
 	request.Header.Set("Accept", "application/json")
 
-	response, err := client.http.Do(request)
+	// The request URL is built from the same validated base URL used by doJSON.
+	response, err := client.http.Do(request) //nolint:gosec // G704: validated remote-management endpoint.
 	if err != nil {
 		requestErr := fmt.Errorf("request failed: %w", err)
 
@@ -308,6 +311,7 @@ func writeMultipartContent(file *os.File, fileName string, fields map[string]str
 	for key := range fields {
 		keys = append(keys, key)
 	}
+
 	sort.Strings(keys)
 
 	for _, key := range keys {

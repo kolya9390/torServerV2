@@ -57,6 +57,7 @@ func confirmDestructiveAction(ctx context.Context, request confirmationRequest) 
 
 func confirmCommand(cmd *cobra.Command, opts *globalOptions, action string, yes bool) error {
 	input := cmd.InOrStdin()
+
 	interactive := readerIsTerminal(input)
 	if opts != nil && opts.runtime != nil {
 		interactive = opts.runtime.isTerminal(input)

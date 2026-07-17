@@ -39,6 +39,7 @@ func (a *App) Start(ctx context.Context) error {
 	if a == nil || a.runtime == nil {
 		return errors.New("app runtime is not configured")
 	}
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -68,14 +69,18 @@ func (a *App) Stop(ctx context.Context) error {
 	}
 
 	done := make(chan error, 1)
+
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				log.TLogln("app runtime stop goroutine panic recovered", "panic", r)
+
 				done <- fmt.Errorf("runtime stop panic: %v", r)
 			}
 		}()
+
 		a.runtime.Stop()
+
 		done <- nil
 	}()
 

@@ -30,8 +30,8 @@ func Start() error {
 func StartWithProviders(provider settings.SettingsProvider, argsProvider settings.ArgsProvider) error {
 	logger := log.Default.WithNames("dlna")
 	runtimeCtx := newDLNARuntimeContext(provider, argsProvider)
-	conn, err := openDLNAHTTPListener(logger, runtimeCtx)
 
+	conn, err := openDLNAHTTPListener(logger, runtimeCtx)
 	if err != nil {
 		return err
 	}

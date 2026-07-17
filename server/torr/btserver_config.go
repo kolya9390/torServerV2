@@ -321,6 +321,7 @@ func getPublicIP4() net.IP {
 		if i.Flags&net.FlagUp == net.FlagUp {
 			for _, addr := range addrs {
 				var ip net.IP
+
 				switch v := addr.(type) {
 				case *net.IPNet:
 					ip = v.IP
@@ -356,6 +357,7 @@ func getPublicIP6() net.IP {
 		if i.Flags&net.FlagUp == net.FlagUp {
 			for _, addr := range addrs {
 				var ip net.IP
+
 				switch v := addr.(type) {
 				case *net.IPNet:
 					ip = v.IP

@@ -359,6 +359,7 @@ func GetLocalIps() []string {
 		if i.Flags&net.FlagUp == net.FlagUp {
 			for _, addr := range addrs {
 				var ip net.IP
+
 				switch v := addr.(type) {
 				case *net.IPNet:
 					ip = v.IP

@@ -12,6 +12,7 @@ version="$3"
 commit="$4"
 goos="$5"
 goarch="$6"
+go_cmd="${GO_CMD:-go}"
 
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
   echo "invalid release version: $version" >&2
@@ -46,15 +47,21 @@ if [[ "$goos" == "windows" ]]; then
   extension=".exe"
 fi
 
-asset="torrserver-$version-$goos-$goarch$extension"
 metadata="$(VERSION="v$version" COMMIT="$commit" BUILD_TIME=unknown DIRTY=clean \
   "$repo/.github/scripts/build-metadata.sh" ldflags "$repo")"
 
-(
-  cd "$repo/server"
-  VERSION="v$version" COMMIT="$commit" BUILD_TIME=unknown DIRTY=clean \
-    GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
-    go build -ldflags "-w -s $metadata" -o "$output_dir/$asset" ./cmd
-)
+for binary in torrserver torrctl; do
+  asset="$binary-$version-$goos-$goarch$extension"
+  package="./cmd/$binary"
+  rm -f "$output_dir/$asset"
 
-printf '%s\n' "$output_dir/$asset"
+  (
+    cd "$repo/server"
+    VERSION="v$version" COMMIT="$commit" BUILD_TIME=unknown DIRTY=clean \
+      GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
+      "$go_cmd" build -ldflags "-w -s $metadata" -o "$output_dir/$asset" "$package"
+  )
+
+  [[ -s "$output_dir/$asset" ]] || { echo "release build did not create $asset" >&2; exit 1; }
+  printf '%s\n' "$output_dir/$asset"
+done

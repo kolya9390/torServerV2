@@ -9,6 +9,7 @@ func (c *Cache) GetState() *state.CacheState {
 	var fill int64
 
 	c.mu.RLock()
+
 	if len(c.pieces) > 0 {
 		for _, p := range c.pieces {
 			if p.Size.Load() > 0 {
@@ -23,6 +24,7 @@ func (c *Cache) GetState() *state.CacheState {
 			}
 		}
 	}
+
 	c.mu.RUnlock()
 
 	readers := c.copyReaders()

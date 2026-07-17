@@ -37,6 +37,7 @@ func Init(logPath, webLogPath string) {
 		config.EncoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
 
 		var writers []zapcore.WriteSyncer
+
 		writers = append(writers, zapcore.AddSync(os.Stdout))
 
 		if logPath != "" {

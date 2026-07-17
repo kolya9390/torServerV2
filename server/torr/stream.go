@@ -45,6 +45,7 @@ func (t *Torrent) Stream(fileID int, req *http.Request, resp http.ResponseWriter
 	}
 
 	defer release()
+
 	markStreamActivity()
 
 	serverCfg := t.currentRuntimeState().ServerConfig()

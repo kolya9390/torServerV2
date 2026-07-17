@@ -50,6 +50,7 @@ func shutdown(c *gin.Context) {
 				log.TLogln("shutdown goroutine panic recovered", "panic", r)
 			}
 		}()
+
 		time.Sleep(time.Second)
 
 		if RequestShutdown() {

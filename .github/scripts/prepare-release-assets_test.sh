@@ -13,6 +13,11 @@ names=(
   "torrserver-$version-darwin-amd64"
   "torrserver-$version-darwin-arm64"
   "torrserver-$version-windows-amd64.exe"
+  "torrctl-$version-linux-amd64"
+  "torrctl-$version-linux-arm64"
+  "torrctl-$version-darwin-amd64"
+  "torrctl-$version-darwin-arm64"
+  "torrctl-$version-windows-amd64.exe"
 )
 
 create_matrix() {
@@ -36,7 +41,7 @@ done
 
 manifest="$release/torrserver-$version-SHA256SUMS"
 [[ -f "$manifest" ]]
-[[ "$(wc -l < "$manifest" | tr -d ' ')" == "5" ]]
+[[ "$(wc -l < "$manifest" | tr -d ' ')" == "10" ]]
 
 missing="$tmp/missing"
 create_matrix "$missing"

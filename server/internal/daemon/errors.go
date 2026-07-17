@@ -76,7 +76,10 @@ func (err *RuntimePanicError) Unwrap() error {
 		return nil
 	}
 
-	cause, _ := err.Value.(error)
+	cause, ok := err.Value.(error)
+	if !ok {
+		return nil
+	}
 
 	return cause
 }

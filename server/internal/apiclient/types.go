@@ -135,12 +135,20 @@ func (settings *Settings) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (settings Settings) MarshalJSON() ([]byte, error) {
+func (settings *Settings) MarshalJSON() ([]byte, error) {
+	if settings == nil {
+		return []byte("null"), nil
+	}
+
 	return json.Marshal(settings.values)
 }
 
 // Values returns an independent copy of the decoded settings document.
-func (settings Settings) Values() map[string]any {
+func (settings *Settings) Values() map[string]any {
+	if settings == nil {
+		return nil
+	}
+
 	values := make(map[string]any, len(settings.values))
 	for key, value := range settings.values {
 		values[key] = cloneJSONValue(value)

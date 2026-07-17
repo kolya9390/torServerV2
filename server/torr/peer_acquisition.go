@@ -337,6 +337,7 @@ func waitForDHTPeerBoostAnnounces(announces []dhtPeerBoostAnnounce) {
 		case <-announce.done:
 		case <-timer.C:
 		}
+
 		timer.Stop()
 	}
 }

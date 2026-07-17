@@ -314,6 +314,7 @@ func (s *Server) startHTTPSServer(route *gin.Engine, ips []string) error {
 				s.waitChan <- fmt.Errorf("panic in https server loop: %v", rec)
 			}
 		}()
+
 		log.TLogln("Start https server at", httpsAddr)
 
 		tlsCfg := s.currentSettings().TLSConfig()
@@ -324,6 +325,7 @@ func (s *Server) startHTTPSServer(route *gin.Engine, ips []string) error {
 
 			return
 		}
+
 		s.waitChan <- nil
 	}()
 
@@ -350,6 +352,7 @@ func (s *Server) startHTTPServer(route *gin.Engine) {
 				s.waitChan <- fmt.Errorf("panic in http server loop: %v", rec)
 			}
 		}()
+
 		log.TLogln("Start http server at", httpAddr)
 
 		err := httpSrv.ListenAndServe()
@@ -358,6 +361,7 @@ func (s *Server) startHTTPServer(route *gin.Engine) {
 
 			return
 		}
+
 		s.waitChan <- nil
 	}()
 }

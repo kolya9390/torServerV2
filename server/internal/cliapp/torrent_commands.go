@@ -159,7 +159,6 @@ func cmdTorrentsGet(cli torrentReadAPI, opts globalOptions, identifier string) e
 	}
 
 	resolvedHash, err := resolveTorrentID(opts.commandContext(), cli, opts.Timeout, identifier)
-
 	if err != nil {
 		return err
 	}
@@ -392,7 +391,6 @@ func cmdTorrentsHashAction(cli torrentMutationAPI, opts globalOptions, action, i
 	}
 
 	resolvedHash, err := resolveTorrentID(opts.commandContext(), cli, opts.Timeout, identifier)
-
 	if err != nil {
 		return err
 	}
@@ -404,6 +402,7 @@ func cmdTorrentsHashAction(cli torrentMutationAPI, opts globalOptions, action, i
 	defer cancel()
 
 	var actionErr error
+
 	switch action {
 	case "rem":
 		actionErr = cli.RemoveTorrent(ctx, resolvedHash)
@@ -412,6 +411,7 @@ func cmdTorrentsHashAction(cli torrentMutationAPI, opts globalOptions, action, i
 	default:
 		return fmt.Errorf("unsupported torrent action %q", action)
 	}
+
 	if actionErr != nil {
 		return actionErr
 	}

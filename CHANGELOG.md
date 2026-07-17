@@ -10,7 +10,11 @@
 
 ### Added
 
+- Release artifacts теперь включают отдельные `torrserver` и `torrctl` для всех поддерживаемых платформ.
+
 ### Changed
+
+- CI и tag release требуют успешный split-process smoke test; Docker image запускает только `torrserver serve`.
 
 ### Fixed
 

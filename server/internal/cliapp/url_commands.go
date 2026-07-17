@@ -99,7 +99,6 @@ func cmdURLWithFlags(cli torrentReadAPI, opts globalOptions, identifier string, 
 
 	// Resolve torrent identifier to a hash
 	hash, err := resolveTorrentID(opts.commandContext(), cli, opts.Timeout, identifier)
-
 	if err != nil {
 		return err
 	}
@@ -166,7 +165,6 @@ func cmdURLWithFlags(cli torrentReadAPI, opts globalOptions, identifier string, 
 
 	// Select file to stream using helper
 	selectedFile, err := selectFileFromTorrent(files, fileQuery)
-
 	if err != nil {
 		return err
 	}
@@ -248,7 +246,6 @@ func torrentFilesFromStatus(files []torrentFileInfo, data string) ([]torrentFile
 
 func buildStreamURL(base, hash string, fileID int) string {
 	u, err := url.Parse(base)
-
 	if err != nil {
 		u = &url.URL{Scheme: "http", Host: hash, Path: "/"}
 	}

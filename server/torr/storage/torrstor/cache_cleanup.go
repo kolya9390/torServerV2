@@ -203,6 +203,7 @@ func (c *Cache) queueCleanPieces() {
 
 	go func() {
 		defer c.cleanup.queued.Store(false)
+
 		c.CleanPieces()
 	}()
 }

@@ -95,6 +95,7 @@ func Run(invocation Invocation, dependencies Dependencies) int {
 
 func newRuntimeDeps(dependencies Dependencies) *runtimeDeps {
 	defaults := DefaultDependencies()
+
 	programName := normalizeProgramName(dependencies.ProgramName)
 	if programName == "" {
 		programName = defaults.ProgramName

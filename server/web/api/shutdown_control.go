@@ -113,6 +113,7 @@ func normalizeShutdownMode(mode string) shutdownMode {
 
 func authorizeLocalShutdown(c *gin.Context) error {
 	ip := strings.TrimSpace(c.ClientIP())
+
 	parsed := net.ParseIP(ip)
 	if parsed == nil || !parsed.IsLoopback() {
 		return newForbiddenError("shutdown in local mode is allowed only from localhost")

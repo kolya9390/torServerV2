@@ -70,11 +70,13 @@ func (v *DBReadCache) Get(xPath, name string) []byte {
 	cacheKey := v.makeDataCacheKey(xPath, name)
 
 	v.dataCacheMutex.RLock()
+
 	if data, ok := v.dataCache[cacheKey]; ok {
 		defer v.dataCacheMutex.RUnlock()
 
 		return cloneBytes(data)
 	}
+
 	v.dataCacheMutex.RUnlock()
 
 	if v.db == nil {
@@ -138,11 +140,13 @@ func (v *DBReadCache) List(xPath string) []string {
 	}
 
 	v.listCacheMutex.RLock()
+
 	if names, ok := v.listCache[xPath]; ok {
 		defer v.listCacheMutex.RUnlock()
 
 		return cloneStrings(names)
 	}
+
 	v.listCacheMutex.RUnlock()
 
 	if v.db == nil {

@@ -228,6 +228,7 @@ func (c *Cache) queuePriorityUpdate() {
 
 	go func() {
 		defer c.priorities.updateQueued.Store(false)
+
 		c.UpdatePriorities()
 	}()
 }

@@ -32,7 +32,7 @@ type contextConfig struct {
 type contextEntry struct {
 	Server   string `json:"server"`
 	User     string `json:"user,omitempty"`
-	Pass     string `json:"pass,omitempty"`
+	Pass     string `json:"pass,omitempty"` //nolint:gosec // Intentional credential persisted in a mode-0600 context file.
 	Token    string `json:"token,omitempty"`
 	Insecure bool   `json:"insecure,omitempty"`
 }

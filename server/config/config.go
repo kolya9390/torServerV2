@@ -476,6 +476,7 @@ func applySSLSettings(c *Config, sets *settings.BTSets) {
 
 func parsePort(s string) (int, error) {
 	var port int
+
 	_, err := fmt.Sscanf(s, "%d", &port)
 
 	return port, err

@@ -136,11 +136,11 @@ func searchOne(host, key, query string) []*TorrentDetails {
 
 	err := cb.Execute(func() error {
 		var err error
+
 		results, err = doSearchOne(host, key, query)
 
 		return err
 	})
-
 	if err != nil {
 		if strings.Contains(err.Error(), "circuit_open") {
 			log.Warn("torznab_search_skipped", "reason", "circuit_open", "host", host)

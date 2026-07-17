@@ -79,6 +79,7 @@ type runtimeDeps struct {
 func Run(invocation Invocation, dependencies Dependencies) Result {
 	deps := newRuntimeDeps(dependencies)
 	ctx := contextOrBackground(invocation.Context)
+
 	args, err := deps.parseArgs(append([]string(nil), invocation.Args...), writerOrDiscard(invocation.Stdout))
 	if errors.Is(err, errHelpRequested) || errors.Is(err, errVersionRequested) {
 		return Result{ExitCode: ExitOK}
@@ -141,6 +142,7 @@ func applyArgumentOverrides(args *settings.ExecArgs, cfg *config.Config) {
 
 func supervise(ctx context.Context, lifecycle Lifecycle, deps runtimeDeps) Result {
 	waitResult := waitForLifecycle(lifecycle)
+
 	signals, unsubscribe := deps.subscribeSignals()
 	if unsubscribe != nil {
 		defer unsubscribe()
@@ -191,6 +193,7 @@ func stopAfterRuntimeFailure(
 	waitErr error,
 ) Result {
 	stopResult := stopLifecycle(ctx, lifecycle, deps)
+
 	waitStageErr := &StageError{Stage: StageWait, Err: waitErr}
 	if stopResult.Err != nil {
 		return Result{ExitCode: ExitFailure, Err: errors.Join(waitStageErr, stopResult.Err)}

@@ -146,6 +146,7 @@ func (c btRuntimeController) setCurrentSettings(set *sets.BTSets) {
 func dropAllTorrentBT(bt *BTServer) {
 	for _, torr := range bt.ListTorrents() {
 		torr.drop()
+
 		select {
 		case <-torr.lifecycle.closed:
 		case <-time.After(5 * time.Second):

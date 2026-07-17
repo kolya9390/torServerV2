@@ -131,7 +131,6 @@ func loadAllTorrents(db *bolt.DB) []*torrentBackupDB {
 
 		return nil
 	})
-
 	if err != nil {
 		log.TLogln("MigrateTorrents: read error:", err)
 	}
