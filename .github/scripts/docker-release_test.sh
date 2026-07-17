@@ -13,6 +13,7 @@ if grep -Fq 'torrctl' "$dockerfile"; then
 fi
 
 grep -Fq 'platforms: linux/amd64,linux/arm64' "$workflow"
+grep -Fq 'uses: actions/checkout@v6' "$workflow"
 grep -Fq 'type=raw,value=latest,enable=${{ inputs.prerelease == false }}' "$workflow"
 grep -Fq 'type=semver,pattern={{major}}.{{minor}},value=${{ inputs.release_tag }},enable=${{ inputs.prerelease == false }}' "$workflow"
 

@@ -203,7 +203,6 @@ func TestTorrserverDependencyGraphExcludesManagementCLI(t *testing.T) {
 
 	command := exec.CommandContext(ctx, "go", "list", "-deps", "-f", "{{.ImportPath}}", "./cmd/torrserver")
 	command.Dir = serverRoot
-	command.Env = append(os.Environ(), "GOCACHE=/private/tmp/torserverv2-gocache")
 
 	output, err := command.Output()
 	if err != nil {
@@ -271,7 +270,7 @@ func runBinaryInDir(t *testing.T, binary, runDir string, extraEnv []string, args
 }
 
 func testEnvironment(home string) []string {
-	environment := make([]string, 0, len(os.Environ())+3)
+	environment := make([]string, 0, len(os.Environ())+2)
 	for _, entry := range os.Environ() {
 		if !strings.HasPrefix(entry, "TS_CONFIG=") && !strings.HasPrefix(entry, "HOME=") {
 			environment = append(environment, entry)
@@ -279,7 +278,6 @@ func testEnvironment(home string) []string {
 	}
 
 	return append(environment,
-		"GOCACHE=/private/tmp/torserverv2-gocache",
 		"HOME="+home,
 		"TS_CONFIG=",
 	)
@@ -297,7 +295,6 @@ func buildTestBinary(root, output, packagePath string) error {
 	}, " ")
 	command := exec.CommandContext(ctx, "go", "build", "-ldflags", ldflags, "-o", output, packagePath)
 	command.Dir = root
-	command.Env = append(os.Environ(), "GOCACHE=/private/tmp/torserverv2-gocache")
 
 	combined, err := command.CombinedOutput()
 	if err != nil {

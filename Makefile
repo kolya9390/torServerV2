@@ -70,6 +70,8 @@ test-release:
 	@./.github/scripts/build-release-binary_test.sh
 	@./.github/scripts/prepare-release-assets_test.sh
 	@./.github/scripts/verify-release-binaries_test.sh
+	@./.github/scripts/package-release-bundles_test.sh
+	@cd server && $(GOTEST) ./internal/releasebundle/...
 	@./.github/scripts/docker-release_test.sh
 	@./.github/scripts/release-workflow_test.sh
 	@./.github/scripts/extract-release-notes_test.sh

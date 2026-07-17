@@ -47,10 +47,21 @@ make build
 
 ## Проверка release artifacts
 
-Release публикует бинарники с детерминированными именами
-`torrserver-<version>-<os>-<arch>[.exe]`, один aggregate manifest
-`torrserver-<version>-SHA256SUMS`. Release не создается, если отсутствует хотя бы один Linux amd64/arm64, macOS
-amd64/arm64 или Windows amd64 artifact либо checksum verification не проходит.
+Release публикует один основной platform bundle для Linux amd64/arm64, macOS amd64/arm64 и Windows amd64:
+
+```text
+TorrServerV2-v<version>-<os>-<arch>.tar.gz  # Linux и macOS
+TorrServerV2-v<version>-windows-amd64.zip   # Windows
+```
+
+Внутри находится один предсказуемый top-level directory с `torrserver`, `torrctl` и `config.example.yml`.
+Standalone binaries `torrserver-<version>-<os>-<arch>[.exe]` и `torrctl-<version>-<os>-<arch>[.exe]` остаются
+доступны для exact-version automation. Один отсортированный aggregate manifest
+`torrserver-<version>-SHA256SUMS` покрывает все десять binaries и пять bundles.
+
+Release не создается, если отсутствует хотя бы один target/binary, archive содержит лишний, повторяющийся или
+небезопасный путь, executable mode потерян, embedded metadata бинарников различается либо checksum verification не
+проходит. launchd/systemd definitions не входят в основной bundle и публикуются отдельно только как optional assets.
 
 На Linux выбранный файл проверяется так:
 
@@ -75,6 +86,36 @@ $expected = ($line.Line -split "\s+")[0].ToLowerInvariant()
 $actual = (Get-FileHash -Algorithm SHA256 $asset).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw "SHA-256 mismatch" }
 ```
+
+### Установка Из Platform Bundle
+
+Linux/macOS не требуют installer script из сети:
+
+```bash
+version=1.0.0-beta.7
+platform=darwin-arm64  # или linux-amd64, linux-arm64, darwin-amd64
+bundle="TorrServerV2-v${version}-${platform}.tar.gz"
+grep "  ${bundle}$" "torrserver-${version}-SHA256SUMS" | shasum -a 256 --check -
+tar -xzf "$bundle"
+cd "TorrServerV2-v${version}-${platform}"
+./torrserver --version
+./torrctl --version
+```
+
+На Linux вместо `shasum -a 256` можно использовать `sha256sum`. Windows PowerShell:
+
+```powershell
+$Version = "1.0.0-beta.7"
+$Bundle = "TorrServerV2-v$Version-windows-amd64.zip"
+Expand-Archive -LiteralPath $Bundle -DestinationPath .
+Set-Location "TorrServerV2-v$Version-windows-amd64"
+.\torrserver.exe --version
+.\torrctl.exe --version
+```
+
+Пользователь сам перемещает оба бинарника в доверенный installation directory. Распаковка не запускает daemon, не
+устанавливает service и не изменяет config/data directories. Канонический ручной запуск: `torrserver serve`;
+management выполняется отдельным `torrctl`.
 
 ## Значение чисел
 

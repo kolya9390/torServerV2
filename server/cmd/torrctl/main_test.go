@@ -177,10 +177,8 @@ func TestTorrctlUnreachableServerFailsFast(t *testing.T) {
 		t.Fatalf("unreachable result = %+v", result)
 	}
 
-	if !strings.HasPrefix(
-		result.stderr,
-		"torrctl: error: cannot reach TorrServer compatibility endpoint: request failed",
-	) {
+	const expected = "torrctl: error: cannot reach TorrServer; verify torrserver is running and --server/context is correct\n"
+	if result.stderr != expected {
 		t.Fatalf("unreachable stderr = %q", result.stderr)
 	}
 }
@@ -288,7 +286,6 @@ func runBinary(t *testing.T, binary string, args ...string) binaryResult {
 
 func testProcessEnvironment(home string) []string {
 	return append(os.Environ(),
-		"GOCACHE=/private/tmp/torserverv2-gocache",
 		"GOPATH="+originalGoPath,
 		"GOMODCACHE="+filepath.Join(originalGoPath, "pkg", "mod"),
 		"HOME="+home,
@@ -322,7 +319,6 @@ func buildBinary(root, output, packagePath string) error {
 
 	command := exec.CommandContext(ctx, "go", "build", "-o", output, packagePath)
 	command.Dir = root
-	command.Env = append(os.Environ(), "GOCACHE=/private/tmp/torserverv2-gocache")
 
 	combined, err := command.CombinedOutput()
 	if err != nil {

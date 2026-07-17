@@ -78,6 +78,8 @@ func Run(invocation Invocation, dependencies Dependencies) int {
 	root.SetContext(contextOrBackground(invocation.Context))
 
 	if err := root.Execute(); err != nil {
+		err = userFacingCLIError(err)
+
 		stderr := root.ErrOrStderr()
 		if requestedJSONOutput(invocation.Args) {
 			if encodeErr := writeJSONError(stderr, err); encodeErr != nil {

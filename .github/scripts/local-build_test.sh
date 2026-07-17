@@ -16,7 +16,7 @@ metadata_env=(
 build_target() {
   local target="$1"
 
-  env "${metadata_env[@]}" GOCACHE="${GOCACHE:-/private/tmp/torserverv2-gocache}" \
+  env "${metadata_env[@]}" \
     make --no-print-directory -C "$root" "$target" BINARY_DIR="$dist" >/dev/null
 }
 

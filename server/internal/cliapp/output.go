@@ -14,7 +14,11 @@ import (
 	"server/internal/apiclient"
 )
 
-const maxCLIErrorRunes = 1024
+const (
+	maxCLIErrorRunes      = 1024
+	unreachableMessage    = "cannot reach TorrServer; verify torrserver is running and --server/context is correct"
+	requestTimeoutMessage = "TorrServer request timed out; verify --server/context and network connectivity"
+)
 
 var (
 	credentialURLPattern = regexp.MustCompile(`(?i)(https?://)[^/@\s]+@`)
@@ -38,6 +42,36 @@ type cliErrorPayload struct {
 	Status    int    `json:"status,omitempty"`
 	Field     string `json:"field,omitempty"`
 	RequestID string `json:"request_id,omitempty"`
+}
+
+type userFacingTransportError struct {
+	cause   error
+	message string
+}
+
+func (err *userFacingTransportError) Error() string {
+	return err.message
+}
+
+func (err *userFacingTransportError) Unwrap() error {
+	return err.cause
+}
+
+func userFacingCLIError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return &userFacingTransportError{cause: err, message: requestTimeoutMessage}
+	}
+
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return &userFacingTransportError{cause: err, message: unreachableMessage}
+	}
+
+	return err
 }
 
 func writeJSONSuccess(writer io.Writer, data any) error {

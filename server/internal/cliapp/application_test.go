@@ -85,7 +85,7 @@ func TestRunReturnsDeterministicErrors(t *testing.T) {
 				"--output=json",
 				"status",
 			},
-			wantMessage: "request failed",
+			wantMessage: unreachableMessage,
 		},
 	}
 
@@ -114,6 +114,34 @@ func TestRunReturnsDeterministicErrors(t *testing.T) {
 				t.Fatalf("stderr = %q, want %q", stderr.String(), test.wantMessage)
 			}
 		})
+	}
+}
+
+func TestRunUnreachableServerUsesPlatformNeutralGuidance(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	code := Run(Invocation{
+		Args: []string{
+			"--server=http://127.0.0.1:1",
+			"--timeout=50ms",
+			"status",
+		},
+		Stderr: &stderr,
+	}, testDependencies(&stubFileSystem{}))
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+
+	message := stderr.String()
+	if !strings.Contains(message, unreachableMessage) {
+		t.Fatalf("stderr = %q, want platform-neutral guidance", message)
+	}
+
+	for _, platformText := range []string{"connection refused", "actively refused", "no route to host"} {
+		if strings.Contains(strings.ToLower(message), platformText) {
+			t.Fatalf("stderr leaks platform-specific transport text %q: %s", platformText, message)
+		}
 	}
 }
 

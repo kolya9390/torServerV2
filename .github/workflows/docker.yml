@@ -26,7 +26,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.release_sha }}
           persist-credentials: false
