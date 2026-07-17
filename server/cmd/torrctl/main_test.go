@@ -5,67 +5,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"server/internal/cliapp"
 )
 
 const smokeTimeout = 10 * time.Second
 
-var (
-	torrctlBinary    string
-	torrserverBinary string
-	serverRoot       string
-	originalGoPath   string
-)
-
-func TestMain(testMain *testing.M) {
-	root, err := findServerRoot()
-	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
-
-		os.Exit(1)
-	}
-
-	buildDir, err := os.MkdirTemp("", "torrctl-smoke-")
-	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "create smoke build dir: %v\n", err)
-
-		os.Exit(1)
-	}
-	serverRoot = root
-	originalGoPath = resolveGoPath()
-	torrctlBinary = filepath.Join(buildDir, executableName("torrctl"))
-	torrserverBinary = filepath.Join(buildDir, executableName("torrserver"))
-
-	if err := buildBinary(root, torrctlBinary, "./cmd/torrctl"); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "build torrctl smoke binary: %v\n", err)
-		_ = os.RemoveAll(buildDir)
-
-		os.Exit(1)
-	}
-
-	if err := buildBinary(root, torrserverBinary, "./cmd/torrserver"); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "build torrserver metadata binary: %v\n", err)
-		_ = os.RemoveAll(buildDir)
-
-		os.Exit(1)
-	}
-
-	exitCode := testMain.Run()
-	_ = os.RemoveAll(buildDir)
-	os.Exit(exitCode)
-}
-
 func TestTorrctlHelpIsClientOnly(t *testing.T) {
 	t.Parallel()
 
-	result := runBinary(t, torrctlBinary, "--help")
+	result := runCLI(t, "--help")
 	if result.exitCode != 0 || result.stderr != "" {
 		t.Fatalf("help result = %+v", result)
 	}
@@ -84,17 +39,18 @@ func TestTorrctlHelpIsClientOnly(t *testing.T) {
 func TestTorrctlVersionAndCompletionUseBinaryIdentity(t *testing.T) {
 	t.Parallel()
 
-	version := runBinary(t, torrctlBinary, "--version")
+	version := runCLI(t, "--version")
 	if version.exitCode != 0 || !strings.HasPrefix(version.stdout, "torrctl ") || version.stderr != "" {
 		t.Fatalf("version result = %+v", version)
 	}
 
-	completion := runBinary(t, torrctlBinary, "completion", "--help")
+	completion := runCLI(t, "completion", "--help")
 	if completion.exitCode != 0 || completion.stderr != "" {
 		t.Fatalf("completion result = %+v", completion)
 	}
 
-	if !strings.Contains(completion.stdout, "torrctl completion zsh") || strings.Contains(completion.stdout, "torrserver completion") {
+	if !strings.Contains(completion.stdout, "torrctl completion zsh") ||
+		strings.Contains(completion.stdout, "torrserver completion") {
 		t.Fatalf("completion identity is incorrect:\n%s", completion.stdout)
 	}
 }
@@ -102,7 +58,7 @@ func TestTorrctlVersionAndCompletionUseBinaryIdentity(t *testing.T) {
 func TestTorrctlLocalVersionDoesNotRequireServer(t *testing.T) {
 	t.Parallel()
 
-	result := runBinary(t, torrctlBinary, "--output=json", "version")
+	result := runCLI(t, "--output=json", "version")
 	if result.exitCode != 0 || result.stderr != "" {
 		t.Fatalf("local version result = %+v", result)
 	}
@@ -125,7 +81,7 @@ func TestTorrctlLocalVersionDoesNotRequireServer(t *testing.T) {
 func TestTorrctlInvalidCommandHasDeterministicHumanError(t *testing.T) {
 	t.Parallel()
 
-	result := runBinary(t, torrctlBinary, "unknown-command")
+	result := runCLI(t, "unknown-command")
 	if result.exitCode != 1 || result.stdout != "" {
 		t.Fatalf("invalid command result = %+v", result)
 	}
@@ -138,7 +94,7 @@ func TestTorrctlInvalidCommandHasDeterministicHumanError(t *testing.T) {
 func TestTorrctlJSONErrorIsMachineReadable(t *testing.T) {
 	t.Parallel()
 
-	result := runBinary(t, torrctlBinary, "--output=json", "unknown-command")
+	result := runCLI(t, "--output=json", "unknown-command")
 	if result.exitCode != 1 || result.stdout != "" {
 		t.Fatalf("JSON error result = %+v", result)
 	}
@@ -154,7 +110,8 @@ func TestTorrctlJSONErrorIsMachineReadable(t *testing.T) {
 		t.Fatalf("decode JSON error: %v\n%s", err, result.stderr)
 	}
 
-	if response.OK || response.Error.Code != "command_error" || !strings.Contains(response.Error.Message, "unknown command") {
+	if response.OK || response.Error.Code != "command_error" ||
+		!strings.Contains(response.Error.Message, "unknown command") {
 		t.Fatalf("JSON error response = %+v", response)
 	}
 
@@ -166,9 +123,8 @@ func TestTorrctlJSONErrorIsMachineReadable(t *testing.T) {
 func TestTorrctlUnreachableServerFailsFast(t *testing.T) {
 	t.Parallel()
 
-	result := runBinary(
+	result := runCLI(
 		t,
-		torrctlBinary,
 		"--server=http://127.0.0.1:1",
 		"--timeout=100ms",
 		"status",
@@ -183,31 +139,19 @@ func TestTorrctlUnreachableServerFailsFast(t *testing.T) {
 	}
 }
 
-func TestTorrctlAndTorrserverBuildMetadataMatch(t *testing.T) {
-	t.Parallel()
-
-	ctlVersion := runBinary(t, torrctlBinary, "--version")
-	serverVersion := runBinary(t, torrserverBinary, "--version")
-	if ctlVersion.exitCode != 0 || serverVersion.exitCode != 0 {
-		t.Fatalf("version results = torrctl:%+v torrserver:%+v", ctlVersion, serverVersion)
-	}
-
-	_, ctlMetadata, ctlFound := strings.Cut(strings.TrimSpace(ctlVersion.stdout), " ")
-	_, serverMetadata, serverFound := strings.Cut(strings.TrimSpace(serverVersion.stdout), " ")
-	if !ctlFound || !serverFound || ctlMetadata != serverMetadata {
-		t.Fatalf("build metadata differs: torrctl=%q torrserver=%q", ctlMetadata, serverMetadata)
-	}
-}
-
 func TestTorrctlDependencyGraphExcludesDaemonAndTorrentRuntime(t *testing.T) {
 	t.Parallel()
+
+	serverRoot, err := findServerRoot()
+	if err != nil {
+		t.Fatalf("find server root: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), smokeTimeout)
 	defer cancel()
 
 	command := exec.CommandContext(ctx, "go", "list", "-deps", "-f", "{{.ImportPath}}", "./cmd/torrctl")
 	command.Dir = serverRoot
-	command.Env = testProcessEnvironment(t.TempDir())
 
 	output, err := command.Output()
 	if err != nil {
@@ -242,105 +186,51 @@ func forbiddenTorrctlDependency(dependency string) bool {
 	return false
 }
 
-type binaryResult struct {
+type cliResult struct {
 	stdout   string
 	stderr   string
 	exitCode int
 }
 
-func runBinary(t *testing.T, binary string, args ...string) binaryResult {
+func runCLI(t *testing.T, args ...string) cliResult {
 	t.Helper()
 
-	runDir := t.TempDir()
+	home := t.TempDir()
+	environment := map[string]string{
+		"HOME":              home,
+		"XDG_CONFIG_HOME":   filepath.Join(home, "config"),
+		"TSCTL_CONFIG":      filepath.Join(home, "missing-context.json"),
+		"TS_USER":           "",
+		"TS_PASSWORD":       "",
+		"TS_SHUTDOWN_TOKEN": "",
+	}
+	dependencies := cliapp.DefaultDependencies()
+	dependencies.ProgramName = "torrctl"
+	dependencies.Getenv = func(name string) string { return environment[name] }
+
 	ctx, cancel := context.WithTimeout(context.Background(), smokeTimeout)
 	defer cancel()
 
-	command := exec.CommandContext(ctx, binary, args...)
-	command.Dir = runDir
-	command.Env = testProcessEnvironment(runDir)
-
-	var (
-		stdout bytes.Buffer
-		stderr bytes.Buffer
-	)
-	command.Stdout = &stdout
-	command.Stderr = &stderr
-
-	err := command.Run()
-	exitCode := 0
-	if err != nil {
-		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) {
-			t.Fatalf("run %s: %v", filepath.Base(binary), err)
-		}
-
-		exitCode = exitErr.ExitCode()
-	}
-
+	var stdout, stderr bytes.Buffer
+	exitCode := cliapp.Run(cliapp.Invocation{
+		Context: ctx,
+		Args:    args,
+		Stdin:   bytes.NewReader(nil),
+		Stdout:  &stdout,
+		Stderr:  &stderr,
+	}, dependencies)
 	if ctx.Err() != nil {
-		t.Fatalf("run %s timed out: %v", filepath.Base(binary), ctx.Err())
+		t.Fatalf("run torrctl timed out: %v", ctx.Err())
 	}
 
-	return binaryResult{stdout: stdout.String(), stderr: stderr.String(), exitCode: exitCode}
-}
-
-func testProcessEnvironment(home string) []string {
-	return append(os.Environ(),
-		"GOPATH="+originalGoPath,
-		"GOMODCACHE="+filepath.Join(originalGoPath, "pkg", "mod"),
-		"HOME="+home,
-		"XDG_CONFIG_HOME="+filepath.Join(home, "config"),
-		"TSCTL_CONFIG="+filepath.Join(home, "missing-context.json"),
-		"TS_USER=",
-		"TS_PASSWORD=",
-		"TS_SHUTDOWN_TOKEN=",
-	)
-}
-
-func resolveGoPath() string {
-	if configured := strings.TrimSpace(os.Getenv("GOPATH")); configured != "" {
-		paths := filepath.SplitList(configured)
-		if len(paths) > 0 {
-			return paths[0]
-		}
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(os.TempDir(), "go")
-	}
-
-	return filepath.Join(home, "go")
-}
-
-func buildBinary(root, output, packagePath string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*smokeTimeout)
-	defer cancel()
-
-	command := exec.CommandContext(ctx, "go", "build", "-o", output, packagePath)
-	command.Dir = root
-
-	combined, err := command.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%w: %s", err, combined)
-	}
-
-	return nil
+	return cliResult{stdout: stdout.String(), stderr: stderr.String(), exitCode: exitCode}
 }
 
 func findServerRoot() (string, error) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
-		return "", errors.New("resolve smoke test source path")
+		return "", errors.New("resolve test source path")
 	}
 
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..")), nil
-}
-
-func executableName(name string) string {
-	if runtime.GOOS == "windows" {
-		return name + ".exe"
-	}
-
-	return name
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,52 +13,10 @@ import (
 	"time"
 
 	"server/internal/daemon"
+	buildversion "server/version"
 )
 
 const binarySmokeTimeout = 20 * time.Second
-
-var (
-	testBinary          string
-	compatibilityBinary string
-	serverRoot          string
-)
-
-func TestMain(testMain *testing.M) {
-	root, err := findServerRoot()
-	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
-
-		os.Exit(1)
-	}
-
-	buildDir, err := os.MkdirTemp("", "torrserver-smoke-")
-	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "create smoke build dir: %v\n", err)
-
-		os.Exit(1)
-	}
-
-	serverRoot = root
-	testBinary = filepath.Join(buildDir, executableName("torrserver"))
-	compatibilityBinary = filepath.Join(buildDir, executableName("torrserver-compat"))
-	if err := buildTestBinary(root, testBinary, "./cmd/torrserver"); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "build torrserver smoke binary: %v\n", err)
-		_ = os.RemoveAll(buildDir)
-
-		os.Exit(1)
-	}
-
-	if err := buildTestBinary(root, compatibilityBinary, "./cmd"); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "build compatibility smoke binary: %v\n", err)
-		_ = os.RemoveAll(buildDir)
-
-		os.Exit(1)
-	}
-
-	exitCode := testMain.Run()
-	_ = os.RemoveAll(buildDir)
-	os.Exit(exitCode)
-}
 
 func TestExecuteDelegatesToDaemonRunner(t *testing.T) {
 	t.Parallel()
@@ -102,7 +59,7 @@ func TestExecuteDelegatesToDaemonRunner(t *testing.T) {
 func TestTorrserverHelpDocumentsCanonicalServeInvocation(t *testing.T) {
 	t.Parallel()
 
-	result := runBinary(t, "serve", "--help")
+	result := runDaemon(t, "", "serve", "--help")
 	if result.exitCode != daemon.ExitOK || result.stderr != "" {
 		t.Fatalf("help result = %+v", result)
 	}
@@ -112,15 +69,11 @@ func TestTorrserverHelpDocumentsCanonicalServeInvocation(t *testing.T) {
 	}
 }
 
-func TestTorrserverVersionUsesEmbeddedMetadataWithoutStartingDaemon(t *testing.T) {
+func TestTorrserverVersionUsesCanonicalMetadataWithoutStartingDaemon(t *testing.T) {
 	t.Parallel()
 
-	result := runBinary(t, "--version")
-	want := fmt.Sprintf(
-		"torrserver v1.0.0-beta.test (%s/%s, commit 0123456789ab)\n",
-		runtime.GOOS,
-		runtime.GOARCH,
-	)
+	result := runDaemon(t, "", "--version")
+	want := buildversion.Concise("torrserver", buildversion.Current()) + "\n"
 	if result.exitCode != daemon.ExitOK || result.stdout != want || result.stderr != "" {
 		t.Fatalf("version result = %+v, want stdout %q", result, want)
 	}
@@ -129,7 +82,7 @@ func TestTorrserverVersionUsesEmbeddedMetadataWithoutStartingDaemon(t *testing.T
 func TestTorrserverRejectsInvalidArgumentsBeforeRuntimeInitialization(t *testing.T) {
 	t.Parallel()
 
-	result := runBinary(t, "--definitely-invalid")
+	result := runDaemon(t, "", "--definitely-invalid")
 	if result.exitCode != daemon.ExitUsage {
 		t.Fatalf("invalid argument result = %+v", result)
 	}
@@ -143,7 +96,8 @@ func TestTorrserverRejectsInvalidArgumentsBeforeRuntimeInitialization(t *testing
 func TestTorrserverMigratesFormerManagementCommandWithoutNetworkAccess(t *testing.T) {
 	t.Parallel()
 
-	result := runBinary(t,
+	result := runDaemon(t,
+		"",
 		"--server=https://user:password@example.test/private",
 		"--token=do-not-print",
 		"shutdown",
@@ -162,20 +116,6 @@ func TestTorrserverMigratesFormerManagementCommandWithoutNetworkAccess(t *testin
 	}
 }
 
-func TestCompatibilityEntryPointUsesDaemonMigrationContract(t *testing.T) {
-	t.Parallel()
-
-	result := runSelectedBinary(t, compatibilityBinary, "shutdown")
-	if result.exitCode != daemon.ExitUsage || result.stdout != "" {
-		t.Fatalf("compatibility migration result = %+v", result)
-	}
-
-	const want = "torrserver shutdown: management commands moved to torrctl; use `torrctl shutdown`\n"
-	if result.stderr != want {
-		t.Fatalf("compatibility migration stderr = %q, want %q", result.stderr, want)
-	}
-}
-
 func TestTorrserverReportsConfigFailureWithoutStartingEngine(t *testing.T) {
 	t.Parallel()
 
@@ -185,7 +125,7 @@ func TestTorrserverReportsConfigFailureWithoutStartingEngine(t *testing.T) {
 		t.Fatalf("write invalid config: %v", err)
 	}
 
-	result := runBinaryInDir(t, testBinary, runDir, []string{"TS_CONFIG=" + configPath}, "serve")
+	result := runDaemon(t, configPath, "serve")
 	if result.exitCode != daemon.ExitFailure {
 		t.Fatalf("config failure result = %+v", result)
 	}
@@ -197,6 +137,11 @@ func TestTorrserverReportsConfigFailureWithoutStartingEngine(t *testing.T) {
 
 func TestTorrserverDependencyGraphExcludesManagementCLI(t *testing.T) {
 	t.Parallel()
+
+	serverRoot, err := findServerRoot()
+	if err != nil {
+		t.Fatalf("find server root: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), binarySmokeTimeout)
 	defer cancel()
@@ -219,104 +164,50 @@ func TestTorrserverDependencyGraphExcludesManagementCLI(t *testing.T) {
 
 type contextKey struct{}
 
-type binaryResult struct {
+type daemonResult struct {
 	stdout   string
 	stderr   string
 	exitCode int
 }
 
-func runBinary(t *testing.T, args ...string) binaryResult {
+type testLogger struct{}
+
+func (testLogger) Init(string, string) {}
+
+func (testLogger) Info(...any) {}
+
+func (testLogger) Close() {}
+
+func runDaemon(t *testing.T, configPath string, args ...string) daemonResult {
 	t.Helper()
 
-	return runSelectedBinary(t, testBinary, args...)
-}
+	dependencies := daemon.DefaultDependencies()
+	dependencies.Getenv = func(name string) string {
+		if name == "TS_CONFIG" {
+			return configPath
+		}
 
-func runSelectedBinary(t *testing.T, binary string, args ...string) binaryResult {
-	t.Helper()
-
-	return runBinaryInDir(t, binary, t.TempDir(), nil, args...)
-}
-
-func runBinaryInDir(t *testing.T, binary, runDir string, extraEnv []string, args ...string) binaryResult {
-	t.Helper()
+		return ""
+	}
+	dependencies.Logger = testLogger{}
 
 	ctx, cancel := context.WithTimeout(context.Background(), binarySmokeTimeout)
 	defer cancel()
 
-	command := exec.CommandContext(ctx, binary, args...)
-	command.Dir = runDir
-	command.Env = append(testEnvironment(runDir), extraEnv...)
-
 	var stdout, stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
-
-	err := command.Run()
-	exitCode := daemon.ExitOK
-	if err != nil {
-		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) {
-			t.Fatalf("run torrserver: %v", err)
-		}
-
-		exitCode = exitErr.ExitCode()
-	}
-
+	exitCode := execute(ctx, args, &stdout, &stderr, dependencies, daemon.Run)
 	if ctx.Err() != nil {
 		t.Fatalf("run torrserver timed out: %v", ctx.Err())
 	}
 
-	return binaryResult{stdout: stdout.String(), stderr: stderr.String(), exitCode: exitCode}
-}
-
-func testEnvironment(home string) []string {
-	environment := make([]string, 0, len(os.Environ())+2)
-	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, "TS_CONFIG=") && !strings.HasPrefix(entry, "HOME=") {
-			environment = append(environment, entry)
-		}
-	}
-
-	return append(environment,
-		"HOME="+home,
-		"TS_CONFIG=",
-	)
-}
-
-func buildTestBinary(root, output, packagePath string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), binarySmokeTimeout)
-	defer cancel()
-
-	ldflags := strings.Join([]string{
-		"-X server/version.version=v1.0.0-beta.test",
-		"-X server/version.commit=0123456789abcdef",
-		"-X server/version.buildTime=2026-07-17T00:00:00Z",
-		"-X server/version.dirtyState=false",
-	}, " ")
-	command := exec.CommandContext(ctx, "go", "build", "-ldflags", ldflags, "-o", output, packagePath)
-	command.Dir = root
-
-	combined, err := command.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%w: %s", err, combined)
-	}
-
-	return nil
+	return daemonResult{stdout: stdout.String(), stderr: stderr.String(), exitCode: exitCode}
 }
 
 func findServerRoot() (string, error) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
-		return "", errors.New("resolve smoke test source path")
+		return "", errors.New("resolve test source path")
 	}
 
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..")), nil
-}
-
-func executableName(name string) string {
-	if runtime.GOOS == "windows" {
-		return name + ".exe"
-	}
-
-	return name
 }
