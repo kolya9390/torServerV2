@@ -142,7 +142,7 @@ func TestSetupRouteWithServicesUsesScopedServices(t *testing.T) {
 	services.Search = &contractSearchService{}
 	services.Media = &contractMediaService{}
 	services.Modules = modulesSvc
-	if err := SetupRouteWithServices(r, func() sets.RuntimeState { return sets.RuntimeState{} }, services); err != nil {
+	if err := SetupRouteWithServices(r, func() sets.RuntimeState { return sets.RuntimeState{} }, services, "test"); err != nil {
 		t.Fatalf("SetupRouteWithServices returned error: %v", err)
 	}
 
@@ -257,7 +257,12 @@ func TestSettingsSetMergesPartialPayloadWithCurrentSettings(t *testing.T) {
 func TestSetupRouteWithServicesRequiresCompleteDependencies(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	err := SetupRouteWithServices(gin.New(), func() sets.RuntimeState { return sets.RuntimeState{} }, &contracts.APIServices{})
+	err := SetupRouteWithServices(
+		gin.New(),
+		func() sets.RuntimeState { return sets.RuntimeState{} },
+		&contracts.APIServices{},
+		"test",
+	)
 	if err == nil {
 		t.Fatal("expected SetupRouteWithServices to return incomplete services error")
 	}

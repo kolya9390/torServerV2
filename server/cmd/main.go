@@ -11,140 +11,25 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"runtime"
-	"syscall"
-	"time"
 
 	_ "server/docs"
 
-	"github.com/alexflint/go-arg"
-
-	"server/bootstrap"
-	"server/cmd/cli"
-	"server/config"
-	"server/log"
-	"server/settings"
+	"server/internal/daemon"
 )
 
 func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-
-	if cli.IsInvocation(os.Args[1:]) {
-		cli.Execute()
-
-		return
-	}
-
-	runServer()
-}
-
-func runServer() {
-	args, err := parseArgs(os.Args[1:])
-
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
-	}
-
-	log.Init(args.LogPath, args.WebLogPath)
-	defer log.Close()
-
-	cfg, err := loadConfig(args)
-
-	if err != nil {
-		log.TLogln("Failed to load config:", err)
-	}
-
-	app, err := bootstrap.New(args, cfg)
-
-	if err != nil {
-		log.TLogln("Failed to initialize:", err)
-
-		return
-	}
-
-	if err := app.Start(context.Background()); err != nil {
-		log.TLogln("Failed to start:", err)
-
-		return
-	}
-
-	waitErr := make(chan error, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.TLogln("main wait goroutine panic recovered", "panic", r)
-				waitErr <- fmt.Errorf("panic: %v", r)
-			}
-		}()
-		waitErr <- app.Wait()
-	}()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
-	shouldStop := true
-
-	select {
-	case sig := <-quit:
-		log.TLogln("Received signal:", sig.String())
-	case err := <-waitErr:
-		if err != nil {
-			log.TLogln("Runtime exited with error:", err)
-		} else {
-			log.TLogln("Runtime exited")
-
-			shouldStop = false
+	result := daemon.Run(daemon.Invocation{
+		Context: context.Background(),
+		Args:    os.Args[1:],
+		Stdout:  os.Stdout,
+	}, daemon.DefaultDependencies())
+	if result.Err != nil {
+		if _, err := fmt.Fprintln(os.Stderr, daemon.UserMessage(result.Err)); err != nil {
+			os.Exit(daemon.ExitFailure)
 		}
 	}
 
-	if !shouldStop {
-		return
+	if result.ExitCode != daemon.ExitOK {
+		os.Exit(result.ExitCode)
 	}
-
-	stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := app.Stop(stopCtx); err != nil {
-		log.TLogln("Stop error:", err)
-	}
-}
-
-func parseArgs(_ []string) (*settings.ExecArgs, error) {
-	var parsed settings.ExecArgs
-	p := arg.MustParse(&parsed)
-
-	if p.Subcommand() != nil {
-		p.WriteHelp(os.Stdout)
-		os.Exit(0)
-	}
-
-	return &parsed, nil
-}
-
-func loadConfig(args *settings.ExecArgs) (*config.Config, error) {
-	// Priority: env TS_CONFIG > default search via config.Load()
-	// Note: args.Path is for data directory, not config location
-	configPath := os.Getenv("TS_CONFIG")
-
-	cfg, err := config.Load(configPath)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// Set static configuration from config.yaml
-	settings.SetStaticConfig(cfg.ToStaticConfig())
-
-	if args.Ssl {
-		cfg.Server.SSL = true
-	}
-
-	if args.SslCert != "" {
-		cfg.Server.SSLCert = args.SslCert
-		cfg.Server.SSLKey = args.SslKey
-	}
-
-	return cfg, nil
 }

@@ -13,7 +13,12 @@ import (
 func TestExplicitStreamsRoutesRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	if err := SetupRouteWithServices(r, func() sets.RuntimeState { return sets.RuntimeState{} }, newAPIServicesFixture(t, nil)); err != nil {
+	if err := SetupRouteWithServices(
+		r,
+		func() sets.RuntimeState { return sets.RuntimeState{} },
+		newAPIServicesFixture(t, nil),
+		"test",
+	); err != nil {
 		t.Fatalf("SetupRouteWithServices returned error: %v", err)
 	}
 

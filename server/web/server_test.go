@@ -14,10 +14,38 @@ import (
 
 	"server/internal/app/contracts"
 	"server/settings"
+	buildversion "server/version"
 )
 
 type testSettingsProvider struct {
 	sets *settings.BTSets
+}
+
+func TestServerStartupMessageUsesInjectedBuildInfo(t *testing.T) {
+	t.Parallel()
+
+	info := buildversion.Info{
+		Version:   "v1.0.0-rc.1",
+		Commit:    "0123456789abcdef",
+		BuildTime: "2026-07-16T20:00:00Z",
+		Dirty:     buildversion.DirtyClean,
+		GoVersion: "go1.26.3",
+		OS:        "linux",
+		Arch:      "amd64",
+		TorrentEngine: buildversion.ModuleInfo{
+			Path:    "github.com/anacrolix/torrent",
+			Version: "v1.61.0",
+		},
+	}
+
+	server := NewServerWithDeps(ServerDeps{BuildInfo: info})
+	if got, want := server.startupMessage(), buildversion.StartupSummary(info); got != want {
+		t.Fatalf("startup message = %q, want %q", got, want)
+	}
+
+	if strings.Contains(server.startupMessage(), "2.0.0") {
+		t.Fatalf("startup message contains legacy hard-coded version: %q", server.startupMessage())
+	}
 }
 
 func (p testSettingsProvider) Get() *settings.BTSets {

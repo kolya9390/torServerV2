@@ -185,7 +185,7 @@ docker compose -f docker-compose.yml up -d
 certificate только по явному запросу и предназначен для контролируемых self-signed окружений.
 
 CLI contract suite запускается отдельно командой `make test-cli` и входит в обычный `make test` и CI. Baseline на
-2026-07-15: `64.9%` statements для `server/cmd/cli`; это индикатор регрессии покрытия, а не самостоятельная метрика
+2026-07-15: `64.9%` statements для CLI-пакета (теперь `server/internal/cliapp`); это индикатор регрессии покрытия, а не самостоятельная метрика
 качества. Gate проверяет routing, contexts, uploads, URL selection, settings, auth, shutdown, cancellation, bounded
 HTTP responses и machine-readable errors под race detector.
 

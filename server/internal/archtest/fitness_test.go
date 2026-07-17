@@ -610,7 +610,8 @@ func TestPreferredStreamRequestBindingStaysOutOfHandler(t *testing.T) {
 }
 
 func TestOsExitOnlyInMain(t *testing.T) {
-	goFiles := collectGoFiles(t, projectRoot(t), func(path string) bool {
+	root := projectRoot(t)
+	goFiles := collectGoFiles(t, root, func(path string) bool {
 		return !strings.HasSuffix(path, "_test.go")
 	})
 
@@ -631,16 +632,75 @@ func TestOsExitOnlyInMain(t *testing.T) {
 				return true
 			}
 
-			// Allow os.Exit in cmd/main.go (server mode) and cmd/cli/ (CLI mode)
-			mainPath := filepath.Join(projectRoot(t), "cmd", "main.go")
-			cliDir := filepath.Join(projectRoot(t), "cmd", "cli")
-			isCLI := strings.HasPrefix(filepath.Clean(path), filepath.Clean(cliDir))
-			if filepath.Clean(path) != filepath.Clean(mainPath) && !isCLI {
-				t.Errorf("os.Exit is only allowed in cmd/main.go or cmd/cli/, found in %s", path)
+			cmdDir := filepath.Join(root, "cmd")
+			cleanPath := filepath.Clean(path)
+			isCommandMain := f.Name.Name == "main" && filepath.Base(cleanPath) == "main.go" &&
+				strings.HasPrefix(cleanPath, filepath.Clean(cmdDir)+string(filepath.Separator))
+			if !isCommandMain {
+				t.Errorf("os.Exit is only allowed in cmd main entry points, found in %s", relativePath(t, root, path))
 			}
 
 			return true
 		})
+	}
+}
+
+func TestMainDoesNotOwnDaemonLifecycle(t *testing.T) {
+	mainPath := filepath.Join(projectRoot(t), "cmd", "main.go")
+	file := parseFile(t, mainPath)
+	for _, imp := range file.Imports {
+		pkg := importPath(t, mainPath, imp)
+		switch pkg {
+		case "server/bootstrap", "server/config", "server/internal/apiclient", "server/internal/cliapp",
+			"server/log", "server/settings", "os/signal", "syscall", "github.com/spf13/cobra":
+			t.Errorf("cmd/main.go must delegate daemon lifecycle instead of importing %q", pkg)
+		}
+	}
+
+	content, err := os.ReadFile(mainPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", mainPath, err)
+	}
+
+	if strings.Contains(string(content), "IsInvocation") {
+		t.Error("cmd/main.go must not guess between daemon and CLI modes")
+	}
+}
+
+func TestTorrctlMainIsThinCompositionRoot(t *testing.T) {
+	mainPath := filepath.Join(projectRoot(t), "cmd", "torrctl", "main.go")
+	file := parseFile(t, mainPath)
+	allowed := map[string]struct{}{
+		"context":                {},
+		"os":                     {},
+		"server/internal/cliapp": {},
+	}
+
+	for _, imp := range file.Imports {
+		pkg := importPath(t, mainPath, imp)
+		if _, ok := allowed[pkg]; !ok {
+			t.Errorf("cmd/torrctl/main.go imports non-composition dependency %q", pkg)
+		}
+	}
+}
+
+func TestTorrserverMainIsThinCompositionRoot(t *testing.T) {
+	mainPath := filepath.Join(projectRoot(t), "cmd", "torrserver", "main.go")
+	file := parseFile(t, mainPath)
+	allowed := map[string]struct{}{
+		"context":                {},
+		"fmt":                    {},
+		"io":                     {},
+		"os":                     {},
+		"server/docs":            {},
+		"server/internal/daemon": {},
+	}
+
+	for _, imp := range file.Imports {
+		pkg := importPath(t, mainPath, imp)
+		if _, ok := allowed[pkg]; !ok {
+			t.Errorf("cmd/torrserver/main.go imports non-composition dependency %q", pkg)
+		}
 	}
 }
 

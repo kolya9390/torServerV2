@@ -25,6 +25,7 @@ import (
 	"server/torr"
 	"server/torrfs"
 	"server/torrfs/webdav"
+	buildversion "server/version"
 	"server/web/api"
 	"server/web/auth"
 	"server/web/blocker"
@@ -40,6 +41,7 @@ type ServerDeps struct {
 	CORSService      webinfra.CORSService
 	SSLService       webinfra.SSLService
 	APIServices      *contracts.APIServices
+	BuildInfo        buildversion.Info
 }
 
 type Server struct {
@@ -54,6 +56,7 @@ type Server struct {
 	args       settings.ArgsProvider
 	runtime    func() settings.RuntimeState
 	apiSvc     *contracts.APIServices
+	buildInfo  buildversion.Info
 }
 
 const (
@@ -72,15 +75,20 @@ func NewServerWithDeps(deps ServerDeps) *Server {
 		deps.RuntimeState = func() settings.RuntimeState { return settings.RuntimeState{} }
 	}
 
+	if deps.BuildInfo.Version == "" {
+		deps.BuildInfo = buildversion.Current()
+	}
+
 	return &Server{
-		bts:      deps.BTServer,
-		waitChan: make(chan error, 2),
-		corsSvc:  deps.CORSService,
-		sslSvc:   deps.SSLService,
-		settings: deps.SettingsProvider,
-		args:     deps.ArgsProvider,
-		runtime:  deps.RuntimeState,
-		apiSvc:   deps.APIServices,
+		bts:       deps.BTServer,
+		waitChan:  make(chan error, 2),
+		corsSvc:   deps.CORSService,
+		sslSvc:    deps.SSLService,
+		settings:  deps.SettingsProvider,
+		args:      deps.ArgsProvider,
+		runtime:   deps.RuntimeState,
+		apiSvc:    deps.APIServices,
+		buildInfo: deps.BuildInfo,
 	}
 }
 
@@ -138,7 +146,7 @@ func (s *Server) BTServer() *torr.BTServer {
 func (s *Server) Start() error {
 	s.ensureInfraServices()
 
-	log.TLogln("Start TorrServer 2.0.0")
+	log.TLogln(s.startupMessage())
 
 	ips := webinfra.GetLocalIps()
 	if len(ips) > 0 {
@@ -179,6 +187,14 @@ func (s *Server) Start() error {
 	return nil
 }
 
+func (s *Server) startupMessage() string {
+	if s == nil {
+		return buildversion.StartupSummary(buildversion.Current())
+	}
+
+	return buildversion.StartupSummary(s.buildInfo)
+}
+
 // setupMiddleware configures CORS, logging, recovery, security headers, and auth middleware.
 func setupMiddleware(s *Server) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
@@ -209,16 +225,18 @@ func setupMiddleware(s *Server) *gin.Engine {
 
 // registerDebugRoutes registers health check, echo, and pprof/debug endpoints.
 // RootHandler returns a simple status for root requests (used by clients like Lampa for detection).
-func rootHandler(c *gin.Context) {
+func (s *Server) rootHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"server":  "TorrServer",
-		"version": "v1",
-		"status":  "ok",
+		"server":              "TorrServer",
+		"version":             "v1",
+		"api_version":         "v1",
+		"application_version": s.buildInfo.Version,
+		"status":              "ok",
 	})
 }
 
 func (s *Server) registerDebugRoutes(route *gin.Engine) {
-	route.GET("/", rootHandler)
+	route.GET("/", s.rootHandler)
 	route.GET("/echo", echo)
 	route.GET("/healthz", healthz)
 	route.GET("/readyz", s.readyz)
@@ -249,7 +267,7 @@ func (s *Server) registerAppRoutes(route *gin.Engine) error {
 	apiServices := s.apiSvc
 	s.mu.RUnlock()
 
-	if err := api.SetupRouteWithServices(route, s.currentRuntimeState, apiServices); err != nil {
+	if err := api.SetupRouteWithServices(route, s.currentRuntimeState, apiServices, s.buildInfo.Version); err != nil {
 		return fmt.Errorf("register api routes: %w", err)
 	}
 

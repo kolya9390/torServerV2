@@ -1,9 +1,11 @@
 package version
 
 import (
+	"fmt"
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -106,6 +108,52 @@ func Version() string {
 // GetTorrentVersion preserves the existing dependency-version API.
 func GetTorrentVersion() string {
 	return Current().TorrentEngine.EffectiveVersion()
+}
+
+// Concise renders the shared human-readable identity used by product binaries.
+func Concise(programName string, info Info) string {
+	commit := safeSummaryValue(info.Commit)
+	if len(commit) > 12 {
+		commit = commit[:12]
+	}
+
+	return fmt.Sprintf(
+		"%s %s (%s/%s, commit %s)",
+		safeSummaryValue(programName),
+		safeSummaryValue(info.Version),
+		safeSummaryValue(info.OS),
+		safeSummaryValue(info.Arch),
+		commit,
+	)
+}
+
+// StartupSummary renders canonical, single-line daemon build metadata without
+// exposing module replacement paths or other local build paths.
+func StartupSummary(info Info) string {
+	platform := safeSummaryValue(info.OS) + "/" + safeSummaryValue(info.Arch)
+
+	return fmt.Sprintf(
+		"Start TorrServer version=%q commit=%q build_time=%q dirty=%q go=%q platform=%q torrent_engine=%q",
+		safeSummaryValue(info.Version),
+		safeSummaryValue(info.Commit),
+		safeSummaryValue(info.BuildTime),
+		safeSummaryValue(string(info.Dirty)),
+		safeSummaryValue(info.GoVersion),
+		platform,
+		safeSummaryValue(info.TorrentEngine.EffectiveVersion()),
+	)
+}
+
+func safeSummaryValue(value string) string {
+	value = strings.Map(func(symbol rune) rune {
+		if unicode.IsControl(symbol) {
+			return ' '
+		}
+
+		return symbol
+	}, value)
+
+	return valueOrDefault(strings.Join(strings.Fields(value), " "), unknownValue)
 }
 
 func resolveInfo(inputs buildInputs, buildInfo *debug.BuildInfo, buildInfoOK bool) Info {
